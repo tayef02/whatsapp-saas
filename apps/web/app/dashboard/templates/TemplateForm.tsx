@@ -102,7 +102,7 @@ export default function TemplateForm({ mode, templateId, initial, sampleContact,
                 key={key}
                 type="button"
                 onClick={() => insertVariable(key)}
-                style={{ fontSize: 12, padding: "3px 8px", marginRight: 6, marginBottom: 6, borderRadius: 999, border: "1px solid #ddd", background: "#f7f7f8", cursor: "pointer" }}
+                style={{ fontSize: 12, padding: "3px 8px", marginRight: 6, marginBottom: 6, borderRadius: 999, border: "1px solid #ddd", background: "#f7f7f8", color: "#333", cursor: "pointer" }}
               >
                 {"{{" + key + "}}"}
               </button>

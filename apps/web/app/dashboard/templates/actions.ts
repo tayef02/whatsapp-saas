@@ -13,21 +13,21 @@ async function getWorkspaceId(supabase: Awaited<ReturnType<typeof createClient>>
   return data?.workspace_id as string | undefined;
 }
 
-// path এ extension রাখা হয়নি (upsert দিয়ে একই path রিইউজ হয়, তাই টাইপ বদলালেও পুরনো
-// ফাইল এতিম হয়ে থাকে না)
+// bucket private, তাই এখানে কোনো URL রিটার্ন হয় না — শুধু storage path।
+// মেসেজ পাঠানোর সময় (মডিউল ৫) worker getSignedTemplateMediaUrl() দিয়ে অল্প সময়ের
+// URL বানিয়ে নেবে। ফাইলের নাম random (templateId না) — path অনুমান করা কঠিন করার জন্য।
 async function uploadMediaIfProvided(
   admin: ReturnType<typeof createAdminClient>,
   workspaceId: string,
-  templateId: string,
   file: File | null
-): Promise<{ mediaUrl: string | null; mediaType: "image" | "document" | null; error: string | null }> {
+): Promise<{ mediaPath: string | null; mediaType: "image" | "document" | null; error: string | null }> {
   if (!file || file.size === 0) {
-    return { mediaUrl: null, mediaType: null, error: null };
+    return { mediaPath: null, mediaType: null, error: null };
   }
 
   if (file.size > MAX_TEMPLATE_MEDIA_BYTES) {
     return {
-      mediaUrl: null,
+      mediaPath: null,
       mediaType: null,
       error: `ফাইল সাইজ সর্বোচ্চ ${MAX_TEMPLATE_MEDIA_BYTES / (1024 * 1024)}MB হতে পারবে`,
     };
@@ -36,23 +36,26 @@ async function uploadMediaIfProvided(
   const isImage = file.type.startsWith("image/");
   const isPdf = file.type === "application/pdf";
   if (!isImage && !isPdf) {
-    return { mediaUrl: null, mediaType: null, error: "শুধু ছবি বা PDF আপলোড করা যাবে" };
+    return { mediaPath: null, mediaType: null, error: "শুধু ছবি বা PDF আপলোড করা যাবে" };
   }
 
-  const path = `${workspaceId}/${templateId}`;
+  const path = `${workspaceId}/${randomUUID()}`;
   const buffer = await file.arrayBuffer();
 
   const { error: uploadError } = await admin.storage
     .from(TEMPLATE_MEDIA_BUCKET)
-    .upload(path, buffer, { contentType: file.type, upsert: true });
+    .upload(path, buffer, { contentType: file.type });
 
   if (uploadError) {
-    return { mediaUrl: null, mediaType: null, error: uploadError.message };
+    return { mediaPath: null, mediaType: null, error: uploadError.message };
   }
 
-  const { data: pub } = admin.storage.from(TEMPLATE_MEDIA_BUCKET).getPublicUrl(path);
+  return { mediaPath: path, mediaType: isImage ? "image" : "document", error: null };
+}
 
-  return { mediaUrl: pub.publicUrl, mediaType: isImage ? "image" : "document", error: null };
+async function deleteMediaIfExists(admin: ReturnType<typeof createAdminClient>, path: string | null) {
+  if (!path) return;
+  await admin.storage.from(TEMPLATE_MEDIA_BUCKET).remove([path]);
 }
 
 export async function createTemplate(formData: FormData) {
@@ -71,25 +74,27 @@ export async function createTemplate(formData: FormData) {
   if (braceError) return { error: braceError };
 
   const admin = createAdminClient();
-  const id = randomUUID();
 
-  const media = await uploadMediaIfProvided(admin, workspaceId, id, file);
+  const media = await uploadMediaIfProvided(admin, workspaceId, file);
   if (media.error) return { error: media.error };
 
-  const { error } = await admin.from("templates").insert({
-    id,
-    workspace_id: workspaceId,
-    name,
-    content,
-    category,
-    media_url: media.mediaUrl,
-    media_type: media.mediaType,
-  });
+  const { data: inserted, error } = await admin
+    .from("templates")
+    .insert({
+      workspace_id: workspaceId,
+      name,
+      content,
+      category,
+      media_url: media.mediaPath,
+      media_type: media.mediaType,
+    })
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
 
   revalidatePath("/dashboard/templates");
-  return { error: null, id };
+  return { error: null, id: inserted.id as string };
 }
 
 export async function updateTemplate(id: string, formData: FormData) {
@@ -108,12 +113,18 @@ export async function updateTemplate(id: string, formData: FormData) {
   if (braceError) return { error: braceError };
 
   const admin = createAdminClient();
-  const media = await uploadMediaIfProvided(admin, workspaceId, id, file);
+
+  const media = await uploadMediaIfProvided(admin, workspaceId, file);
   if (media.error) return { error: media.error };
 
   const update: Record<string, unknown> = { name, content, category };
-  if (media.mediaUrl) {
-    update.media_url = media.mediaUrl;
+
+  if (media.mediaPath) {
+    // নতুন ফাইল এসেছে — পুরনোটা মুছে ফেলা হবে যাতে storage তে এতিম ফাইল জমে না থাকে
+    const { data: existing } = await supabase.from("templates").select("media_url").eq("id", id).maybeSingle();
+    await deleteMediaIfExists(admin, existing?.media_url ?? null);
+
+    update.media_url = media.mediaPath;
     update.media_type = media.mediaType;
   }
 
@@ -126,8 +137,15 @@ export async function updateTemplate(id: string, formData: FormData) {
 
 export async function deleteTemplate(id: string) {
   const supabase = await createClient();
+
+  const { data: existing } = await supabase.from("templates").select("media_url").eq("id", id).maybeSingle();
+
   const { error } = await supabase.from("templates").delete().eq("id", id);
   if (error) return { error: error.message };
+
+  if (existing?.media_url) {
+    await deleteMediaIfExists(createAdminClient(), existing.media_url);
+  }
 
   revalidatePath("/dashboard/templates");
   return { error: null };
