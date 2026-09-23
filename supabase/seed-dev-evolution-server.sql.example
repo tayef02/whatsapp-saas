@@ -1,0 +1,6 @@
+-- কপি করে supabase/seed-dev-evolution-server.sql বানান, api_key টা
+-- evolution/.env এর AUTHENTICATION_API_KEY এর সাথে মিলিয়ে বসান, তারপর Supabase SQL Editor এ Run করুন।
+-- এটা schema migration না, শুধু লোকাল ডেভেলপমেন্ট সার্ভার রেজিস্টার করার জন্য।
+
+insert into public.evolution_servers (name, api_url, api_key, capacity)
+values ('local-dev', 'http://localhost:8080', 'REPLACE_WITH_EVOLUTION_ENV_API_KEY', 50);

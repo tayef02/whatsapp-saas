@@ -1,8 +1,12 @@
+import Link from "next/link";
+
 export default function DashboardHome() {
   return (
     <div>
       <h1>ড্যাশবোর্ড</h1>
-      <p>মডিউল ১ (Auth + Workspace) কাজ করছে। পরের মডিউলে এখানে নাম্বার কানেক্ট যোগ হবে।</p>
+      <p>
+        <Link href="/dashboard/numbers">WhatsApp নাম্বার ম্যানেজ করুন →</Link>
+      </p>
     </div>
   );
 }

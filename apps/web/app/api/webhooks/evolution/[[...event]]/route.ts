@@ -1,0 +1,20 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getWebhookQueue } from "@/lib/queue/webhook-queue";
+
+// Evolution API ইভেন্ট নাম অনুযায়ী URL এর শেষে subpath যোগ করে পাঠায়
+// (যেমন /api/webhooks/evolution/qrcode-updated, /connection-update), তাই
+// [[...event]] দিয়ে যেকোনো subpath এই একই হ্যান্ডলারে আসবে। ইভেন্টের নাম
+// body.event ফিল্ড থেকেই পড়া হয়, URL থেকে না — তাই subpath নিয়ে চিন্তা করতে হয় না।
+//
+// এখানে কোনো ভারী কাজ হবে না — শুধু queue তে push করে সাথে সাথে 200 দেওয়া হয়,
+// আসল প্রসেসিং apps/worker করে (নিয়ম অনুযায়ী: ওয়েবহুক কখনো ব্লক করবে না)
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+
+  await getWebhookQueue().add("event", body, {
+    removeOnComplete: 1000,
+    removeOnFail: 1000,
+  });
+
+  return NextResponse.json({ status: "ok" });
+}
