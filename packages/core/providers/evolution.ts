@@ -33,7 +33,7 @@ export class EvolutionProvider implements WhatsAppProvider {
       throw new Error(`Evolution createInstance ব্যর্থ (${res.status}): ${body}`);
     }
 
-    const data = await res.json();
+    const data = (await res.json()) as any;
     return {
       instanceName,
       qrCodeBase64: data?.qrcode?.base64 ?? null,
@@ -49,7 +49,7 @@ export class EvolutionProvider implements WhatsAppProvider {
       return "offline";
     }
 
-    const data = await res.json();
+    const data = (await res.json()) as any;
     const state = data?.instance?.state as string | undefined;
 
     if (state === "open") return "online";
@@ -76,7 +76,37 @@ export class EvolutionProvider implements WhatsAppProvider {
       throw new Error(`Evolution sendMessage ব্যর্থ (${res.status}): ${body}`);
     }
 
-    const data = await res.json();
+    const data = (await res.json()) as any;
+    return { messageId: data?.key?.id ?? "" };
+  }
+
+  async sendMedia(
+    instanceName: string,
+    to: string,
+    mediaUrl: string,
+    mediaType: "image" | "document",
+    mimeType: string,
+    caption: string
+  ) {
+    const res = await fetch(`${this.server.apiUrl}/message/sendMedia/${instanceName}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        number: to,
+        mediatype: mediaType,
+        mimetype: mimeType,
+        media: mediaUrl,
+        caption,
+        fileName: mediaType === "document" ? "attachment.pdf" : undefined,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution sendMedia ব্যর্থ (${res.status}): ${body}`);
+    }
+
+    const data = (await res.json()) as any;
     return { messageId: data?.key?.id ?? "" };
   }
 }

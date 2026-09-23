@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "../(auth)/actions";
+import NotificationBanner from "./NotificationBanner";
 
 export default async function DashboardLayout({
   children,
@@ -27,6 +28,13 @@ export default async function DashboardLayout({
     redirect("/onboarding");
   }
 
+  const { data: notifications } = await supabase
+    .from("notifications")
+    .select("id, title, body")
+    .eq("is_read", false)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
   return (
     <div>
       <header
@@ -46,6 +54,7 @@ export default async function DashboardLayout({
           </button>
         </form>
       </header>
+      <NotificationBanner notifications={notifications ?? []} />
       <main style={{ padding: 24 }}>{children}</main>
     </div>
   );

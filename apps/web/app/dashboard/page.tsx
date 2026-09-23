@@ -13,6 +13,12 @@ export default function DashboardHome() {
       <p>
         <Link href="/dashboard/templates">টেমপ্লেট ম্যানেজ করুন →</Link>
       </p>
+      <p>
+        <Link href="/dashboard/campaigns">ক্যাম্পেইন ম্যানেজ করুন →</Link>
+      </p>
+      <p>
+        <Link href="/dashboard/settings">সেটিংস →</Link>
+      </p>
     </div>
   );
 }

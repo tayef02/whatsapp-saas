@@ -11,11 +11,15 @@ try {
 }
 
 import http from "node:http";
-import { Worker } from "bullmq";
+import { Queue, Worker } from "bullmq";
 import { WEBHOOK_QUEUE_NAME } from "./queues/webhook-queue";
 import { processWebhookEvent } from "./processors/process-webhook";
 import { CONTACT_IMPORT_QUEUE_NAME } from "./queues/contact-import-queue";
 import { processContactImport } from "./processors/process-contact-import";
+import { CAMPAIGN_SCHEDULER_QUEUE_NAME, CAMPAIGN_SEND_QUEUE_NAME } from "./queues/campaign-queues";
+import { runCampaignSchedulerTick } from "./processors/campaign-scheduler";
+import { processSendCampaignMessage } from "./processors/send-campaign-message";
+import { SCHEDULER_TICK_MS } from "@whatsapp-saas/core/campaigns/constants";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 
@@ -45,7 +49,40 @@ contactImportWorker.on("failed", (job, err) => {
   console.error(`[contact-import-worker] job ${job?.id} ব্যর্থ:`, err.message);
 });
 
-console.log("worker চালু হয়েছে, webhook আর contact-import queue শুনছে...");
+// ক্যাম্পেইন পাঠানোর আসল job (একটা একটা মেসেজ)
+const campaignSendWorker = new Worker(
+  CAMPAIGN_SEND_QUEUE_NAME,
+  async (job) => {
+    await processSendCampaignMessage(job.data);
+  },
+  { connection }
+);
+
+campaignSendWorker.on("failed", (job, err) => {
+  console.error(`[campaign-send-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
+// প্রতি মিনিটে scheduler tick — repeatable job। একাধিক worker চললেও BullMQ
+// নিশ্চিত করে repeatable job একবারই চলবে প্রতি টিক এ।
+// (tsx watch mode এ top-level await সাপোর্ট করে না, তাই IIFE দিয়ে)
+const schedulerQueue = new Queue(CAMPAIGN_SCHEDULER_QUEUE_NAME, { connection });
+schedulerQueue
+  .add("tick", {}, { repeat: { every: SCHEDULER_TICK_MS }, removeOnComplete: true })
+  .catch((err) => console.error("[campaign-scheduler] repeatable job রেজিস্টার করা যায়নি:", err.message));
+
+const campaignSchedulerWorker = new Worker(
+  CAMPAIGN_SCHEDULER_QUEUE_NAME,
+  async () => {
+    await runCampaignSchedulerTick();
+  },
+  { connection }
+);
+
+campaignSchedulerWorker.on("failed", (job, err) => {
+  console.error(`[campaign-scheduler] tick ব্যর্থ:`, err.message);
+});
+
+console.log("worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send queue শুনছে...");
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য
 const healthServer = http.createServer((req, res) => {

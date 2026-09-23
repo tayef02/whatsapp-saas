@@ -13,4 +13,12 @@ export interface WhatsAppProvider {
   getStatus(instanceName: string): Promise<ConnectionStatus>;
   disconnect(instanceName: string): Promise<void>;
   sendMessage(instanceName: string, to: string, text: string): Promise<{ messageId: string }>;
+  sendMedia(
+    instanceName: string,
+    to: string,
+    mediaUrl: string,
+    mediaType: "image" | "document",
+    mimeType: string,
+    caption: string
+  ): Promise<{ messageId: string }>;
 }
