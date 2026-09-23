@@ -7,6 +7,9 @@ export default function DashboardHome() {
       <p>
         <Link href="/dashboard/numbers">WhatsApp নাম্বার ম্যানেজ করুন →</Link>
       </p>
+      <p>
+        <Link href="/dashboard/contacts">কন্টাক্ট ম্যানেজ করুন →</Link>
+      </p>
     </div>
   );
 }

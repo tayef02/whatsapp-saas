@@ -14,6 +14,8 @@ import http from "node:http";
 import { Worker } from "bullmq";
 import { WEBHOOK_QUEUE_NAME } from "./queues/webhook-queue";
 import { processWebhookEvent } from "./processors/process-webhook";
+import { CONTACT_IMPORT_QUEUE_NAME } from "./queues/contact-import-queue";
+import { processContactImport } from "./processors/process-contact-import";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 
@@ -30,7 +32,20 @@ webhookWorker.on("failed", (job, err) => {
   console.error(`[webhook-worker] job ${job?.id} ব্যর্থ:`, err.message);
 });
 
-console.log("worker চালু হয়েছে, webhook queue শুনছে...");
+// বড় কন্টাক্ট ফাইল ব্যাকগ্রাউন্ডে প্রসেস করার worker
+const contactImportWorker = new Worker(
+  CONTACT_IMPORT_QUEUE_NAME,
+  async (job) => {
+    await processContactImport(job.data);
+  },
+  { connection }
+);
+
+contactImportWorker.on("failed", (job, err) => {
+  console.error(`[contact-import-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
+console.log("worker চালু হয়েছে, webhook আর contact-import queue শুনছে...");
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য
 const healthServer = http.createServer((req, res) => {

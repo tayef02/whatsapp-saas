@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@whatsapp-saas/core"],
   // bullmq সার্ভার-অনলি প্যাকেজ, bundling ছাড়া সরাসরি Node এ require হবে
   serverExternalPackages: ["bullmq"],
+  // কন্টাক্ট CSV/Excel ফাইল আপলোডের জন্য ডিফল্ট ১MB limit যথেষ্ট না
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "20mb",
+    },
+  },
 };
 
 export default nextConfig;
