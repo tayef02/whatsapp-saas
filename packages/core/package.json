@@ -1,0 +1,7 @@
+{
+  "name": "@whatsapp-saas/core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts"
+}

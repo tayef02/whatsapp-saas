@@ -1,0 +1,66 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f7f7f8;
+  color: #1a1a1a;
+}
+
+input, button {
+  font: inherit;
+}
+
+.auth-card {
+  max-width: 360px;
+  margin: 80px auto;
+  padding: 32px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.auth-card h1 {
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+
+.auth-card label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #555;
+}
+
+.auth-card input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.auth-card button {
+  width: 100%;
+  padding: 10px 12px;
+  background: #16a34a;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.auth-card .error {
+  color: #dc2626;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.auth-card .switch {
+  margin-top: 16px;
+  font-size: 13px;
+  text-align: center;
+}

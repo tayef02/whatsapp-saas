@@ -1,0 +1,39 @@
+# secrets — কখনো commit হবে না
+.env
+.env.local
+.env.*.local
+apps/web/.env
+apps/web/.env.local
+apps/worker/.env
+apps/worker/.env.local
+
+# dependencies
+node_modules/
+**/node_modules/
+
+# build output
+.next/
+**/.next/
+dist/
+**/dist/
+build/
+
+# WhatsApp session ডাটা (persistent volume, git এ যাবে না)
+evolution/instances/
+evolution/store/
+*.session
+
+# logs
+*.log
+npm-debug.log*
+logs/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# misc
+.turbo/
+coverage/
