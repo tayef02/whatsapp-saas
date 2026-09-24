@@ -17,7 +17,7 @@ export class EvolutionProvider implements WhatsAppProvider {
     };
   }
 
-  async createInstance(instanceName: string): Promise<CreateInstanceResult> {
+  async createInstance(instanceName: string, webhookUrl?: string): Promise<CreateInstanceResult> {
     const res = await fetch(`${this.server.apiUrl}/instance/create`, {
       method: "POST",
       headers: this.headers(),
@@ -25,6 +25,16 @@ export class EvolutionProvider implements WhatsAppProvider {
         instanceName,
         integration: "WHATSAPP-BAILEYS",
         qrcode: true,
+        // instance-লেভেল webhook — শেয়ার্ড Evolution সার্ভারে অন্য instance এর গ্লোবাল
+        // webhook স্পর্শ না করেই শুধু এই instance এর ইভেন্ট আমাদের অ্যাপে আসবে
+        ...(webhookUrl && {
+          webhook: {
+            url: webhookUrl,
+            byEvents: false,
+            base64: true,
+            events: ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"],
+          },
+        }),
       }),
     });
 

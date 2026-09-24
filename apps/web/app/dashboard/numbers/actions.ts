@@ -64,9 +64,13 @@ export async function createNumber(formData: FormData) {
     apiKey: (server as { api_key: string }).api_key,
   });
 
+  // instance-লেভেল webhook — APP_URL সেট না থাকলে (যেমন কোনো পুরনো .env) undefined যাবে,
+  // তখন Evolution তার নিজের গ্লোবাল webhook config ব্যবহার করবে
+  const webhookUrl = process.env.APP_URL ? `${process.env.APP_URL}/api/webhooks/evolution` : undefined;
+
   let qrCodeBase64: string | null;
   try {
-    const result = await provider.createInstance(instanceName);
+    const result = await provider.createInstance(instanceName, webhookUrl);
     qrCodeBase64 = result.qrCodeBase64;
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Evolution API তে instance বানানো যায়নি" };

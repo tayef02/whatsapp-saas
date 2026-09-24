@@ -1,0 +1,82 @@
+# VPS প্রোডাকশন ডিপ্লয়মেন্ট — শুধু web, worker, redis।
+# Evolution API আলাদা, আগে থেকে VPS এ চলছে (এখানে টাচ করা হয়নি)।
+# Traefik (host network, docker provider) দিয়ে রাউটিং — এই কম্পোজে কোনো পোর্ট বাইরে খোলা হয় না।
+#
+# চালানোর নিয়ম (DEPLOY.md এ বিস্তারিত):
+#   docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: wa-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - wa-redis-data:/data
+    mem_limit: 200m
+    restart: unless-stopped
+    networks:
+      - wa-net
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: wa-web
+    env_file:
+      - .env.production
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    # Evolution API আলাদা কন্টেইনারে, host এর 8080 পোর্টে — host.docker.internal দিয়ে পৌঁছাবে
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+    mem_limit: 512m
+    restart: unless-stopped
+    networks:
+      - wa-net
+    healthcheck:
+      # localhost না, 127.0.0.1 — কারণ Next.js HOSTNAME=0.0.0.0 দিয়ে শুধু IPv4 তে bind করে,
+      # কিন্তু "localhost" কন্টেইনারের ভিতরে আগে ::1 (IPv6) এ resolve হয়ে connection refused দেয়
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wa-web.rule=Host(`wa.srv1980546.hstgr.cloud`)
+      - traefik.http.routers.wa-web.entrypoints=websecure
+      - traefik.http.routers.wa-web.tls.certresolver=letsencrypt
+      - traefik.http.services.wa-web.loadbalancer.server.port=3000
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: wa-worker
+    env_file:
+      - .env.production
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+    mem_limit: 384m
+    restart: unless-stopped
+    networks:
+      - wa-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  wa-net:
+    driver: bridge
+
+volumes:
+  wa-redis-data:
