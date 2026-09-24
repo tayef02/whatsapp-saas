@@ -16,6 +16,16 @@ function parseTags(input: string): string[] {
     .filter(Boolean);
 }
 
+function parseCustomFields(input: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(input || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // ফাঁকা/ভুল হলে খালি অবজেক্ট
+  }
+  return {};
+}
+
 export async function createContact(formData: FormData) {
   const supabase = await createClient();
   const workspaceId = await getWorkspaceId(supabase);
@@ -26,12 +36,14 @@ export async function createContact(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim() || null;
   const tags = parseTags(String(formData.get("tags") ?? ""));
+  const customFields = parseCustomFields(String(formData.get("customFields") ?? ""));
 
   const { error } = await supabase.from("contacts").insert({
     workspace_id: workspaceId,
     phone,
     name,
     tags,
+    custom_fields: customFields,
     source: "manual",
   });
 
@@ -49,8 +61,9 @@ export async function updateContact(id: string, formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim() || null;
   const tags = parseTags(String(formData.get("tags") ?? ""));
+  const customFields = parseCustomFields(String(formData.get("customFields") ?? ""));
 
-  const { error } = await supabase.from("contacts").update({ name, tags }).eq("id", id);
+  const { error } = await supabase.from("contacts").update({ name, tags, custom_fields: customFields }).eq("id", id);
 
   if (error) return { error: error.message };
 
@@ -61,6 +74,16 @@ export async function updateContact(id: string, formData: FormData) {
 export async function deleteContact(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("contacts").delete().eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/contacts");
+  return { error: null };
+}
+
+// opt-out করা কন্টাক্টকে ইউজার হাতে আবার চালু করতে পারবে
+export async function reactivateContact(id: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contacts").update({ opted_out: false }).eq("id", id);
   if (error) return { error: error.message };
 
   revalidatePath("/dashboard/contacts");

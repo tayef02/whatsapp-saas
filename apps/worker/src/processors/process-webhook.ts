@@ -1,6 +1,6 @@
 import { getSupabase } from "../lib/supabase";
 import { pauseCampaignsForNumber } from "../lib/campaign-safety";
-import { isStopKeyword } from "@whatsapp-saas/core/campaigns/stop-keywords";
+import { isStopKeyword, isStartKeyword } from "@whatsapp-saas/core/campaigns/stop-keywords";
 
 type EvolutionWebhookBody = {
   event?: string;
@@ -109,7 +109,7 @@ async function handleMessageStatusUpdate(data: Record<string, unknown>) {
   await supabase.rpc("apply_message_status", { p_message_id: message.id, p_new_status: newStatus });
 }
 
-// ইনকামিং মেসেজ — শুধু STOP/বন্ধ ডিটেকশনের জন্য (মডিউল ৫ এর সেফটি নিয়ম)
+// ইনকামিং মেসেজ — STOP/বন্ধ (opt-out) আর START/চালু (আবার opt-in) ডিটেকশনের জন্য
 async function handleIncomingMessage(instanceName: string, data: Record<string, unknown>) {
   const key = data.key as { remoteJid?: string; fromMe?: boolean } | undefined;
   if (!key || key.fromMe) return; // নিজের পাঠানো মেসেজের echo, স্কিপ
@@ -119,7 +119,9 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
     (data.message as { extendedTextMessage?: { text?: string } } | undefined)?.extendedTextMessage?.text ??
     "";
 
-  if (!isStopKeyword(text)) return;
+  const isStop = isStopKeyword(text);
+  const isStart = isStartKeyword(text);
+  if (!isStop && !isStart) return;
 
   const phone = phoneFromJid(key.remoteJid);
   if (!phone) return;
@@ -135,7 +137,7 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
 
   await supabase
     .from("contacts")
-    .update({ opted_out: true })
+    .update({ opted_out: isStop })
     .eq("workspace_id", number.workspace_id)
     .eq("phone", phone);
 }

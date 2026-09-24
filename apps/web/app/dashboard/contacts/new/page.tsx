@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createContact } from "../actions";
+import CustomFieldsEditor from "../CustomFieldsEditor";
 
 export default function NewContactPage() {
   const router = useRouter();
@@ -35,6 +36,8 @@ export default function NewContactPage() {
 
         <label htmlFor="tags">ট্যাগ (কমা দিয়ে আলাদা করুন)</label>
         <input id="tags" name="tags" type="text" placeholder="যেমন: ভিআইপি, ঢাকা" />
+
+        <CustomFieldsEditor initial={{}} />
 
         <button type="submit" disabled={loading}>
           {loading ? "যোগ হচ্ছে..." : "যোগ করুন"}

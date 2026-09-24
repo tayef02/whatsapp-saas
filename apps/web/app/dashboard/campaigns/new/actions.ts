@@ -18,10 +18,21 @@ export async function createCampaign(formData: FormData) {
   const numberId = String(formData.get("numberId") ?? "");
   const audienceTag = String(formData.get("audienceTag") ?? "").trim() || null;
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
+  const minDelay = Number(formData.get("minDelay"));
+  const maxDelay = Number(formData.get("maxDelay"));
 
   if (!name) return { error: "ক্যাম্পেইনের নাম দিন" };
   if (!templateId) return { error: "টেমপ্লেট বাছাই করুন" };
   if (!numberId) return { error: "নাম্বার বাছাই করুন" };
+
+  if (Number.isInteger(minDelay) && Number.isInteger(maxDelay) && minDelay > 0 && maxDelay >= minDelay) {
+    // ডিলে নাম্বার-ভিত্তিক (ক্যাম্পেইন-ভিত্তিক না) — তাই এখানে বদলালে এই নাম্বারের
+    // সব ক্যাম্পেইনেই প্রযোজ্য হবে
+    await supabase
+      .from("whatsapp_numbers")
+      .update({ min_delay_seconds: minDelay, max_delay_seconds: maxDelay })
+      .eq("id", numberId);
+  }
 
   // মডিউল ৭ এ এখানে workspace এর monthly_message_limit এর সাথে audience সংখ্যা
   // মিলিয়ে চেক করা হবে (এখন limit সেট করা নেই, তাই এই ধাপ স্কিপ)
@@ -71,4 +82,15 @@ export async function createCampaign(formData: FormData) {
   }
 
   return { error: null, id: campaign.id as string };
+}
+
+// অডিয়েন্স বক্সে ট্যাগ লেখার সাথে সাথে কতজন পাবে দেখানোর জন্য (opt-out বাদে)
+export async function getAudienceCount(tag: string | null): Promise<number> {
+  const supabase = await createClient();
+
+  let query = supabase.from("contacts").select("id", { count: "exact", head: true }).eq("opted_out", false);
+  if (tag) query = query.contains("tags", [tag]);
+
+  const { count } = await query;
+  return count ?? 0;
 }
