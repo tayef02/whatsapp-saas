@@ -20,6 +20,10 @@ import { CAMPAIGN_SCHEDULER_QUEUE_NAME, CAMPAIGN_SEND_QUEUE_NAME } from "./queue
 import { runCampaignSchedulerTick } from "./processors/campaign-scheduler";
 import { processSendCampaignMessage } from "./processors/send-campaign-message";
 import { SCHEDULER_TICK_MS } from "@whatsapp-saas/core/campaigns/constants";
+import { SUBSCRIPTION_MAINTENANCE_QUEUE_NAME } from "./queues/subscription-maintenance-queue";
+import { runSubscriptionMaintenanceTick } from "./processors/subscription-maintenance";
+
+const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 
@@ -82,7 +86,27 @@ campaignSchedulerWorker.on("failed", (job, err) => {
   console.error(`[campaign-scheduler] tick ব্যর্থ:`, err.message);
 });
 
-console.log("worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send queue শুনছে...");
+// দিনে একবার: মেয়াদ শেষ হওয়া workspace আর মেয়াদ-শেষের-কাছাকাছি নোটিফিকেশন
+const subscriptionQueue = new Queue(SUBSCRIPTION_MAINTENANCE_QUEUE_NAME, { connection });
+subscriptionQueue
+  .add("tick", {}, { repeat: { every: SUBSCRIPTION_MAINTENANCE_TICK_MS }, removeOnComplete: true })
+  .catch((err) => console.error("[subscription-maintenance] repeatable job রেজিস্টার করা যায়নি:", err.message));
+
+const subscriptionWorker = new Worker(
+  SUBSCRIPTION_MAINTENANCE_QUEUE_NAME,
+  async () => {
+    await runSubscriptionMaintenanceTick();
+  },
+  { connection }
+);
+
+subscriptionWorker.on("failed", (job, err) => {
+  console.error(`[subscription-maintenance] tick ব্যর্থ:`, err.message);
+});
+
+console.log(
+  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance queue শুনছে..."
+);
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য
 const healthServer = http.createServer((req, res) => {

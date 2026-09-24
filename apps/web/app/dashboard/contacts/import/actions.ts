@@ -11,6 +11,7 @@ import {
   MAX_IMPORT_FILE_SIZE_BYTES,
   CONTACT_IMPORTS_BUCKET,
 } from "@whatsapp-saas/core/contacts/constants";
+import { getWorkspacePlanInfo, getContactCount } from "@/lib/subscriptions/limits";
 
 type StartImportResult =
   | { error: string; done?: undefined; importJobId?: undefined }
@@ -56,6 +57,18 @@ export async function startImport(formData: FormData): Promise<StartImportResult
 
   if (rows.length === 0) {
     return { error: "ফাইলে কোনো ডাটা পাওয়া যায়নি" };
+  }
+
+  // ডুপ্লিকেট/ইনভ্যালিড বাদ দেওয়ার আগেই, সবচেয়ে বেশি ক্ষেত্রে (worst case) কতজন যোগ
+  // হতে পারে ধরে নিয়ে চেক — নিরাপদ দিকে থেকে হিসাব করা হলো
+  const { plan } = await getWorkspacePlanInfo(supabase, membership.workspace_id);
+  if (plan) {
+    const current = await getContactCount(supabase, membership.workspace_id);
+    if (current + rows.length > plan.contact_limit) {
+      return {
+        error: `আপনার প্ল্যানে সর্বোচ্চ ${plan.contact_limit} জন কন্টাক্ট রাখা যায় (এখন ${current} জন আছে) — এত বড় ফাইল ইম্পোর্ট করলে লিমিট পার হয়ে যাবে`,
+      };
+    }
   }
 
   const admin = createAdminClient();

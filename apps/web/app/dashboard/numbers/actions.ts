@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { EvolutionProvider } from "@whatsapp-saas/core/providers/evolution";
+import { getWorkspacePlanInfo, getNumberCount } from "@/lib/subscriptions/limits";
 
 // নতুন WhatsApp নাম্বার কানেক্ট শুরু করে:
 // ১. ইউজারের workspace বের করা (RLS-স্কোপড ক্লায়েন্ট দিয়ে, তাই অন্য কারো workspace পাওয়া যাবে না)
@@ -33,6 +34,14 @@ export async function createNumber(formData: FormData) {
 
   if (!membership) {
     return { error: "workspace পাওয়া যায়নি" };
+  }
+
+  const { plan } = await getWorkspacePlanInfo(supabase, membership.workspace_id);
+  if (plan) {
+    const current = await getNumberCount(supabase, membership.workspace_id);
+    if (current >= plan.max_numbers) {
+      return { error: `আপনার প্ল্যানে সর্বোচ্চ ${plan.max_numbers}টা নাম্বার কানেক্ট করা যায় — প্ল্যান আপগ্রেড করুন` };
+    }
   }
 
   const admin = createAdminClient();

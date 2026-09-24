@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getWorkspacePlanInfo, isSubscriptionActive } from "@/lib/subscriptions/limits";
 
 async function getWorkspaceId(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data } = await supabase.from("workspace_members").select("workspace_id").limit(1).maybeSingle();
@@ -34,8 +35,14 @@ export async function createCampaign(formData: FormData) {
       .eq("id", numberId);
   }
 
-  // মডিউল ৭ এ এখানে workspace এর monthly_message_limit এর সাথে audience সংখ্যা
-  // মিলিয়ে চেক করা হবে (এখন limit সেট করা নেই, তাই এই ধাপ স্কিপ)
+  const { subscriptionStatus, subscriptionExpiresAt, messagesUsedThisCycle, plan } = await getWorkspacePlanInfo(
+    supabase,
+    workspaceId
+  );
+
+  if (!plan || !isSubscriptionActive(subscriptionStatus, subscriptionExpiresAt)) {
+    return { error: "আপনার সাবস্ক্রিপশনের মেয়াদ শেষ — নতুন ক্যাম্পেইন পাঠাতে প্ল্যান রিনিউ করুন" };
+  }
 
   let query = supabase.from("contacts").select("id, phone", { count: "exact" }).eq("opted_out", false);
   if (audienceTag) query = query.contains("tags", [audienceTag]);
@@ -43,6 +50,13 @@ export async function createCampaign(formData: FormData) {
 
   if (!contacts || contacts.length === 0) {
     return { error: "এই অডিয়েন্সে কোনো কন্টাক্ট নেই" };
+  }
+
+  const remainingQuota = plan.monthly_message_limit - (messagesUsedThisCycle ?? 0);
+  if (contacts.length > remainingQuota) {
+    return {
+      error: `আপনার এই সাইকেলে বাকি আছে ${Math.max(0, remainingQuota)} মেসেজ, কিন্তু অডিয়েন্স ${contacts.length} জন — প্ল্যান আপগ্রেড করুন বা অডিয়েন্স ছোট করুন`,
+    };
   }
 
   const scheduledAt = scheduledAtRaw ? new Date(scheduledAtRaw).toISOString() : null;

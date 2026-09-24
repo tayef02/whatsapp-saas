@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeBangladeshiPhone } from "@whatsapp-saas/core/utils/phone";
+import { getWorkspacePlanInfo, getContactCount } from "@/lib/subscriptions/limits";
 
 async function getWorkspaceId(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: membership } = await supabase.from("workspace_members").select("workspace_id").limit(1).maybeSingle();
@@ -33,6 +34,14 @@ export async function createContact(formData: FormData) {
 
   const phone = normalizeBangladeshiPhone(String(formData.get("phone") ?? ""));
   if (!phone) return { error: "নাম্বারটা সঠিক না (যেমন: 01712345678)" };
+
+  const { plan } = await getWorkspacePlanInfo(supabase, workspaceId);
+  if (plan) {
+    const current = await getContactCount(supabase, workspaceId);
+    if (current >= plan.contact_limit) {
+      return { error: `আপনার প্ল্যানে সর্বোচ্চ ${plan.contact_limit} জন কন্টাক্ট রাখা যায় — প্ল্যান আপগ্রেড করুন` };
+    }
+  }
 
   const name = String(formData.get("name") ?? "").trim() || null;
   const tags = parseTags(String(formData.get("tags") ?? ""));
