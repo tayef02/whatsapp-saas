@@ -15,5 +15,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "পাওয়া যায়নি" }, { status: 404 });
   }
 
-  return NextResponse.json(data);
+  const { data: failedMessages } = await supabase
+    .from("messages")
+    .select("id, phone, failed_reason, retry_count, contacts(name)")
+    .eq("campaign_id", id)
+    .eq("status", "failed")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  return NextResponse.json({ ...data, failedMessages: failedMessages ?? [] });
 }

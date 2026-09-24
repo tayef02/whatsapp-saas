@@ -12,12 +12,26 @@ type Stats = {
   unknown_count: number;
 };
 
+type FailedMessage = {
+  id: string;
+  phone: string;
+  failed_reason: string | null;
+  retry_count: number;
+  contacts: { name: string | null } | { name: string | null }[] | null;
+};
+
 type CampaignData = {
   id: string;
   status: string;
   paused_reason: string | null;
   campaign_stats: Stats | Stats[] | null;
+  failedMessages?: FailedMessage[];
 };
+
+function contactName(c: FailedMessage["contacts"]): string {
+  const contact = Array.isArray(c) ? c[0] : c;
+  return contact?.name ?? "(নাম নেই)";
+}
 
 const statusLabel: Record<string, string> = {
   draft: "খসড়া",
@@ -111,6 +125,24 @@ export default function CampaignReport({ initial }: { initial: CampaignData }) {
           </button>
         )}
       </div>
+
+      {data.failedMessages && data.failedMessages.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h2 style={{ fontSize: 16, marginBottom: 8 }}>ব্যর্থ মেসেজের তালিকা</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.failedMessages.map((m) => (
+              <div
+                key={m.id}
+                style={{ background: "white", border: "1px solid #fecaca", borderRadius: 8, padding: 10, fontSize: 13 }}
+              >
+                <strong>{contactName(m.contacts)}</strong> · {m.phone}
+                {m.retry_count > 0 && <span style={{ color: "#666" }}> · {m.retry_count} বার চেষ্টা হয়েছে</span>}
+                <div style={{ color: "#dc2626", marginTop: 2 }}>{m.failed_reason ?? "কারণ জানা যায়নি"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
