@@ -97,8 +97,11 @@ export default function CampaignReport({ initial }: { initial: CampaignData }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
         <StatBox label="মোট" value={stats.total_recipients} />
         <StatBox label="পাঠানো হয়েছে" value={stats.sent_count} />
-        <StatBox label="ডেলিভার্ড" value={stats.delivered_count} />
-        <StatBox label="পড়া হয়েছে" value={stats.read_count} />
+        {/* Evolution/WhatsApp থেকে delivered/read ack সবসময় সব নাম্বারের জন্য আসে না
+            (WhatsApp-এর নতুন @lid আইডি ফরম্যাটে Baileys-এর পরিচিত সীমাবদ্ধতা) — তাই এই দুটো
+            best-effort, "পাঠানো হয়েছে" ই আসল/নির্ভরযোগ্য সংখ্যা */}
+        <StatBox label="ডেলিভার্ড" value={stats.delivered_count} note="সব ক্ষেত্রে পাওয়া যায় না" />
+        <StatBox label="পড়া হয়েছে" value={stats.read_count} note="সব ক্ষেত্রে পাওয়া যায় না" />
         <StatBox label="ব্যর্থ" value={stats.failed_count} color="#dc2626" />
         <StatBox label="অজানা" value={stats.unknown_count} color="#b45309" />
       </div>
@@ -147,11 +150,12 @@ export default function CampaignReport({ initial }: { initial: CampaignData }) {
   );
 }
 
-function StatBox({ label, value, color }: { label: string; value: number; color?: string }) {
+function StatBox({ label, value, color, note }: { label: string; value: number; color?: string; note?: string }) {
   return (
     <div style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 12, textAlign: "center" }}>
       <div style={{ fontSize: 22, fontWeight: 700, color: color ?? "#111" }}>{value}</div>
       <div style={{ fontSize: 12, color: "#666" }}>{label}</div>
+      {note && <div style={{ fontSize: 10, color: "#999", marginTop: 2 }}>({note})</div>}
     </div>
   );
 }
