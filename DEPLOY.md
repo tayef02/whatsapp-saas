@@ -218,13 +218,46 @@ docker compose --env-file .env.production -f docker-compose.production.yml up -d
 
 ## ব্যাকআপ
 
-- **বিজনেস ডাটা**: Supabase cloud এ থাকে, Supabase নিজেই দৈনিক ব্যাকআপ রাখে (Dashboard →
-  Database → Backups)। অতিরিক্ত নিরাপত্তার জন্য মাঝে মাঝে `supabase db dump` দিয়ে ম্যানুয়াল
-  ব্যাকআপও নিতে পারেন।
+- **বিজনেস ডাটা (Supabase)**: ফ্রি প্ল্যানে Supabase নিজে ব্যাকআপ রাখে না — তাই VPS নিজেই
+  প্রতিদিন রাত ৩টায় (Asia/Dhaka) `pg_dump` চালিয়ে `/root/backups` এ ৭ দিনের ব্যাকআপ রাখে
+  (cron দিয়ে সেটআপ করা, নিচে "ডাটাবেস ব্যাকআপ (cron)" দেখুন)।
 - **WhatsApp সেশন ডাটা**: VPS এর বিদ্যমান Evolution volume এ থাকে — এই ডিপ্লয়মেন্ট সেটা
   টাচ করে না, তাই আলাদা কিছু করার দরকার নেই।
 - **Redis**: শুধু queue এর সাময়িক job state রাখে, ব্যাকআপের দরকার নেই (মুছে গেলেও ব্যবসার
   কোনো ডাটা হারাবে না, শুধু চলমান job গুলো আবার শুরু থেকে schedule হবে)।
+
+### ডাটাবেস ব্যাকআপ (cron)
+
+`/root/backups/.dbpass` এ শুধু DB পাসওয়ার্ড (chmod 600), `/root/backups/backup.sh` এ script।
+Script এ পাসওয়ার্ড হার্ডকোড না করে ফাইল থেকে পড়ে। Supabase Dashboard → Settings → Database →
+Connect → "Session pooler" ট্যাব থেকে HOST/PORT/USER বসানো হয়েছে (transaction pooler না —
+সেটা pg_dump এর জন্য উপযুক্ত না, আর direct connection VPS এ IPv6 না থাকলে কাজ নাও করতে পারে)।
+
+`backup.sh`:
+```bash
+#!/bin/bash
+PW=$(cat /root/backups/.dbpass)
+docker run --rm -e PGPASSWORD=$PW postgres:15 pg_dump -h HOST -p PORT -U USER -d postgres > /root/backups/db_$(date +%F).sql
+find /root/backups -name "db_*.sql" -mtime +7 -delete
+```
+
+cron (রোজ রাত ৩টা, Asia/Dhaka):
+```
+CRON_TZ=Asia/Dhaka
+0 3 * * * /root/backups/backup.sh
+```
+
+### ব্যাকআপ থেকে রিস্টোর করা
+
+**সতর্কতা**: এটা টার্গেট ডাটাবেসে ডাটা বসিয়ে দেয় — লাইভ ডাটাবেসে সরাসরি না চালিয়ে, আগে
+Supabase এ একটা নতুন/খালি প্রজেক্ট বা লোকাল postgres এ টেস্ট করে দেখাই ভালো, যদি না সত্যিই
+বিপর্যয়কর পরিস্থিতি (ডাটা হারিয়ে গেছে, রিকভারি করাই লাগবে)।
+
+```bash
+PW=$(cat /root/backups/.dbpass)
+docker run --rm -e PGPASSWORD=$PW -v /root/backups:/backups postgres:15 psql -h HOST -p PORT -U USER -d postgres -f /backups/db_2026-09-25.sql
+```
+(`db_2026-09-25.sql` এর জায়গায় আসল ফাইলের নাম বসান — `ls /root/backups` দিয়ে দেখুন কী কী আছে)
 
 ---
 

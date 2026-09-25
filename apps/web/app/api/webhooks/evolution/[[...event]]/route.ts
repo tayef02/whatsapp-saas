@@ -11,6 +11,10 @@ import { getWebhookQueue } from "@/lib/queue/webhook-queue";
 export async function POST(request: NextRequest) {
   const body = await request.json();
 
+  // ডিবাগের জন্য ছোট লগ — Evolution থেকে আদৌ ইভেন্ট আসছে কিনা, কোন instance এর,
+  // সেটা নিশ্চিত হওয়ার জন্য (ভারী কিছু না, পুরো body লগ হয় না — media base64 থাকতে পারে)
+  console.log(`[webhook route] event=${body?.event} instance=${body?.instance}`);
+
   await getWebhookQueue().add("event", body, {
     removeOnComplete: 1000,
     removeOnFail: 1000,

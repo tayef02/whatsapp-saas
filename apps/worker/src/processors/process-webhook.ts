@@ -21,6 +21,8 @@ export async function processWebhookEvent(body: EvolutionWebhookBody) {
   const instanceName = body.instance;
   const data = body.data ?? {};
 
+  console.log(`[webhook worker] processing event=${event} (raw=${body.event}) instance=${instanceName}`);
+
   if (!instanceName) {
     console.warn("[webhook] instance নাম ছাড়া ইভেন্ট এসেছে, স্কিপ করা হলো", body);
     return;
@@ -47,6 +49,7 @@ export async function processWebhookEvent(body: EvolutionWebhookBody) {
   }
 
   // অন্য ইভেন্ট এখনো হ্যান্ডল করা হচ্ছে না
+  console.log(`[webhook worker] event=${event} এর জন্য কোনো হ্যান্ডলার নেই, স্কিপ করা হলো`);
 }
 
 async function handleQrCodeUpdated(instanceName: string, data: Record<string, unknown>) {
@@ -85,17 +88,40 @@ async function handleConnectionUpdate(instanceName: string, data: Record<string,
   }
 }
 
-// ডেলিভারি/read স্ট্যাটাস আপডেট (আমাদের পাঠানো মেসেজের ack)
-async function handleMessageStatusUpdate(data: Record<string, unknown>) {
-  const rawStatus = String(data.status ?? "").toUpperCase();
-  const providerMessageId = (data.keyId as string | undefined) ?? (data.key as { id?: string } | undefined)?.id;
+// Baileys এর numeric ack কোড (Evolution কখনো কখনো স্ট্রিং এর বদলে এই নাম্বার পাঠাতে পারে):
+// 0 ERROR, 1 PENDING, 2 SERVER_ACK, 3 DELIVERY_ACK, 4 READ, 5 PLAYED
+const ACK_CODE_TO_STATUS: Record<string, string> = {
+  "0": "ERROR",
+  "1": "PENDING",
+  "2": "SERVER_ACK",
+  "3": "DELIVERY_ACK",
+  "4": "READ",
+  "5": "PLAYED",
+};
 
-  if (!providerMessageId) return;
+// একটা single update অবজেক্ট প্রসেস করে — Evolution সাধারণত data কে single object হিসেবে
+// পাঠায় (প্রতিটা মেসেজ আপডেটের জন্য আলাদা webhook কল), কিন্তু কখনো array এলেও যেন স্কিপ না হয়ে যায়
+async function handleOneMessageStatusUpdate(item: Record<string, unknown>) {
+  const rawStatusValue = item.status;
+  const rawStatus =
+    typeof rawStatusValue === "number" || /^\d+$/.test(String(rawStatusValue ?? ""))
+      ? (ACK_CODE_TO_STATUS[String(rawStatusValue)] ?? "")
+      : String(rawStatusValue ?? "").toUpperCase();
+  const providerMessageId =
+    (item.keyId as string | undefined) ?? (item.key as { id?: string } | undefined)?.id ?? (item.messageId as string | undefined);
+
+  if (!providerMessageId) {
+    console.log("[webhook worker] messages.update এ keyId পাওয়া যায়নি, স্কিপ", item);
+    return;
+  }
 
   let newStatus: "delivered" | "read" | null = null;
   if (rawStatus === "DELIVERY_ACK") newStatus = "delivered";
   else if (rawStatus === "READ") newStatus = "read";
-  else return; // SERVER_ACK ইত্যাদি — আমাদের ফানেলে নতুন কিছু যোগ করে না
+  else {
+    console.log(`[webhook worker] messages.update status=${rawStatus} (keyId=${providerMessageId}) — delivered/read না, স্কিপ`);
+    return;
+  }
 
   const supabase = getSupabase();
   const { data: message } = await supabase
@@ -104,9 +130,24 @@ async function handleMessageStatusUpdate(data: Record<string, unknown>) {
     .eq("provider_message_id", providerMessageId)
     .maybeSingle();
 
-  if (!message) return;
+  if (!message) {
+    console.log(`[webhook worker] provider_message_id=${providerMessageId} এর সাথে মিলে এমন কোনো message পাওয়া যায়নি`);
+    return;
+  }
 
-  await supabase.rpc("apply_message_status", { p_message_id: message.id, p_new_status: newStatus });
+  const { data: applied } = await supabase.rpc("apply_message_status", {
+    p_message_id: message.id,
+    p_new_status: newStatus,
+  });
+  console.log(`[webhook worker] message ${message.id} → ${newStatus}, applied=${applied}`);
+}
+
+// ডেলিভারি/read স্ট্যাটাস আপডেট (আমাদের পাঠানো মেসেজের ack)
+async function handleMessageStatusUpdate(data: Record<string, unknown> | Record<string, unknown>[]) {
+  const items = Array.isArray(data) ? data : [data];
+  for (const item of items) {
+    await handleOneMessageStatusUpdate(item);
+  }
 }
 
 // ইনকামিং মেসেজ — STOP/বন্ধ (opt-out) আর START/চালু (আবার opt-in) ডিটেকশনের জন্য
