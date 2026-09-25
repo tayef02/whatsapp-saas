@@ -5,6 +5,11 @@ interface EvolutionServerConfig {
   apiKey: string;
 }
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+// মিডিয়া পাঠাতে Evolution কে নিজে media URL থেকে ডাউনলোড+আপলোড করতে হয়, টেক্সটের চেয়ে
+// বেশি সময় লাগতে পারে (বিশেষ করে Evolution সবে রিস্টার্ট হওয়ার পর সেশন গরম হচ্ছে থাকলে)
+const MEDIA_TIMEOUT_MS = 60_000;
+
 // Evolution API (self-hosted) এর জন্য WhatsAppProvider এর ইমপ্লিমেন্টেশন।
 // পরে EvolutionProvider এর মতোই একটা MetaProvider ক্লাস বানিয়ে একই interface মানলেই হবে।
 export class EvolutionProvider implements WhatsAppProvider {
@@ -17,8 +22,24 @@ export class EvolutionProvider implements WhatsAppProvider {
     };
   }
 
+  // fetch() ব্যর্থ হলে Node/undici একটা generic "fetch failed" এরর দেয়, আসল কারণ
+  // (connection refused, timeout, DNS ইত্যাদি) থাকে err.cause এ — এখানে সেটা বের করে
+  // মেসেজে জুড়ে দেওয়া হয় যাতে worker এর লগে ঠিক জায়গাটা বোঝা যায়। URL এ apikey থাকে না
+  // (হেডারে পাঠানো হয়), তাই সরাসরি লগ করা নিরাপদ।
+  private async request(path: string, init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+    const url = `${this.server.apiUrl}${path}`;
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (err) {
+      const cause = err instanceof Error ? (err.cause as { code?: string; name?: string; message?: string } | undefined) : undefined;
+      const causeInfo = cause ? ` — cause: ${cause.code ?? cause.name ?? "?"} ${cause.message ?? ""}`.trim() : "";
+      const baseMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Evolution API রিকোয়েস্ট ব্যর্থ (url=${url}, timeout=${timeoutMs}ms): ${baseMessage}${causeInfo}`);
+    }
+  }
+
   async createInstance(instanceName: string, webhookUrl?: string): Promise<CreateInstanceResult> {
-    const res = await fetch(`${this.server.apiUrl}/instance/create`, {
+    const res = await this.request(`/instance/create`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({
@@ -51,7 +72,7 @@ export class EvolutionProvider implements WhatsAppProvider {
   }
 
   async getStatus(instanceName: string): Promise<ConnectionStatus> {
-    const res = await fetch(`${this.server.apiUrl}/instance/connectionState/${instanceName}`, {
+    const res = await this.request(`/instance/connectionState/${instanceName}`, {
       headers: this.headers(),
     });
 
@@ -68,14 +89,14 @@ export class EvolutionProvider implements WhatsAppProvider {
   }
 
   async disconnect(instanceName: string): Promise<void> {
-    await fetch(`${this.server.apiUrl}/instance/logout/${instanceName}`, {
+    await this.request(`/instance/logout/${instanceName}`, {
       method: "DELETE",
       headers: this.headers(),
     });
   }
 
   async sendMessage(instanceName: string, to: string, text: string) {
-    const res = await fetch(`${this.server.apiUrl}/message/sendText/${instanceName}`, {
+    const res = await this.request(`/message/sendText/${instanceName}`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({ number: to, text }),
@@ -98,18 +119,22 @@ export class EvolutionProvider implements WhatsAppProvider {
     mimeType: string,
     caption: string
   ) {
-    const res = await fetch(`${this.server.apiUrl}/message/sendMedia/${instanceName}`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        number: to,
-        mediatype: mediaType,
-        mimetype: mimeType,
-        media: mediaUrl,
-        caption,
-        fileName: mediaType === "document" ? "attachment.pdf" : undefined,
-      }),
-    });
+    const res = await this.request(
+      `/message/sendMedia/${instanceName}`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          number: to,
+          mediatype: mediaType,
+          mimetype: mimeType,
+          media: mediaUrl,
+          caption,
+          fileName: mediaType === "document" ? "attachment.pdf" : undefined,
+        }),
+      },
+      MEDIA_TIMEOUT_MS
+    );
 
     if (!res.ok) {
       const body = await res.text();

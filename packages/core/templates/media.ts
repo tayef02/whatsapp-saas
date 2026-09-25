@@ -13,11 +13,11 @@ interface MinimalStorageClient {
 export async function getSignedTemplateMediaUrl(
   supabase: MinimalStorageClient,
   path: string
-): Promise<string | null> {
+): Promise<{ url: string | null; error: string | null }> {
   const { data, error } = await supabase.storage
     .from(TEMPLATE_MEDIA_BUCKET)
     .createSignedUrl(path, TEMPLATE_MEDIA_SIGNED_URL_SECONDS);
 
-  if (error || !data) return null;
-  return data.signedUrl;
+  if (error || !data) return { url: null, error: error?.message ?? "signed URL null এসেছে" };
+  return { url: data.signedUrl, error: null };
 }

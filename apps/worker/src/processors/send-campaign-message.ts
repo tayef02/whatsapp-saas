@@ -102,8 +102,8 @@ export async function processSendCampaignMessage(data: { messageId: string }) {
     let result: { messageId: string };
 
     if (template.media_url) {
-      const signedUrl = await getSignedTemplateMediaUrl(supabase, template.media_url);
-      if (!signedUrl) throw new Error("মিডিয়ার signed URL বানানো যায়নি");
+      const { url: signedUrl, error: signedUrlError } = await getSignedTemplateMediaUrl(supabase, template.media_url);
+      if (!signedUrl) throw new Error(`মিডিয়ার signed URL বানানো যায়নি: ${signedUrlError}`);
 
       result = await providerInfo.provider.sendMedia(
         providerInfo.instanceName,
@@ -126,6 +126,12 @@ export async function processSendCampaignMessage(data: { messageId: string }) {
   } catch (err) {
     const retryCount = (claimed.retry_count ?? 0) + 1;
     const reason = err instanceof Error ? err.message : "অজানা এরর";
+    const cause = err instanceof Error ? (err.cause as { code?: string; name?: string; message?: string } | undefined) : undefined;
+
+    console.error(
+      `[send-campaign-message] message=${messageId} retry=${retryCount}/${MAX_SEND_RETRIES} ব্যর্থ: ${reason}` +
+        (cause ? ` | cause: ${cause.code ?? cause.name ?? "?"} ${cause.message ?? ""}` : "")
+    );
 
     if (retryCount > MAX_SEND_RETRIES) {
       await supabase.rpc("apply_message_status", {
