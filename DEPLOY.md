@@ -161,6 +161,17 @@ values (
 `APP_URL/api/webhooks/evolution` এ) — তাই VPS এর Evolution এর গ্লোবাল webhook কনফিগ বা
 `genzitzone` ইনস্ট্যান্স একদমই স্পর্শ হবে না।
 
+**গুরুত্বপূর্ণ — ডেলিভার্ড/পড়া স্ট্যাটাসের জন্য বাধ্যতামূলক:** VPS এর Evolution এর নিজের
+`.env`/`docker-compose.yml` এ (আমাদের কম্পোজের বাইরে, Evolution যেখানে সেটআপ করা আছে,
+যেমন `/opt/evolution/docker-compose.yml`) এই তিনটা থাকতে হবে —
+```
+DATABASE_SAVE_DATA_NEW_MESSAGE=true
+DATABASE_SAVE_MESSAGE_UPDATE=true
+WEBHOOK_EVENTS_MESSAGES_UPDATE=true
+```
+এগুলো false/অনুপস্থিত থাকলে ক্যাম্পেইন রিপোর্টে "sent" ঠিক আপডেট হয় কিন্তু ডেলিভার্ড/পড়া কখনো
+আসে না (লাইভে একবার এই বাগে পড়া গেছে, `genzitzone` ইনস্ট্যান্সে প্রভাব ছাড়াই ঠিক করা হয়েছিল)।
+
 ---
 
 ## ধাপ ৭: বিল্ড ও চালু করা
