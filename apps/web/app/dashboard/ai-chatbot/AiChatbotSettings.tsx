@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { saveAiSettings, setApiKey, uploadDocument, reprocessDocument, deleteDocument } from "./actions";
+import { saveAiSettings, setApiKey, uploadDocument, reprocessDocument, deleteDocument, getDocumentChunks } from "./actions";
 
 type Settings = {
   llm_provider: string | null;
@@ -32,6 +32,20 @@ export default function AiChatbotSettings({ settings, documents }: { settings: S
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const apiKeyInputRef = useRef<HTMLInputElement>(null);
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
+  const [chunksByDoc, setChunksByDoc] = useState<Record<string, { id: string; content: string }[]>>({});
+
+  async function toggleChunks(docId: string) {
+    if (expandedDocId === docId) {
+      setExpandedDocId(null);
+      return;
+    }
+    setExpandedDocId(docId);
+    if (!chunksByDoc[docId]) {
+      const chunks = await getDocumentChunks(docId);
+      setChunksByDoc((prev) => ({ ...prev, [docId]: chunks }));
+    }
+  }
 
   async function handleSaveSettings(formData: FormData) {
     setBusy(true);
@@ -121,12 +135,12 @@ export default function AiChatbotSettings({ settings, documents }: { settings: S
         </label>
 
         <label style={{ display: "block", marginTop: 12 }}>
-          Confidence Threshold ({settings?.confidence_threshold ?? 0.75}) — বেশি হলে কম ক্ষেত্রে AI উত্তর দেবে, কম হলে বেশি ক্ষেত্রে
+          Confidence Threshold ({settings?.confidence_threshold ?? 0.5}) — বেশি হলে কম ক্ষেত্রে AI উত্তর দেবে, কম হলে বেশি ক্ষেত্রে
           (কিন্তু ভুল উত্তরের ঝুঁকি বাড়ে)
           <input
             type="number"
             name="confidenceThreshold"
-            defaultValue={settings?.confidence_threshold ?? 0.75}
+            defaultValue={settings?.confidence_threshold ?? 0.5}
             min={0}
             max={1}
             step={0.05}
@@ -143,36 +157,43 @@ export default function AiChatbotSettings({ settings, documents }: { settings: S
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
         {documents.length === 0 && <p style={{ color: "#666" }}>এখনো কোনো ফাইল আপলোড হয়নি।</p>}
         {documents.map((d) => (
-          <div
-            key={d.id}
-            style={{
-              background: "white",
-              border: "1px solid #eee",
-              borderRadius: 8,
-              padding: 10,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <div style={{ fontSize: 13 }}>
-              <strong>{d.file_name}</strong> <span style={{ color: "#666" }}>({d.file_type.toUpperCase()})</span>
-              <div style={{ color: d.status === "failed" ? "#dc2626" : "#666", marginTop: 2 }}>
-                {statusLabel[d.status] ?? d.status}
-                {d.error_message && ` — ${d.error_message}`}
+          <div key={d.id} style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <div style={{ fontSize: 13 }}>
+                <strong>{d.file_name}</strong> <span style={{ color: "#666" }}>({d.file_type.toUpperCase()})</span>
+                <div style={{ color: d.status === "failed" ? "#dc2626" : "#666", marginTop: 2 }}>
+                  {statusLabel[d.status] ?? d.status}
+                  {d.error_message && ` — ${d.error_message}`}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                {d.status === "ready" && (
+                  <button disabled={busy} onClick={() => toggleChunks(d.id)} style={{ width: "auto", flex: "0 0 auto" }}>
+                    {expandedDocId === d.id ? "চাংক লুকান" : "চাংক দেখুন"}
+                  </button>
+                )}
+                {d.status === "failed" && (
+                  <button disabled={busy} onClick={() => handleReprocess(d.id)} style={{ width: "auto", flex: "0 0 auto" }}>
+                    আবার চেষ্টা করুন
+                  </button>
+                )}
+                <button disabled={busy} onClick={() => handleDelete(d.id)} style={{ width: "auto", flex: "0 0 auto", color: "#dc2626" }}>
+                  মুছুন
+                </button>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              {d.status === "failed" && (
-                <button disabled={busy} onClick={() => handleReprocess(d.id)} style={{ width: "auto", flex: "0 0 auto" }}>
-                  আবার চেষ্টা করুন
-                </button>
-              )}
-              <button disabled={busy} onClick={() => handleDelete(d.id)} style={{ width: "auto", flex: "0 0 auto", color: "#dc2626" }}>
-                মুছুন
-              </button>
-            </div>
+            {expandedDocId === d.id && (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                {!chunksByDoc[d.id] && <p style={{ fontSize: 12, color: "#666" }}>লোড হচ্ছে...</p>}
+                {chunksByDoc[d.id]?.length === 0 && <p style={{ fontSize: 12, color: "#666" }}>কোনো chunk নেই।</p>}
+                {chunksByDoc[d.id]?.map((c, i) => (
+                  <div key={c.id} style={{ background: "#f9fafb", borderRadius: 6, padding: 8, fontSize: 12 }}>
+                    <div style={{ color: "#999", marginBottom: 2 }}>chunk {i + 1}</div>
+                    <div style={{ whiteSpace: "pre-wrap" }}>{c.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -51,8 +51,10 @@ export async function processKnowledgeBaseDocument(data: KnowledgeBaseJobData) {
 
     if (!text.trim()) throw new Error("ফাইল থেকে কোনো টেক্সট পাওয়া যায়নি");
 
+    console.log(`[knowledge-base] ${doc.file_name}: extract হওয়া টেক্সট (প্রথম ৫০০ অক্ষর):\n${text.slice(0, 500)}`);
+
     const chunks = chunkText(text);
-    console.log(`[knowledge-base] ${doc.file_name}: ${chunks.length}টা chunk`);
+    console.log(`[knowledge-base] ${doc.file_name}: ${chunks.length}টা chunk, প্রথমটা: "${chunks[0]?.slice(0, 150)}"`);
 
     // আগের chunk (re-process এর ক্ষেত্রে) মুছে নতুন করে বসানো হচ্ছে
     await supabase.from("knowledge_base_chunks").delete().eq("document_id", doc.id);

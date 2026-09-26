@@ -101,6 +101,17 @@ export async function reprocessDocument(documentId: string) {
   return { error: null };
 }
 
+// ডকুমেন্ট কতগুলো chunk এ ভাঙা হয়েছে আর প্রতিটার আসল টেক্সট কেমন দেখতে — ডিবাগ/যাচাইয়ের জন্য
+export async function getDocumentChunks(documentId: string): Promise<{ id: string; content: string }[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("knowledge_base_chunks")
+    .select("id, content")
+    .eq("document_id", documentId)
+    .order("created_at", { ascending: true });
+  return data ?? [];
+}
+
 export async function deleteDocument(documentId: string) {
   const supabase = await createClient();
   const admin = createAdminClient();
