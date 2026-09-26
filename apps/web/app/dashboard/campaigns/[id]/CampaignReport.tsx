@@ -54,7 +54,7 @@ function normalizeStats(s: Stats | Stats[] | null): Stats {
   return stats ?? { total_recipients: 0, sent_count: 0, delivered_count: 0, read_count: 0, failed_count: 0, unknown_count: 0 };
 }
 
-export default function CampaignReport({ initial }: { initial: CampaignData }) {
+export default function CampaignReport({ initial, stallNote }: { initial: CampaignData; stallNote: string | null }) {
   const [data, setData] = useState(initial);
   const [busy, setBusy] = useState(false);
 
@@ -91,6 +91,12 @@ export default function CampaignReport({ initial }: { initial: CampaignData }) {
       {data.paused_reason && (
         <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
           ⏸️ পজ হওয়ার কারণ: {pausedReasonLabel[data.paused_reason] ?? data.paused_reason}
+        </div>
+      )}
+
+      {data.status === "sending" && stallNote && (
+        <div style={{ background: "#eff6ff", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+          ℹ️ {stallNote}
         </div>
       )}
 
