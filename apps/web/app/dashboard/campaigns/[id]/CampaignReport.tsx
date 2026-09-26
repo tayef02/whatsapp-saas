@@ -97,10 +97,12 @@ export default function CampaignReport({ initial }: { initial: CampaignData }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
         <StatBox label="মোট" value={stats.total_recipients} />
         <StatBox label="পাঠানো হয়েছে" value={stats.sent_count} />
-        {/* "পড়া হয়েছে" মানে ডেলিভার্ডও হয়েছে — DB তে delivered_count/read_count আলাদা ইভেন্ট
-            কাউন্টার (একটা মেসেজ delivered ইভেন্ট বাদ দিয়ে সরাসরি read এ চলে গেলে delivered_count
-            আলাদাভাবে বাড়ে না), তাই দেখানোর সময় দুটো যোগ করে "মোট ডেলিভার্ড" বানানো হচ্ছে */}
-        <StatBox label="ডেলিভার্ড" value={stats.delivered_count + stats.read_count} />
+        {/* "পড়া হয়েছে" মানে ডেলিভার্ডও হয়েছে। delivered_count/read_count আলাদা ইভেন্ট কাউন্টার —
+            যে মেসেজ delivered→read দুটো ইভেন্টই পায় সেটা দুই কাউন্টারেই আলাদাভাবে বাড়ে (সেগুলো
+            যোগ করলে ডাবল-কাউন্ট হয়ে যায়, total_recipients ছাড়িয়ে যেতে পারে)। যে মেসেজ delivered
+            বাদ দিয়ে সরাসরি read এ যায় সেটা শুধু read_count এ বাড়ে। তাই "কমপক্ষে ডেলিভার্ড" বোঝাতে
+            max() ব্যবহার করা হচ্ছে, যোগ না */}
+        <StatBox label="ডেলিভার্ড" value={Math.max(stats.delivered_count, stats.read_count)} />
         <StatBox label="পড়া হয়েছে" value={stats.read_count} />
         <StatBox label="ব্যর্থ" value={stats.failed_count} color="#dc2626" />
         <StatBox label="অজানা" value={stats.unknown_count} color="#b45309" />

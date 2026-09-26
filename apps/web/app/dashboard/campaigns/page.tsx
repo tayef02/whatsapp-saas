@@ -63,7 +63,7 @@ export default async function CampaignsPage() {
                 <strong>{c.name}</strong>
                 <div style={{ fontSize: 13, color: "#666" }}>
                   {stats
-                    ? `${stats.sent_count}/${stats.total_recipients} পাঠানো হয়েছে · ${stats.delivered_count + stats.read_count} ডেলিভার্ড · ${stats.read_count} পড়া হয়েছে · ${stats.failed_count} ব্যর্থ`
+                    ? `${stats.sent_count}/${stats.total_recipients} পাঠানো হয়েছে · ${Math.max(stats.delivered_count, stats.read_count)} ডেলিভার্ড · ${stats.read_count} পড়া হয়েছে · ${stats.failed_count} ব্যর্থ`
                     : ""}
                 </div>
               </div>
