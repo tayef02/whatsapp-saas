@@ -163,7 +163,7 @@ async function handleMessageStatusUpdate(data: Record<string, unknown> | Record<
   }
 }
 
-// ইনকামিং মেসেজ — STOP/বন্ধ (opt-out), START/চালু (আবার opt-in), আর keyword auto-reply
+// ইনকামিং মেসেজ — STOP/বন্ধ (opt-out), START/চালু (আবার opt-in), আর AI auto-reply
 async function handleIncomingMessage(instanceName: string, data: Record<string, unknown>) {
   const key = data.key as { remoteJid?: string; fromMe?: boolean } | undefined;
   if (!key || key.fromMe) return; // নিজের পাঠানো মেসেজের echo, স্কিপ
@@ -198,7 +198,8 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
   await handleAutoReply(supabase, number, phone, text);
 }
 
-// contact না থাকলে অটো-তৈরি করে, conversation খুঁজে/বানায়, ইতিহাসে লেখে, rule ম্যাচ করে reply পাঠানোর job বসায়
+// contact না থাকলে অটো-তৈরি করে, conversation খুঁজে/বানায়, ইতিহাসে লেখে, AI/knowledge-base
+// RAG দিয়ে reply জেনারেট করে পাঠানোর job বসায়
 async function handleAutoReply(
   supabase: ReturnType<typeof getSupabase>,
   number: { id: string; workspace_id: string },
@@ -265,38 +266,10 @@ async function handleAutoReply(
     await supabase.from("conversations").update({ status: "active" }).eq("id", conversation.id);
   }
 
-  const { data: rules } = await supabase
-    .from("chatbot_rules")
-    .select("keyword, match_type, reply_text")
-    .eq("chatbot_config_id", config.id)
-    .eq("is_active", true)
-    .order("priority", { ascending: true });
-
-  const normalizedText = text.trim().toLowerCase();
-  const matchedRule = (rules ?? []).find((r) => {
-    const keyword = r.keyword.trim().toLowerCase();
-    return r.match_type === "exact" ? normalizedText === keyword : normalizedText.includes(keyword);
-  });
-
-  console.log(`[autoreply] conversation=${conversation.id} ${rules?.length ?? 0}টা rule চেক হলো, matched=${matchedRule?.keyword ?? "কোনোটা না"}`);
-
   const renderContact = { name: contact.name, phone, custom_fields: contact.custom_fields };
 
-  if (matchedRule) {
-    const jobData: AutoReplyJobData = {
-      conversationId: conversation.id,
-      workspaceId: number.workspace_id,
-      whatsappNumberId: number.id,
-      phone,
-      replyText: renderMessage(matchedRule.reply_text, renderContact),
-      markHandedOff: false,
-    };
-    await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-    console.log(`[autoreply] rule "${matchedRule.keyword}" ম্যাচ হয়েছে, reply job queue তে বসলো`);
-    return;
-  }
-
-  // কোনো keyword rule মেলেনি — workspace এ AI (knowledge base + LLM) সেটআপ থাকলে সেটা ট্রাই করা হবে
+  // সব ইনকামিং মেসেজ সরাসরি AI/knowledge-base RAG ফ্লো তে যায় (কোনো keyword rule
+  // matching ধাপ নেই) — workspace এ AI সেটআপ না থাকলে/ব্যর্থ হলে নিচের fallback এ যাবে
   const aiReply = await tryAiReply(supabase, number.workspace_id, text);
   if (aiReply) {
     const jobData: AutoReplyJobData = {
@@ -312,7 +285,8 @@ async function handleAutoReply(
     return;
   }
 
-  // rule বা AI কোনোটাতেই উত্তর পাওয়া যায়নি — এজেন্টের কাছে হ্যান্ডঅফ, পারলে fallback মেসেজও পাঠানো হবে
+  // AI কোনো উত্তর দিতে পারেনি (সেটআপ নেই/confidence কম/এরর) — এজেন্টের কাছে হ্যান্ডঅফ,
+  // পারলে fallback মেসেজও পাঠানো হবে
   if (config.fallback_message) {
     const jobData: AutoReplyJobData = {
       conversationId: conversation.id,
@@ -323,15 +297,15 @@ async function handleAutoReply(
       markHandedOff: true,
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-    console.log(`[autoreply] কোনো rule মেলেনি, fallback job queue তে বসলো, handed_off হবে`);
+    console.log(`[autoreply] AI উত্তর দিতে পারেনি, fallback job queue তে বসলো, handed_off হবে`);
   } else {
-    console.log(`[autoreply] কোনো rule/fallback নেই, সরাসরি handed_off করা হলো`);
+    console.log(`[autoreply] AI উত্তর দিতে পারেনি আর কোনো fallback নেই, সরাসরি handed_off করা হলো`);
     await supabase.from("conversations").update({ status: "handed_off" }).eq("id", conversation.id);
     await createNotification(
       number.workspace_id,
       "conversation_handed_off",
       "একটা কথোপকথনে এজেন্টের সাহায্য দরকার",
-      "কাস্টমারের মেসেজের সাথে কোনো auto-reply rule মেলেনি — Inbox এ গিয়ে দেখুন।"
+      "কাস্টমারের মেসেজের প্রশ্নের কোনো উত্তর পাওয়া যায়নি — Inbox এ গিয়ে দেখুন।"
     );
   }
 }
