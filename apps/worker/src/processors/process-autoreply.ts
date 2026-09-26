@@ -6,15 +6,18 @@ import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
 // keyword rule/fallback ম্যাচ হলে webhook handler এই job বসায়। এখানে আসল sendMessage
 // কল হয় — সফল হলেই conversation_messages এ লেখা হয়, ব্যর্থ হলে BullMQ নিজের রিট্রাই করবে
 export async function processAutoReply(data: AutoReplyJobData) {
+  console.log(`[autoreply-worker] job শুরু: conversation=${data.conversationId} phone=${data.phone} senderType=${data.senderType ?? "bot"}`);
+
   const supabase = getSupabase();
   const providerInfo = await getProviderForNumber(data.whatsappNumberId);
 
   if (!providerInfo) {
-    console.error(`[autoreply] নাম্বার ${data.whatsappNumberId} এর provider পাওয়া যায়নি, স্কিপ`);
+    console.error(`[autoreply-worker] নাম্বার ${data.whatsappNumberId} এর provider পাওয়া যায়নি, স্কিপ`);
     return;
   }
 
   await providerInfo.provider.sendMessage(providerInfo.instanceName, data.phone, data.replyText);
+  console.log(`[autoreply-worker] sendMessage সফল, conversation=${data.conversationId}`);
 
   await supabase.from("conversation_messages").insert({
     conversation_id: data.conversationId,

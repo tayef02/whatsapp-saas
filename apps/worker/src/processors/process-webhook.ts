@@ -210,7 +210,10 @@ async function handleAutoReply(
     .eq("whatsapp_number_id", number.id)
     .maybeSingle();
 
-  if (!config || !config.is_active) return;
+  if (!config || !config.is_active) {
+    console.log(`[autoreply] নাম্বার ${number.id} এ chatbot config নেই/বন্ধ আছে, স্কিপ`);
+    return;
+  }
 
   let { data: contact } = await supabase
     .from("contacts")
@@ -238,14 +241,23 @@ async function handleAutoReply(
     .select("id, status")
     .maybeSingle();
 
-  if (!conversation) return;
+  if (!conversation) {
+    console.log(`[autoreply] conversation upsert ব্যর্থ (number=${number.id}, contact=${contact.id})`);
+    return;
+  }
 
   await supabase
     .from("conversation_messages")
     .insert({ conversation_id: conversation.id, direction: "inbound", sender_type: "customer", content: text });
 
-  // এজেন্ট হ্যান্ডল করছে এমন কথোপকথনে bot চুপ থাকবে
-  if (conversation.status === "handed_off") return;
+  console.log(`[autoreply] conversation=${conversation.id} status=${conversation.status}, text="${text}"`);
+
+  // এজেন্ট হ্যান্ডল করছে এমন কথোপকথনে bot চুপ থাকবে — এজেন্ট Inbox থেকে "আবার চালু করুন"
+  // না চাপা পর্যন্ত পরের সব মেসেজেও চুপ থাকবে (ইচ্ছাকৃতভাবে sticky, ইনবাউন্ড মেসেজ তবুও সেভ হয়)
+  if (conversation.status === "handed_off") {
+    console.log(`[autoreply] conversation=${conversation.id} handed_off — bot চুপ থাকছে`);
+    return;
+  }
 
   // resolved থেকে আবার active — নতুন মেসেজ এসেছে মানে কথোপকথন আবার চলছে
   if (conversation.status === "resolved") {
@@ -265,6 +277,8 @@ async function handleAutoReply(
     return r.match_type === "exact" ? normalizedText === keyword : normalizedText.includes(keyword);
   });
 
+  console.log(`[autoreply] conversation=${conversation.id} ${rules?.length ?? 0}টা rule চেক হলো, matched=${matchedRule?.keyword ?? "কোনোটা না"}`);
+
   const renderContact = { name: contact.name, phone, custom_fields: contact.custom_fields };
 
   if (matchedRule) {
@@ -277,6 +291,7 @@ async function handleAutoReply(
       markHandedOff: false,
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+    console.log(`[autoreply] rule "${matchedRule.keyword}" ম্যাচ হয়েছে, reply job queue তে বসলো`);
     return;
   }
 
@@ -291,7 +306,9 @@ async function handleAutoReply(
       markHandedOff: true,
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+    console.log(`[autoreply] কোনো rule মেলেনি, fallback job queue তে বসলো, handed_off হবে`);
   } else {
+    console.log(`[autoreply] কোনো rule/fallback নেই, সরাসরি handed_off করা হলো`);
     await supabase.from("conversations").update({ status: "handed_off" }).eq("id", conversation.id);
     await createNotification(
       number.workspace_id,

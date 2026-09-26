@@ -55,8 +55,10 @@ export default function ConversationThread({
 
   async function handleStatus(newStatus: "active" | "resolved") {
     setBusy(true);
-    await setConversationStatus(conversationId, newStatus);
+    setError(null);
+    const res = await setConversationStatus(conversationId, newStatus);
     setBusy(false);
+    if (res.error) return setError(res.error);
     router.refresh();
   }
 
