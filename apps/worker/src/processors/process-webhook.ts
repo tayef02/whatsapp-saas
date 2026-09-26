@@ -1,6 +1,18 @@
+import { Queue } from "bullmq";
 import { getSupabase } from "../lib/supabase";
 import { pauseCampaignsForNumber } from "../lib/campaign-safety";
 import { isStopKeyword, isStartKeyword } from "@whatsapp-saas/core/campaigns/stop-keywords";
+import { renderMessage } from "@whatsapp-saas/core/templates/render";
+import { AUTOREPLY_QUEUE_NAME } from "../queues/autoreply-queue";
+import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
+import { createNotification } from "../lib/notify";
+
+const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
+let autoReplyQueue: Queue | null = null;
+function getAutoReplyQueue() {
+  if (!autoReplyQueue) autoReplyQueue = new Queue(AUTOREPLY_QUEUE_NAME, { connection });
+  return autoReplyQueue;
+}
 
 type EvolutionWebhookBody = {
   event?: string;
@@ -150,19 +162,17 @@ async function handleMessageStatusUpdate(data: Record<string, unknown> | Record<
   }
 }
 
-// ইনকামিং মেসেজ — STOP/বন্ধ (opt-out) আর START/চালু (আবার opt-in) ডিটেকশনের জন্য
+// ইনকামিং মেসেজ — STOP/বন্ধ (opt-out), START/চালু (আবার opt-in), আর keyword auto-reply
 async function handleIncomingMessage(instanceName: string, data: Record<string, unknown>) {
   const key = data.key as { remoteJid?: string; fromMe?: boolean } | undefined;
   if (!key || key.fromMe) return; // নিজের পাঠানো মেসেজের echo, স্কিপ
+  if (key.remoteJid?.endsWith("@g.us")) return; // গ্রুপ মেসেজ — auto-reply শুধু personal chat এর জন্য
 
   const text =
     (data.message as { conversation?: string } | undefined)?.conversation ??
     (data.message as { extendedTextMessage?: { text?: string } } | undefined)?.extendedTextMessage?.text ??
     "";
-
-  const isStop = isStopKeyword(text);
-  const isStart = isStartKeyword(text);
-  if (!isStop && !isStart) return;
+  if (!text.trim()) return;
 
   const phone = phoneFromJid(key.remoteJid);
   if (!phone) return;
@@ -170,15 +180,124 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
   const supabase = getSupabase();
   const { data: number } = await supabase
     .from("whatsapp_numbers")
-    .select("workspace_id")
+    .select("id, workspace_id")
     .eq("instance_name", instanceName)
     .maybeSingle();
 
   if (!number) return;
 
-  await supabase
+  const isStop = isStopKeyword(text);
+  const isStart = isStartKeyword(text);
+
+  if (isStop || isStart) {
+    await supabase.from("contacts").update({ opted_out: isStop }).eq("workspace_id", number.workspace_id).eq("phone", phone);
+    return; // STOP/START নিজেই একটা কমান্ড — auto-reply এর দরকার নেই
+  }
+
+  await handleAutoReply(supabase, number, phone, text);
+}
+
+// contact না থাকলে অটো-তৈরি করে, conversation খুঁজে/বানায়, ইতিহাসে লেখে, rule ম্যাচ করে reply পাঠানোর job বসায়
+async function handleAutoReply(
+  supabase: ReturnType<typeof getSupabase>,
+  number: { id: string; workspace_id: string },
+  phone: string,
+  text: string
+) {
+  const { data: config } = await supabase
+    .from("chatbot_configs")
+    .select("id, is_active, fallback_message")
+    .eq("whatsapp_number_id", number.id)
+    .maybeSingle();
+
+  if (!config || !config.is_active) return;
+
+  let { data: contact } = await supabase
     .from("contacts")
-    .update({ opted_out: isStop })
+    .select("id, name, custom_fields")
     .eq("workspace_id", number.workspace_id)
-    .eq("phone", phone);
+    .eq("phone", phone)
+    .maybeSingle();
+
+  if (!contact) {
+    const { data: newContact } = await supabase
+      .from("contacts")
+      .insert({ workspace_id: number.workspace_id, phone, source: "inbound" })
+      .select("id, name, custom_fields")
+      .maybeSingle();
+    contact = newContact;
+  }
+  if (!contact) return;
+
+  const { data: conversation } = await supabase
+    .from("conversations")
+    .upsert(
+      { workspace_id: number.workspace_id, whatsapp_number_id: number.id, contact_id: contact.id, last_message_at: new Date().toISOString() },
+      { onConflict: "whatsapp_number_id,contact_id" }
+    )
+    .select("id, status")
+    .maybeSingle();
+
+  if (!conversation) return;
+
+  await supabase
+    .from("conversation_messages")
+    .insert({ conversation_id: conversation.id, direction: "inbound", sender_type: "customer", content: text });
+
+  // এজেন্ট হ্যান্ডল করছে এমন কথোপকথনে bot চুপ থাকবে
+  if (conversation.status === "handed_off") return;
+
+  // resolved থেকে আবার active — নতুন মেসেজ এসেছে মানে কথোপকথন আবার চলছে
+  if (conversation.status === "resolved") {
+    await supabase.from("conversations").update({ status: "active" }).eq("id", conversation.id);
+  }
+
+  const { data: rules } = await supabase
+    .from("chatbot_rules")
+    .select("keyword, match_type, reply_text")
+    .eq("chatbot_config_id", config.id)
+    .eq("is_active", true)
+    .order("priority", { ascending: true });
+
+  const normalizedText = text.trim().toLowerCase();
+  const matchedRule = (rules ?? []).find((r) => {
+    const keyword = r.keyword.trim().toLowerCase();
+    return r.match_type === "exact" ? normalizedText === keyword : normalizedText.includes(keyword);
+  });
+
+  const renderContact = { name: contact.name, phone, custom_fields: contact.custom_fields };
+
+  if (matchedRule) {
+    const jobData: AutoReplyJobData = {
+      conversationId: conversation.id,
+      workspaceId: number.workspace_id,
+      whatsappNumberId: number.id,
+      phone,
+      replyText: renderMessage(matchedRule.reply_text, renderContact),
+      markHandedOff: false,
+    };
+    await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+    return;
+  }
+
+  // কোনো rule মেলেনি — এজেন্টের কাছে হ্যান্ডঅফ, পারলে একটা fallback মেসেজও পাঠানো হবে
+  if (config.fallback_message) {
+    const jobData: AutoReplyJobData = {
+      conversationId: conversation.id,
+      workspaceId: number.workspace_id,
+      whatsappNumberId: number.id,
+      phone,
+      replyText: renderMessage(config.fallback_message, renderContact),
+      markHandedOff: true,
+    };
+    await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+  } else {
+    await supabase.from("conversations").update({ status: "handed_off" }).eq("id", conversation.id);
+    await createNotification(
+      number.workspace_id,
+      "conversation_handed_off",
+      "একটা কথোপকথনে এজেন্টের সাহায্য দরকার",
+      "কাস্টমারের মেসেজের সাথে কোনো auto-reply rule মেলেনি — Inbox এ গিয়ে দেখুন।"
+    );
+  }
 }

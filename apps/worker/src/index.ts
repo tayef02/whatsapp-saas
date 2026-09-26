@@ -22,6 +22,8 @@ import { processSendCampaignMessage } from "./processors/send-campaign-message";
 import { SCHEDULER_TICK_MS } from "@whatsapp-saas/core/campaigns/constants";
 import { SUBSCRIPTION_MAINTENANCE_QUEUE_NAME } from "./queues/subscription-maintenance-queue";
 import { runSubscriptionMaintenanceTick } from "./processors/subscription-maintenance";
+import { AUTOREPLY_QUEUE_NAME } from "./queues/autoreply-queue";
+import { processAutoReply } from "./processors/process-autoreply";
 
 const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
@@ -104,8 +106,21 @@ subscriptionWorker.on("failed", (job, err) => {
   console.error(`[subscription-maintenance] tick ব্যর্থ:`, err.message);
 });
 
+// keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job
+const autoReplyWorker = new Worker(
+  AUTOREPLY_QUEUE_NAME,
+  async (job) => {
+    await processAutoReply(job.data);
+  },
+  { connection }
+);
+
+autoReplyWorker.on("failed", (job, err) => {
+  console.error(`[autoreply-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
 console.log(
-  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance queue শুনছে..."
+  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply queue শুনছে..."
 );
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য

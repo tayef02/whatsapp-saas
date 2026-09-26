@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type NumberData = {
@@ -47,6 +48,10 @@ export default function NumberStatus({ initial }: { initial: NumberData }) {
       {data.status === "connecting" && !data.qr_code && <p style={{ color: "#666" }}>QR কোড তৈরি হচ্ছে...</p>}
 
       {data.status === "online" && <p style={{ color: "#166534" }}>{data.phone_number}</p>}
+
+      <p style={{ marginTop: 16 }}>
+        <Link href={`/dashboard/numbers/${data.id}/autoreply`}>Auto-Reply সেটিংস →</Link>
+      </p>
     </div>
   );
 }
