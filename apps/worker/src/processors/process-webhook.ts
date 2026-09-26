@@ -6,6 +6,7 @@ import { renderMessage } from "@whatsapp-saas/core/templates/render";
 import { AUTOREPLY_QUEUE_NAME } from "../queues/autoreply-queue";
 import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
 import { createNotification } from "../lib/notify";
+import { generateEmbedding, generateChatReply, type LlmProvider } from "@whatsapp-saas/core/chatbot/llm";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -295,7 +296,23 @@ async function handleAutoReply(
     return;
   }
 
-  // কোনো rule মেলেনি — এজেন্টের কাছে হ্যান্ডঅফ, পারলে একটা fallback মেসেজও পাঠানো হবে
+  // কোনো keyword rule মেলেনি — workspace এ AI (knowledge base + LLM) সেটআপ থাকলে সেটা ট্রাই করা হবে
+  const aiReply = await tryAiReply(supabase, number.workspace_id, text);
+  if (aiReply) {
+    const jobData: AutoReplyJobData = {
+      conversationId: conversation.id,
+      workspaceId: number.workspace_id,
+      whatsappNumberId: number.id,
+      phone,
+      replyText: aiReply,
+      markHandedOff: false,
+    };
+    await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+    console.log(`[autoreply] AI/RAG রিপ্লাই পাওয়া গেছে, reply job queue তে বসলো`);
+    return;
+  }
+
+  // rule বা AI কোনোটাতেই উত্তর পাওয়া যায়নি — এজেন্টের কাছে হ্যান্ডঅফ, পারলে fallback মেসেজও পাঠানো হবে
   if (config.fallback_message) {
     const jobData: AutoReplyJobData = {
       conversationId: conversation.id,
@@ -316,5 +333,57 @@ async function handleAutoReply(
       "একটা কথোপকথনে এজেন্টের সাহায্য দরকার",
       "কাস্টমারের মেসেজের সাথে কোনো auto-reply rule মেলেনি — Inbox এ গিয়ে দেখুন।"
     );
+  }
+}
+
+// workspace এ LLM provider+key সেট থাকলে knowledge base থেকে প্রাসঙ্গিক তথ্য খুঁজে (retrieval)
+// + system prompt দিয়ে উত্তর জেনারেট করে। কোনো ধাপে সমস্যা হলে (key নেই, confidence কম,
+// API এরর) null রিটার্ন করে — তখন caller fallback/handoff এ চলে যাবে, কখনো crash করবে না
+async function tryAiReply(
+  supabase: ReturnType<typeof getSupabase>,
+  workspaceId: string,
+  question: string
+): Promise<string | null> {
+  const { data: settings } = await supabase
+    .from("workspace_ai_settings")
+    .select("llm_provider, system_prompt, confidence_threshold")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  if (!settings?.llm_provider) return null; // AI সেটআপ করা নেই, চুপচাপ স্কিপ
+
+  const provider = settings.llm_provider as LlmProvider;
+
+  try {
+    const { data: apiKey } = await supabase.rpc("get_workspace_api_key", { p_workspace_id: workspaceId });
+    if (!apiKey) {
+      console.log(`[autoreply] workspace=${workspaceId} এ provider সেট আছে কিন্তু API key নেই, AI স্কিপ`);
+      return null;
+    }
+
+    const queryEmbedding = await generateEmbedding(provider, apiKey, question);
+
+    const { data: matches } = await supabase.rpc("search_knowledge_base", {
+      p_workspace_id: workspaceId,
+      p_query_embedding: JSON.stringify(queryEmbedding),
+      p_provider: provider,
+      p_match_count: 4,
+    });
+
+    const best = matches?.[0];
+    console.log(
+      `[autoreply] knowledge base সার্চ: ${matches?.length ?? 0}টা chunk পাওয়া গেছে, সেরা similarity=${best?.similarity ?? "N/A"}, threshold=${settings.confidence_threshold}`
+    );
+
+    if (!best || best.similarity < settings.confidence_threshold) {
+      return null; // যথেষ্ট প্রাসঙ্গিক তথ্য নেই, fallback এ যাক
+    }
+
+    const context = (matches ?? []).map((m: { content: string }) => m.content).join("\n\n---\n\n");
+    const reply = await generateChatReply(provider, apiKey, settings.system_prompt ?? "", context, question);
+    return reply.trim() || null;
+  } catch (err) {
+    console.error(`[autoreply] AI reply তৈরি করতে ব্যর্থ (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
+    return null; // AI ব্যর্থ হলে চুপচাপ fallback এ যাক, কাস্টমার যেন কখনো crash/no-response না দেখে
   }
 }

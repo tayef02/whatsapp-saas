@@ -24,6 +24,9 @@ export default async function DashboardHome() {
         <Link href="/dashboard/inbox">Inbox (Auto-Reply কথোপকথন) →</Link>
       </p>
       <p>
+        <Link href="/dashboard/ai-chatbot">AI Chatbot (Knowledge Base) →</Link>
+      </p>
+      <p>
         <Link href="/dashboard/billing">প্ল্যান ও বিলিং →</Link>
       </p>
       <p>

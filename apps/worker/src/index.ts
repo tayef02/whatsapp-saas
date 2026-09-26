@@ -24,6 +24,8 @@ import { SUBSCRIPTION_MAINTENANCE_QUEUE_NAME } from "./queues/subscription-maint
 import { runSubscriptionMaintenanceTick } from "./processors/subscription-maintenance";
 import { AUTOREPLY_QUEUE_NAME } from "./queues/autoreply-queue";
 import { processAutoReply } from "./processors/process-autoreply";
+import { KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/knowledge-base-queue";
+import { processKnowledgeBaseDocument } from "./processors/process-knowledge-base";
 
 const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
@@ -119,8 +121,21 @@ autoReplyWorker.on("failed", (job, err) => {
   console.error(`[autoreply-worker] job ${job?.id} ব্যর্থ:`, err.message);
 });
 
+// knowledge base ফাইল (PDF/XLSX/CSV/TXT) আপলোড হলে extract+chunk+embed করার job
+const knowledgeBaseWorker = new Worker(
+  KNOWLEDGE_BASE_QUEUE_NAME,
+  async (job) => {
+    await processKnowledgeBaseDocument(job.data);
+  },
+  { connection }
+);
+
+knowledgeBaseWorker.on("failed", (job, err) => {
+  console.error(`[knowledge-base-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
 console.log(
-  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply queue শুনছে..."
+  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process queue শুনছে..."
 );
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য

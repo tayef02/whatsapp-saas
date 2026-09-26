@@ -9,11 +9,13 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.47.0",
     "@whatsapp-saas/core": "*",
-    "bullmq": "^5.30.0"
+    "bullmq": "^5.30.0",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "@types/node": "^22.9.0"
+    "@types/node": "^22.9.0",
+    "@types/pdf-parse": "^1.1.5"
   }
 }
