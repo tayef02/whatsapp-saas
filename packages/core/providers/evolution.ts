@@ -167,8 +167,10 @@ export class EvolutionProvider implements WhatsAppProvider {
   }
 
   async revokeGroupInviteCode(instanceName: string, groupJid: string): Promise<string> {
+    // VPS এ লাইভ টেস্ট করে ধরা পড়েছে: এই এন্ডপয়েন্ট PUT না, POST নেয় (PUT দিলে 404
+    // "Cannot PUT" — Evolution এর রাউটার এই path টা POST মেথডে রেজিস্টার করে রেখেছে)
     const res = await this.request(`/group/revokeInviteCode/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`, {
-      method: "PUT",
+      method: "POST",
       headers: this.headers(),
     });
 
