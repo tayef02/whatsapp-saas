@@ -20,6 +20,12 @@ export interface GroupInfo {
   participants: GroupParticipant[];
 }
 
+export interface GroupMessageKey {
+  id: string;
+  participant?: string;
+  fromMe: boolean;
+}
+
 export interface WhatsAppProvider {
   // webhookUrl দিলে প্রতিটা instance তার নিজের webhook নিয়ে বসবে (শেয়ার্ড Evolution সার্ভারে
   // গ্লোবাল webhook বদলানো ছাড়াই) — প্রোডাকশনে এটা বাধ্যতামূলক, কারণ একই সার্ভারে অন্য অ্যাপের
@@ -46,4 +52,6 @@ export interface WhatsAppProvider {
   listGroups(instanceName: string): Promise<GroupInfo[]>;
   getGroupInviteCode(instanceName: string, groupJid: string): Promise<string>;
   revokeGroupInviteCode(instanceName: string, groupJid: string): Promise<string>;
+  // স্প্যাম/ব্যানড-ওয়ার্ড ফিল্টার ম্যাচ হলে (আর bot গ্রুপে অ্যাডমিন হলে) মেসেজ auto-delete করতে
+  deleteGroupMessage(instanceName: string, groupJid: string, key: GroupMessageKey): Promise<void>;
 }

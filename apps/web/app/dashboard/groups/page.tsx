@@ -16,6 +16,11 @@ export default async function GroupsPage() {
 
   const { data: members } = await supabase.from("group_members").select("group_id, phone, name, is_group_admin");
 
+  const { data: filters } = await supabase
+    .from("workspace_group_filters")
+    .select("banned_words, banned_link_patterns")
+    .maybeSingle();
+
   const membersByGroup = new Map<string, { phone: string; name: string | null; is_group_admin: boolean }[]>();
   for (const m of members ?? []) {
     const list = membersByGroup.get(m.group_id) ?? [];
@@ -47,7 +52,12 @@ export default async function GroupsPage() {
         চাপুন। নতুন মেম্বার জয়েন করলে ওয়েলকাম মেসেজ পাঠাতে চাইলে — এই নাম্বারটা যদি এই ফিচার আসার আগে থেকে কানেক্টেড থাকে,
         একবার "Webhook ইভেন্ট রিফ্রেশ করুন" চাপতে হবে (নতুন করে QR স্ক্যান করা লাগবে না)।
       </p>
-      <GroupsList numbers={numbers ?? []} groups={groupsWithMembers} />
+      <GroupsList
+        numbers={numbers ?? []}
+        groups={groupsWithMembers}
+        initialBannedWords={filters?.banned_words ?? []}
+        initialBannedLinkPatterns={filters?.banned_link_patterns ?? []}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { ConnectionStatus, CreateInstanceResult, GroupInfo, WhatsAppProvider } from "./types";
+import type { ConnectionStatus, CreateInstanceResult, GroupInfo, GroupMessageKey, WhatsAppProvider } from "./types";
 
 interface EvolutionServerConfig {
   apiUrl: string;
@@ -218,6 +218,27 @@ export class EvolutionProvider implements WhatsAppProvider {
 
     const data = (await res.json()) as any;
     return (data?.inviteCode as string) ?? "";
+  }
+
+  // Evolution v2 এর ডকুমেন্টেড কনভেনশন অনুযায়ী এন্ডপয়েন্ট — group এন্ডপয়েন্টগুলোর মতোই
+  // VPS এ লাইভ যাচাই করা হয়নি, প্রথমবার টেস্ট করার সময় path/মেথড ভুল হলে এরর বডি দেখে ঠিক
+  // করা যাবে (আগের revokeInviteCode এর মতোই)
+  async deleteGroupMessage(instanceName: string, groupJid: string, key: GroupMessageKey): Promise<void> {
+    const res = await this.request(`/chat/deleteMessageForEveryone/${instanceName}`, {
+      method: "DELETE",
+      headers: this.headers(),
+      body: JSON.stringify({
+        id: key.id,
+        remoteJid: groupJid,
+        fromMe: key.fromMe,
+        participant: key.participant,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution deleteGroupMessage ব্যর্থ (${res.status}): ${body}`);
+    }
   }
 
   async sendMedia(

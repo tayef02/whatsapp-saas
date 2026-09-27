@@ -100,6 +100,28 @@ export async function rotateInviteLink(groupId: string) {
   }
 }
 
+async function getWorkspaceId(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data } = await supabase.from("workspace_members").select("workspace_id").limit(1).maybeSingle();
+  return data?.workspace_id as string | undefined;
+}
+
+// workspace-ভিত্তিক ব্যানড-ওয়ার্ড/লিংক-প্যাটার্ন লিস্ট (সব গ্রুপে প্রযোজ্য, প্রতি গ্রুপে আলাদা না)
+export async function updateGroupFilters(bannedWords: string[], bannedLinkPatterns: string[]) {
+  const supabase = await createClient();
+  const workspaceId = await getWorkspaceId(supabase);
+  if (!workspaceId) return { error: "workspace পাওয়া যায়নি" };
+
+  const { error } = await supabase.from("workspace_group_filters").upsert(
+    { workspace_id: workspaceId, banned_words: bannedWords, banned_link_patterns: bannedLinkPatterns },
+    { onConflict: "workspace_id" }
+  );
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/groups");
+  return { error: null };
+}
+
 export async function updateWelcomeSettings(groupId: string, enabled: boolean, message: string) {
   const supabase = await createClient();
   const { error } = await supabase

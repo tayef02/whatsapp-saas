@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { syncGroups, getInviteLink, rotateInviteLink, resyncWebhook, updateWelcomeSettings } from "./actions";
+import { syncGroups, getInviteLink, rotateInviteLink, resyncWebhook, updateWelcomeSettings, updateGroupFilters } from "./actions";
 
 type Member = { phone: string; name: string | null; is_group_admin: boolean };
 type Group = {
@@ -59,7 +59,66 @@ function WelcomeSettingsForm({ group, onSaved }: { group: Group; onSaved: () => 
   );
 }
 
-export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumber[]; groups: Group[] }) {
+function SpamFilterSettings({ initialBannedWords, initialBannedLinkPatterns }: { initialBannedWords: string[]; initialBannedLinkPatterns: string[] }) {
+  const [wordsText, setWordsText] = useState(initialBannedWords.join(", "));
+  const [linksText, setLinksText] = useState(initialBannedLinkPatterns.join(", "));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave() {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    const bannedWords = wordsText.split(",").map((w) => w.trim()).filter(Boolean);
+    const bannedLinkPatterns = linksText.split(",").map((w) => w.trim()).filter(Boolean);
+    const res = await updateGroupFilters(bannedWords, bannedLinkPatterns);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    setSaved(true);
+  }
+
+  return (
+    <div className="auth-card" style={{ marginBottom: 24 }}>
+      <h2 style={{ fontSize: 16, marginBottom: 8 }}>স্প্যাম/ব্যানড-ওয়ার্ড ফিল্টার (সব গ্রুপে প্রযোজ্য)</h2>
+      <p style={{ color: "#666", fontSize: 12, marginBottom: 8 }}>
+        নিচের যেকোনো শব্দ/লিংক-প্যাটার্ন গ্রুপ মেসেজে মিললে — bot গ্রুপে অ্যাডমিন থাকলে অটোমেটিক ডিলিট হবে, না থাকলে
+        ড্যাশবোর্ডে নোটিফিকেশন যাবে। কমা দিয়ে আলাদা করে লিখুন।
+      </p>
+      {error && <p style={{ color: "#dc2626", marginBottom: 8 }}>{error}</p>}
+      <label>
+        ব্যানড ওয়ার্ড
+        <input type="text" value={wordsText} onChange={(e) => setWordsText(e.target.value)} placeholder="যেমন: গালি১, গালি২" style={{ width: "100%" }} />
+      </label>
+      <label style={{ display: "block", marginTop: 8 }}>
+        ব্যানড লিংক প্যাটার্ন
+        <input
+          type="text"
+          value={linksText}
+          onChange={(e) => setLinksText(e.target.value)}
+          placeholder="যেমন: bit.ly, t.me"
+          style={{ width: "100%" }}
+        />
+      </label>
+      <button disabled={busy} onClick={handleSave} style={{ marginTop: 8 }}>
+        সেভ করুন
+      </button>
+      {saved && <span style={{ marginLeft: 8, color: "#166534", fontSize: 12 }}>✓ সেভ হয়েছে</span>}
+    </div>
+  );
+}
+
+export default function GroupsList({
+  numbers,
+  groups,
+  initialBannedWords,
+  initialBannedLinkPatterns,
+}: {
+  numbers: WhatsappNumber[];
+  groups: Group[];
+  initialBannedWords: string[];
+  initialBannedLinkPatterns: string[];
+}) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +185,8 @@ export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumbe
           ))}
         </div>
       </div>
+
+      <SpamFilterSettings initialBannedWords={initialBannedWords} initialBannedLinkPatterns={initialBannedLinkPatterns} />
 
       <h2 style={{ fontSize: 16, marginBottom: 8 }}>গ্রুপ লিস্ট</h2>
       {groups.length === 0 && <p style={{ color: "#666" }}>এখনো কোনো গ্রুপ sync হয়নি।</p>}

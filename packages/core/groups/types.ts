@@ -8,3 +8,15 @@ export type GroupReplyJobData = {
   groupJid: string;
   replyText: string;
 };
+
+// স্প্যাম/ব্যানড-ওয়ার্ড/লিংক ফিল্টার ম্যাচ হলে ("delete-group-message" নামে একই queue তে যায়) —
+// bot গ্রুপে অ্যাডমিন কিনা নিশ্চিত হয়েই শুধু এই job বসানো হয়, তাই worker এখানে permission
+// চেক করে না, সরাসরি delete কল করে
+export type DeleteGroupMessageJobData = {
+  workspaceId: string;
+  whatsappNumberId: string;
+  groupJid: string;
+  messageId: string;
+  senderPhone: string;
+  matchedText: string;
+};

@@ -14,7 +14,7 @@ import {
   ORDER_BLOCK_END,
 } from "@whatsapp-saas/core/chatbot/constants";
 import { extractOrderBlock, type ParsedOrder } from "@whatsapp-saas/core/chatbot/order-block";
-import type { GroupReplyJobData } from "@whatsapp-saas/core/groups/types";
+import type { GroupReplyJobData, DeleteGroupMessageJobData } from "@whatsapp-saas/core/groups/types";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -329,8 +329,10 @@ async function logGroupMessage(
   workspaceId: string,
   senderPhone: string,
   text: string,
-  mediaType: string | null
+  mediaType: string | null,
+  providerMessageId?: string
 ) {
+  // provider_message_id সেভ রাখা হয় যাতে ফিল্টার ম্যাচ হলে পরে delete-for-everyone কল করা যায়
   await supabase.from("group_messages").insert({
     group_id: groupId,
     workspace_id: workspaceId,
@@ -339,6 +341,7 @@ async function logGroupMessage(
     content: text || null,
     media_type: mediaType,
     status: "received",
+    provider_message_id: providerMessageId ?? null,
   });
 }
 
@@ -350,7 +353,7 @@ async function logGroupMessage(
 async function handleGroupMessage(
   instanceName: string,
   data: Record<string, unknown>,
-  key: { remoteJid?: string; participant?: string }
+  key: { remoteJid?: string; participant?: string; id?: string }
 ) {
   const { text, mediaType } = extractGroupMessageContent(data);
   if (!text.trim() && !mediaType) return; // অচেনা/অপ্রাসঙ্গিক মেসেজ টাইপ (reaction, poll, protocol ইত্যাদি)
@@ -389,6 +392,57 @@ async function handleGroupMessage(
     return;
   }
 
+  // স্প্যাম/ব্যানড-ওয়ার্ড/লিংক ফিল্টার — কিওয়ার্ড/mention ট্রিগারের আগেই চেক হয়, ম্যাচ করলে
+  // keyword/AI প্রসেসিং একদম স্কিপ হয়ে যায় (একটা ব্যানড মেসেজ কোনোভাবেই রিপ্লাই ট্রিগার করবে না)
+  const { data: filters } = await supabase
+    .from("workspace_group_filters")
+    .select("banned_words, banned_link_patterns")
+    .eq("workspace_id", group.workspace_id)
+    .maybeSingle();
+
+  const lowerTextForFilter = text.toLowerCase();
+  const matchedBadWord = (filters?.banned_words ?? []).find((w: string) => w && lowerTextForFilter.includes(w.toLowerCase()));
+  const matchedBadLink = (filters?.banned_link_patterns ?? []).find((p: string) => p && lowerTextForFilter.includes(p.toLowerCase()));
+  const matchedFilterText = matchedBadWord || matchedBadLink;
+
+  if (matchedFilterText) {
+    console.log(`[group-moderation] filter matched ("${matchedFilterText}") in group=${groupJid}, sender=${senderPhone}`);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+
+    // bot নিজে এই গ্রুপে অ্যাডমিন কিনা (sync করা group_members থেকে) — অ্যাডমিন হলেই শুধু
+    // delete permission থাকে, নাহলে চেষ্টা না করে সরাসরি admin কে নোটিফাই করা ভালো
+    const { data: botMember } = number.phone_number
+      ? await supabase
+          .from("group_members")
+          .select("is_group_admin")
+          .eq("group_id", group.id)
+          .eq("phone", number.phone_number)
+          .maybeSingle()
+      : { data: null };
+
+    if (botMember?.is_group_admin && key.id) {
+      const deleteJobData: DeleteGroupMessageJobData = {
+        workspaceId: group.workspace_id,
+        whatsappNumberId: number.id,
+        groupJid,
+        messageId: key.id,
+        senderPhone,
+        matchedText: matchedFilterText,
+      };
+      await getAutoReplyQueue().add("delete-group-message", deleteJobData, { attempts: 2, backoff: { type: "exponential", delay: 3000 } });
+      console.log(`[group-moderation] bot is admin, delete job queued (group=${groupJid})`);
+    } else {
+      await createNotification(
+        group.workspace_id,
+        "group_message_flagged",
+        "গ্রুপে স্প্যাম/ব্যানড কন্টেন্ট ধরা পড়েছে",
+        `"${matchedFilterText}" মিলে গেছে একটা মেসেজে — bot এই গ্রুপে অ্যাডমিন না থাকায় নিজে ডিলিট করতে পারেনি, ম্যানুয়ালি দেখুন। (কাস্টমার: ${senderPhone})`
+      );
+      console.log(`[group-moderation] bot is not admin (or no message id), notified workspace instead (group=${groupJid})`);
+    }
+    return;
+  }
+
   const { data: rules } = await supabase
     .from("group_keyword_replies")
     .select("id, trigger_type, reply_mode, keyword, reply_text, cooldown_seconds")
@@ -405,7 +459,7 @@ async function handleGroupMessage(
   );
 
   if (!matched) {
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
     // ডায়াগনস্টিক লগ — কোনো mention-trigger রুল থাকা সত্ত্বেও মেলেনি মানে হয় mention করা হয়নি,
     // অথবা বট নিজের নাম্বার আর @<নাম্বার> এর ফরম্যাট মিলছে না (যেমন leading zero/country code
     // ভিন্নতা)। rules থাকলেই শুধু লগ হয়, তাই সাধারণ গ্রুপের মেসেজে স্প্যাম হয় না
@@ -431,12 +485,12 @@ async function handleGroupMessage(
 
   if (!won) {
     console.log(`[group-autoreply] cooldown active for rule=${matched.id} in group=${groupJid}, skipping`);
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
     return;
   }
 
   if (matched.reply_mode === "fixed") {
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
 
     const jobData: GroupReplyJobData = {
       workspaceId: number.workspace_id,
@@ -472,7 +526,7 @@ async function handleGroupMessage(
       }
     );
 
-  await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
+  await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
 
   // mention ট্রিগারে মেসেজে "@৮৮০১..." টাইপ raw নাম্বার থাকে, LLM কে বিভ্রান্ত না করতে ছেঁটে ফেলা হয়
   const cleanedQuestion = text.replace(/@\d{7,15}/g, "").trim() || text;

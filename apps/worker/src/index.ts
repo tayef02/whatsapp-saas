@@ -25,6 +25,7 @@ import { runSubscriptionMaintenanceTick } from "./processors/subscription-mainte
 import { AUTOREPLY_QUEUE_NAME } from "./queues/autoreply-queue";
 import { processAutoReply } from "./processors/process-autoreply";
 import { processGroupReply } from "./processors/process-group-reply";
+import { processDeleteGroupMessage } from "./processors/process-group-moderation";
 import { KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/knowledge-base-queue";
 import { processKnowledgeBaseDocument } from "./processors/process-knowledge-base";
 
@@ -109,13 +110,16 @@ subscriptionWorker.on("failed", (job, err) => {
   console.error(`[subscription-maintenance] tick ব্যর্থ:`, err.message);
 });
 
-// keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job — একই queue তে ১:১ চ্যাটের "reply"
-// আর গ্রুপ কিওয়ার্ডের "group-reply" দুই ধরনের job আসে, job.name দিয়ে আলাদা করা হয়
+// keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job — একই queue তে ১:১ চ্যাটের "reply",
+// গ্রুপ কিওয়ার্ডের "group-reply", আর স্প্যাম-ফিল্টারের "delete-group-message" — তিন ধরনের
+// job আসে, job.name দিয়ে আলাদা করা হয়
 const autoReplyWorker = new Worker(
   AUTOREPLY_QUEUE_NAME,
   async (job) => {
     if (job.name === "group-reply") {
       await processGroupReply(job.data);
+    } else if (job.name === "delete-group-message") {
+      await processDeleteGroupMessage(job.data);
     } else {
       await processAutoReply(job.data);
     }
