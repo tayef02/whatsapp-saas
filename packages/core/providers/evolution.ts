@@ -241,6 +241,35 @@ export class EvolutionProvider implements WhatsAppProvider {
     }
   }
 
+  // ওয়েব সার্চ করে যাচাই করা এন্ডপয়েন্ট (Evolution v2 এর নিজস্ব ডকুমেন্টেশন) — raw message এর
+  // url ফিল্ড দিয়ে সরাসরি ডাউনলোড করলে এনক্রিপ্টেড বাইনারি আসে (WhatsApp মিডিয়া mediaKey দিয়ে
+  // এনক্রিপ্ট করা থাকে), এই এন্ডপয়েন্ট Evolution এর ভেতরেই ডিক্রিপ্ট করে base64 রিটার্ন করে
+  async getMediaBase64(instanceName: string, messageId: string): Promise<{ base64: string; mimetype: string; fileName: string } | null> {
+    const res = await this.request(
+      `/chat/getBase64FromMediaMessage/${instanceName}`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ message: { key: { id: messageId } } }),
+      },
+      MEDIA_TIMEOUT_MS
+    );
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution getMediaBase64 ব্যর্থ (${res.status}): ${body}`);
+    }
+
+    const data = (await res.json()) as any;
+    if (!data?.base64) return null;
+
+    return {
+      base64: data.base64 as string,
+      mimetype: (data.mimetype as string) ?? "application/octet-stream",
+      fileName: (data.fileName as string) ?? messageId,
+    };
+  }
+
   // Evolution v2 এর ডকুমেন্টেড কনভেনশন অনুযায়ী এন্ডপয়েন্ট/পেলোড — এখনো VPS এ লাইভ যাচাই করা
   // হয়নি। "announcement" মোড চালু = শুধু অ্যাডমিন পোস্ট করতে পারবে (Baileys এর
   // groupSettingUpdate(jid, 'announcement'|'not_announcement') এর সমতুল্য)

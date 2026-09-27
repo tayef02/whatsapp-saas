@@ -167,10 +167,16 @@ values (
 ```
 DATABASE_SAVE_DATA_NEW_MESSAGE=true
 DATABASE_SAVE_MESSAGE_UPDATE=true
-WEBHOOK_EVENTS_MESSAGES_UPDATE=true
 ```
 এগুলো false/অনুপস্থিত থাকলে ক্যাম্পেইন রিপোর্টে "sent" ঠিক আপডেট হয় কিন্তু ডেলিভার্ড/পড়া কখনো
 আসে না (লাইভে একবার এই বাগে পড়া গেছে, `genzitzone` ইনস্ট্যান্সে প্রভাব ছাড়াই ঠিক করা হয়েছিল)।
+
+**সংশোধন (২০২৬-০৯-২৮):** এই তালিকায় আগে `WEBHOOK_EVENTS_MESSAGES_UPDATE` (গ্লোবাল env var
+হিসেবে) থাকার কথা লেখা ছিল — VPS এর আসল `docker-compose.yml` দেখে যাচাই করা হয়েছে এই ভ্যারিয়েবল
+Evolution-এ আদৌ নেই/দরকার নেই। আমাদের অ্যাপ webhook ইভেন্ট (`MESSAGES_UPDATE` সহ) গ্লোবাল env
+দিয়ে না, বরং প্রতিটা instance এর জন্য আলাদাভাবে API কলে (`createInstance`/`setWebhook`,
+`packages/core/providers/evolution.ts` এর `WEBHOOK_EVENTS` লিস্ট) সাবস্ক্রাইব করে — শুধু উপরের
+দুটো `DATABASE_SAVE_*` ভ্যারিয়েবলই VPS এর Evolution কনফিগে থাকা দরকার।
 
 **নোট — Group Tools যোগ হওয়ার পর নতুন webhook ইভেন্ট:** নতুন মেম্বার ওয়েলকাম ফিচারের জন্য
 `GROUP_PARTICIPANTS_UPDATE` ইভেন্ট আমাদের অ্যাপের instance-webhook লিস্টে যোগ হয়েছে (Group

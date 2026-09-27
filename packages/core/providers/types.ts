@@ -56,4 +56,11 @@ export interface WhatsAppProvider {
   setGroupAdminOnlyMode(instanceName: string, groupJid: string, adminOnly: boolean): Promise<void>;
   // স্প্যাম/ব্যানড-ওয়ার্ড ফিল্টার ম্যাচ হলে (আর bot গ্রুপে অ্যাডমিন হলে) মেসেজ auto-delete করতে
   deleteGroupMessage(instanceName: string, groupJid: string, key: GroupMessageKey): Promise<void>;
+  // মিডিয়া মেসেজ (ছবি/ভিডিও/ডকুমেন্ট/অডিও) এর আসল ফাইল ডিক্রিপ্ট করা base64 হিসেবে আনতে —
+  // raw message এর url ফিল্ড দিয়ে সরাসরি ডাউনলোড করলে এনক্রিপ্টেড ডেটা আসে, Evolution এর এই
+  // এন্ডপয়েন্টই ডিক্রিপশন হ্যান্ডল করে
+  getMediaBase64(
+    instanceName: string,
+    messageId: string
+  ): Promise<{ base64: string; mimetype: string; fileName: string } | null>;
 }

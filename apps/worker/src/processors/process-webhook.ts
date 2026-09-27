@@ -14,7 +14,7 @@ import {
   ORDER_BLOCK_END,
 } from "@whatsapp-saas/core/chatbot/constants";
 import { extractOrderBlock, type ParsedOrder } from "@whatsapp-saas/core/chatbot/order-block";
-import type { GroupReplyJobData, DeleteGroupMessageJobData } from "@whatsapp-saas/core/groups/types";
+import type { GroupReplyJobData, DeleteGroupMessageJobData, DownloadGroupMediaJobData } from "@whatsapp-saas/core/groups/types";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -331,18 +331,48 @@ async function logGroupMessage(
   text: string,
   mediaType: string | null,
   providerMessageId?: string
+): Promise<string | null> {
+  // provider_message_id সেভ রাখা হয় যাতে ফিল্টার ম্যাচ হলে পরে delete-for-everyone কল করা যায়,
+  // আর মিডিয়া হলে ডাউনলোড job এই row id + messageId দিয়েই আসল ফাইল খুঁজে আনবে
+  const { data: row } = await supabase
+    .from("group_messages")
+    .insert({
+      group_id: groupId,
+      workspace_id: workspaceId,
+      direction: "inbound",
+      sender_phone: senderPhone,
+      content: text || null,
+      media_type: mediaType,
+      status: "received",
+      provider_message_id: providerMessageId ?? null,
+    })
+    .select("id")
+    .maybeSingle();
+
+  return row?.id ?? null;
+}
+
+// মিডিয়া মেসেজ হলে (আর row ঠিকমতো সেভ হয়ে থাকলে) আসল ফাইল ডাউনলোড করে আনার job বসায় —
+// এটা সরাসরি না করে queue দিয়ে করা হয় যাতে মূল webhook প্রসেসিং (keyword/AI ট্রিগার) কখনো
+// একটা ধীর মিডিয়া-ডাউনলোড কলের জন্য আটকে না থাকে
+async function maybeQueueMediaDownload(
+  rowId: string | null,
+  mediaType: string | null,
+  groupId: string,
+  workspaceId: string,
+  whatsappNumberId: string,
+  messageId: string | undefined
 ) {
-  // provider_message_id সেভ রাখা হয় যাতে ফিল্টার ম্যাচ হলে পরে delete-for-everyone কল করা যায়
-  await supabase.from("group_messages").insert({
-    group_id: groupId,
-    workspace_id: workspaceId,
-    direction: "inbound",
-    sender_phone: senderPhone,
-    content: text || null,
-    media_type: mediaType,
-    status: "received",
-    provider_message_id: providerMessageId ?? null,
-  });
+  if (!rowId || !mediaType || !messageId) return;
+
+  const jobData: DownloadGroupMediaJobData = {
+    groupMessageRowId: rowId,
+    workspaceId,
+    groupId,
+    whatsappNumberId,
+    messageId,
+  };
+  await getAutoReplyQueue().add("download-group-media", jobData, { attempts: 2, backoff: { type: "exponential", delay: 3000 } });
 }
 
 // গ্রুপটা এখনো sync করা না থাকলে (groups টেবিলে নেই) কিছু করার নেই, স্কিপ। প্রতিটা মেসেজ
@@ -407,7 +437,8 @@ async function handleGroupMessage(
 
   if (matchedFilterText) {
     console.log(`[group-moderation] filter matched ("${matchedFilterText}") in group=${groupJid}, sender=${senderPhone}`);
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
 
     // bot নিজে এই গ্রুপে অ্যাডমিন কিনা (sync করা group_members থেকে) — অ্যাডমিন হলেই শুধু
     // delete permission থাকে, নাহলে চেষ্টা না করে সরাসরি admin কে নোটিফাই করা ভালো
@@ -459,7 +490,8 @@ async function handleGroupMessage(
   );
 
   if (!matched) {
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
     // ডায়াগনস্টিক লগ — কোনো mention-trigger রুল থাকা সত্ত্বেও মেলেনি মানে হয় mention করা হয়নি,
     // অথবা বট নিজের নাম্বার আর @<নাম্বার> এর ফরম্যাট মিলছে না (যেমন leading zero/country code
     // ভিন্নতা)। rules থাকলেই শুধু লগ হয়, তাই সাধারণ গ্রুপের মেসেজে স্প্যাম হয় না
@@ -485,12 +517,14 @@ async function handleGroupMessage(
 
   if (!won) {
     console.log(`[group-autoreply] cooldown active for rule=${matched.id} in group=${groupJid}, skipping`);
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
     return;
   }
 
   if (matched.reply_mode === "fixed") {
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
 
     const jobData: GroupReplyJobData = {
       workspaceId: number.workspace_id,
@@ -526,7 +560,8 @@ async function handleGroupMessage(
       }
     );
 
-  await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+  const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+  await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
 
   // mention ট্রিগারে মেসেজে "@৮৮০১..." টাইপ raw নাম্বার থাকে, LLM কে বিভ্রান্ত না করতে ছেঁটে ফেলা হয়
   const cleanedQuestion = text.replace(/@\d{7,15}/g, "").trim() || text;

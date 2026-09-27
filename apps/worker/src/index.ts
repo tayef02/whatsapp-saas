@@ -26,6 +26,7 @@ import { AUTOREPLY_QUEUE_NAME } from "./queues/autoreply-queue";
 import { processAutoReply } from "./processors/process-autoreply";
 import { processGroupReply } from "./processors/process-group-reply";
 import { processDeleteGroupMessage } from "./processors/process-group-moderation";
+import { processDownloadGroupMedia } from "./processors/process-group-media";
 import { KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/knowledge-base-queue";
 import { processKnowledgeBaseDocument } from "./processors/process-knowledge-base";
 
@@ -120,6 +121,8 @@ const autoReplyWorker = new Worker(
       await processGroupReply(job.data);
     } else if (job.name === "delete-group-message") {
       await processDeleteGroupMessage(job.data);
+    } else if (job.name === "download-group-media") {
+      await processDownloadGroupMedia(job.data);
     } else {
       await processAutoReply(job.data);
     }

@@ -20,3 +20,13 @@ export type DeleteGroupMessageJobData = {
   senderPhone: string;
   matchedText: string;
 };
+
+// মিডিয়া মেসেজ ধরা পড়লে ("download-group-media" নামে একই queue তে যায়) — আসল ফাইল
+// ডাউনলোড+ডিক্রিপ্ট করে storage এ সেভ করে group_messages.media_url আপডেট করা হয়
+export type DownloadGroupMediaJobData = {
+  groupMessageRowId: string;
+  workspaceId: string;
+  groupId: string;
+  whatsappNumberId: string;
+  messageId: string;
+};

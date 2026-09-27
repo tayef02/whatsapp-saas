@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const PAGE_SIZE = 50;
+const GROUP_MEDIA_BUCKET = "group-media";
+const SIGNED_URL_EXPIRY_SECONDS = 3600;
 
 const mediaLabel: Record<string, string> = {
   image: "🖼️ ছবি",
@@ -43,7 +46,7 @@ export default async function GroupMessagesPage({
 
   let query = supabase
     .from("group_messages")
-    .select("id, direction, sender_phone, sender_name, content, media_type, status, created_at", { count: "exact" })
+    .select("id, direction, sender_phone, sender_name, content, media_type, media_url, status, created_at", { count: "exact" })
     .eq("group_id", id);
 
   if (q) {
@@ -57,6 +60,18 @@ export default async function GroupMessagesPage({
 
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
+  // media_url এ শুধু storage path সেভ থাকে (bucket প্রাইভেট) — admin client দিয়ে সাইন করা
+  // URL বানানো হয়, গ্রুপ-ownership আগেই উপরের RLS-স্কোপড কোয়েরিতে যাচাই হয়ে গেছে
+  const mediaPaths = (messages ?? []).map((m) => m.media_url).filter((p): p is string => Boolean(p));
+  const signedUrlByPath = new Map<string, string>();
+  if (mediaPaths.length > 0) {
+    const admin = createAdminClient();
+    const { data: signedUrls } = await admin.storage.from(GROUP_MEDIA_BUCKET).createSignedUrls(mediaPaths, SIGNED_URL_EXPIRY_SECONDS);
+    for (const s of signedUrls ?? []) {
+      if (s.path && s.signedUrl) signedUrlByPath.set(s.path, s.signedUrl);
+    }
+  }
+
   return (
     <div>
       <p style={{ marginBottom: 8 }}>
@@ -64,8 +79,8 @@ export default async function GroupMessagesPage({
       </p>
       <h1>মেসেজ আর্কাইভ — {group.name || "(নাম নেই)"} ({count ?? 0})</h1>
       <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
-        এই গ্রুপের সব মেসেজ (টেক্সট + মিডিয়া) এখানে সেভ থাকে। মিডিয়া ফাইল এখনো সরাসরি এখানে দেখানো যায় না
-        (শুধু টাইপ/ক্যাপশন), সেটা শীঘ্রই যোগ হবে।
+        এই গ্রুপের সব মেসেজ (টেক্সট + মিডিয়া) এখানে সেভ থাকে। মিডিয়া ফাইল ডাউনলোড হতে মেসেজ আসার কিছুক্ষণ পরে সময় লাগতে
+        পারে — এর মধ্যে দেখলে শুধু টাইপ/ক্যাপশন দেখাবে, লিংক এখনো প্রস্তুত হয়নি বুঝবেন।
       </p>
 
       <form style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -95,7 +110,25 @@ export default async function GroupMessagesPage({
               {new Date(m.created_at).toLocaleString("bn-BD")}
               {m.direction === "outbound" && statusLabel[m.status] && ` — ${statusLabel[m.status]}`}
             </div>
-            {m.media_type && <div style={{ color: "#2563eb", marginBottom: 2 }}>{mediaLabel[m.media_type] ?? m.media_type}</div>}
+            {m.media_type && (
+              <div style={{ color: "#2563eb", marginBottom: 4 }}>
+                {mediaLabel[m.media_type] ?? m.media_type}
+                {!m.media_url && <span style={{ color: "#999", marginLeft: 6, fontSize: 11 }}>(ডাউনলোড হচ্ছে...)</span>}
+              </div>
+            )}
+            {m.media_url &&
+              signedUrlByPath.get(m.media_url) &&
+              (m.media_type === "image" || m.media_type === "sticker" ? (
+                <img
+                  src={signedUrlByPath.get(m.media_url)}
+                  alt={m.content || "media"}
+                  style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, marginBottom: 4, display: "block" }}
+                />
+              ) : (
+                <a href={signedUrlByPath.get(m.media_url)} target="_blank" rel="noreferrer" style={{ display: "block", marginBottom: 4, color: "#2563eb" }}>
+                  ফাইল ডাউনলোড করুন →
+                </a>
+              ))}
             {m.content && <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>}
           </div>
         ))}
