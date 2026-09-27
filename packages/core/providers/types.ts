@@ -52,6 +52,8 @@ export interface WhatsAppProvider {
   listGroups(instanceName: string): Promise<GroupInfo[]>;
   getGroupInviteCode(instanceName: string, groupJid: string): Promise<string>;
   revokeGroupInviteCode(instanceName: string, groupJid: string): Promise<string>;
+  // চালু করলে শুধু গ্রুপ অ্যাডমিনরাই মেসেজ পাঠাতে পারবে (WhatsApp এর "announcement" গ্রুপ মোড)
+  setGroupAdminOnlyMode(instanceName: string, groupJid: string, adminOnly: boolean): Promise<void>;
   // স্প্যাম/ব্যানড-ওয়ার্ড ফিল্টার ম্যাচ হলে (আর bot গ্রুপে অ্যাডমিন হলে) মেসেজ auto-delete করতে
   deleteGroupMessage(instanceName: string, groupJid: string, key: GroupMessageKey): Promise<void>;
 }

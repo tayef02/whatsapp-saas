@@ -241,6 +241,22 @@ export class EvolutionProvider implements WhatsAppProvider {
     }
   }
 
+  // Evolution v2 এর ডকুমেন্টেড কনভেনশন অনুযায়ী এন্ডপয়েন্ট/পেলোড — এখনো VPS এ লাইভ যাচাই করা
+  // হয়নি। "announcement" মোড চালু = শুধু অ্যাডমিন পোস্ট করতে পারবে (Baileys এর
+  // groupSettingUpdate(jid, 'announcement'|'not_announcement') এর সমতুল্য)
+  async setGroupAdminOnlyMode(instanceName: string, groupJid: string, adminOnly: boolean): Promise<void> {
+    const res = await this.request(`/group/updateSetting/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ action: adminOnly ? "announcement" : "not_announcement" }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution setGroupAdminOnlyMode ব্যর্থ (${res.status}): ${body}`);
+    }
+  }
+
   async sendMedia(
     instanceName: string,
     to: string,

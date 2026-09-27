@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { syncGroups, getInviteLink, rotateInviteLink, resyncWebhook, updateWelcomeSettings, updateGroupFilters } from "./actions";
+import {
+  syncGroups,
+  getInviteLink,
+  rotateInviteLink,
+  resyncWebhook,
+  updateWelcomeSettings,
+  updateGroupFilters,
+  toggleAdminOnlyMode,
+} from "./actions";
 
 type Member = { phone: string; name: string | null; is_group_admin: boolean };
 type Group = {
@@ -14,6 +22,7 @@ type Group = {
   invite_code: string | null;
   welcome_enabled: boolean;
   welcome_message: string | null;
+  is_admin_only_mode: boolean;
   last_synced_at: string | null;
   number_name: string | null;
   members: Member[];
@@ -162,6 +171,15 @@ export default function GroupsList({
     router.refresh();
   }
 
+  async function handleToggleAdminOnly(groupId: string, adminOnly: boolean) {
+    setBusyId(groupId);
+    setError(null);
+    const res = await toggleAdminOnlyMode(groupId, adminOnly);
+    setBusyId(null);
+    if (res.error) return setError(res.error);
+    router.refresh();
+  }
+
   return (
     <div>
       {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
@@ -204,6 +222,7 @@ export default function GroupsList({
                     {g.member_count} জন মেম্বার, {adminCount} জন অ্যাডমিন
                     {g.last_synced_at && ` — সর্বশেষ সিঙ্ক: ${new Date(g.last_synced_at).toLocaleString("bn-BD")}`}
                     {g.welcome_enabled && " — 👋 ওয়েলকাম চালু"}
+                    {g.is_admin_only_mode && " — 🔒 Admin-only"}
                   </div>
                   {g.invite_code && (
                     <div style={{ marginTop: 6, fontSize: 12, wordBreak: "break-all", color: "#2563eb" }}>
@@ -251,6 +270,9 @@ export default function GroupsList({
                       রোটেট করুন
                     </button>
                   )}
+                  <button disabled={busyId === g.id} onClick={() => handleToggleAdminOnly(g.id, !g.is_admin_only_mode)} style={{ width: "auto" }}>
+                    {g.is_admin_only_mode ? "সবাই পোস্ট করতে পারবে" : "শুধু Admin পোস্ট করবে"}
+                  </button>
                 </div>
               </div>
             </div>

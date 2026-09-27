@@ -100,6 +100,27 @@ export async function rotateInviteLink(groupId: string) {
   }
 }
 
+export async function toggleAdminOnlyMode(groupId: string, adminOnly: boolean) {
+  const supabase = await createClient();
+  const { data: group } = await supabase.from("groups").select("id, whatsapp_number_id, group_jid").eq("id", groupId).maybeSingle();
+  if (!group) return { error: "গ্রুপ পাওয়া যায়নি" };
+
+  const providerInfo = await getProviderForNumber(group.whatsapp_number_id);
+  if (!providerInfo) return { error: "Evolution সার্ভার তথ্য পাওয়া যায়নি" };
+
+  try {
+    await providerInfo.provider.setGroupAdminOnlyMode(providerInfo.instanceName, group.group_jid, adminOnly);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "গ্রুপ সেটিং বদলানো যায়নি" };
+  }
+
+  const { error } = await supabase.from("groups").update({ is_admin_only_mode: adminOnly }).eq("id", groupId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/groups");
+  return { error: null };
+}
+
 async function getWorkspaceId(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data } = await supabase.from("workspace_members").select("workspace_id").limit(1).maybeSingle();
   return data?.workspace_id as string | undefined;

@@ -11,7 +11,9 @@ export default async function GroupsPage() {
 
   const { data: groups } = await supabase
     .from("groups")
-    .select("id, name, description, member_count, invite_code, welcome_enabled, welcome_message, last_synced_at, whatsapp_numbers(display_name)")
+    .select(
+      "id, name, description, member_count, invite_code, welcome_enabled, welcome_message, is_admin_only_mode, last_synced_at, whatsapp_numbers(display_name)"
+    )
     .order("name", { ascending: true });
 
   const { data: members } = await supabase.from("group_members").select("group_id, phone, name, is_group_admin");
@@ -38,6 +40,7 @@ export default async function GroupsPage() {
       invite_code: g.invite_code,
       welcome_enabled: g.welcome_enabled,
       welcome_message: g.welcome_message,
+      is_admin_only_mode: g.is_admin_only_mode,
       last_synced_at: g.last_synced_at,
       number_name: number?.display_name ?? null,
       members: membersByGroup.get(g.id) ?? [],
