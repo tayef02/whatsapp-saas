@@ -179,6 +179,9 @@ export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumbe
                   <Link href={`/dashboard/groups/${g.id}/keywords`} style={{ fontSize: 13 }}>
                     কিওয়ার্ড রিপ্লাই →
                   </Link>
+                  <Link href={`/dashboard/groups/${g.id}/messages`} style={{ fontSize: 13 }}>
+                    মেসেজ আর্কাইভ →
+                  </Link>
                   <button disabled={busyId === g.id} onClick={() => handleGetInvite(g.id)} style={{ width: "auto" }}>
                     ইনভাইট লিংক আনুন
                   </button>

@@ -13,11 +13,18 @@ export async function processGroupReply(data: GroupReplyJobData) {
     return;
   }
 
-  await providerInfo.provider.sendMessage(providerInfo.instanceName, data.groupJid, data.replyText);
+  const { messageId } = await providerInfo.provider.sendMessage(providerInfo.instanceName, data.groupJid, data.replyText);
   console.log(`[group-autoreply] sendMessage succeeded, group=${data.groupJid}`);
 
-  // পরের বার AI ট্রিগার হলে এই রিপ্লাইটাও কথোপকথনের ইতিহাসের অংশ হিসেবে থাকবে
-  await getSupabase()
-    .from("group_messages")
-    .insert({ group_id: data.groupId, workspace_id: data.workspaceId, direction: "outbound", sender_name: "AI", content: data.replyText });
+  // পরের বার AI ট্রিগার হলে এই রিপ্লাইটাও কথোপকথনের ইতিহাসের অংশ হিসেবে থাকবে। provider_message_id
+  // সেভ করা থাকলে পরে messages.update webhook দিয়ে delivered/read স্ট্যাটাস আপডেট হতে পারবে
+  await getSupabase().from("group_messages").insert({
+    group_id: data.groupId,
+    workspace_id: data.workspaceId,
+    direction: "outbound",
+    sender_name: "AI",
+    content: data.replyText,
+    provider_message_id: messageId || null,
+    status: "sent",
+  });
 }

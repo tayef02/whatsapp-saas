@@ -1,0 +1,125 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+
+const PAGE_SIZE = 50;
+
+const mediaLabel: Record<string, string> = {
+  image: "🖼️ ছবি",
+  document: "📄 ডকুমেন্ট",
+  video: "🎥 ভিডিও",
+  audio: "🎧 অডিও",
+  sticker: "🎨 স্টিকার",
+};
+
+const statusLabel: Record<string, string> = {
+  received: "পেয়েছি",
+  sent: "পাঠানো হয়েছে",
+  delivered: "✓✓ ডেলিভার্ড",
+  read: "✓✓ পড়া হয়েছে",
+  failed: "❌ ব্যর্থ",
+};
+
+// PostgREST এর or() ফিল্টার সিনট্যাক্সে কমা/ব্র্যাকেট বিশেষ অর্থ বহন করে, সার্চে থাকলে
+// ফিল্টার ভেঙে যেতে পারে — তাই সরিয়ে দেওয়া হচ্ছে (contacts পেজের একই প্যাটার্ন)
+function sanitizeSearch(q: string) {
+  return q.replace(/[,()]/g, " ").trim();
+}
+
+export default async function GroupMessagesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string; q?: string }>;
+}) {
+  const { id } = await params;
+  const { page: pageParam, q } = await searchParams;
+  const page = Math.max(1, Number(pageParam) || 1);
+  const supabase = await createClient();
+
+  const { data: group } = await supabase.from("groups").select("id, name").eq("id", id).maybeSingle();
+  if (!group) notFound();
+
+  let query = supabase
+    .from("group_messages")
+    .select("id, direction, sender_phone, sender_name, content, media_type, status, created_at", { count: "exact" })
+    .eq("group_id", id);
+
+  if (q) {
+    const safe = sanitizeSearch(q);
+    if (safe) query = query.ilike("content", `%${safe}%`);
+  }
+
+  const { data: messages, count } = await query
+    .order("created_at", { ascending: false })
+    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+
+  return (
+    <div>
+      <p style={{ marginBottom: 8 }}>
+        <Link href="/dashboard/groups">← গ্রুপ লিস্টে ফিরুন</Link>
+      </p>
+      <h1>মেসেজ আর্কাইভ — {group.name || "(নাম নেই)"} ({count ?? 0})</h1>
+      <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
+        এই গ্রুপের সব মেসেজ (টেক্সট + মিডিয়া) এখানে সেভ থাকে। মিডিয়া ফাইল এখনো সরাসরি এখানে দেখানো যায় না
+        (শুধু টাইপ/ক্যাপশন), সেটা শীঘ্রই যোগ হবে।
+      </p>
+
+      <form style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input name="q" defaultValue={q ?? ""} placeholder="মেসেজের টেক্সট দিয়ে খুঁজুন" style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", flex: 1 }} />
+        <button type="submit" style={{ padding: "8px 16px", borderRadius: 8, background: "#eee", border: "none", cursor: "pointer" }}>
+          খুঁজুন
+        </button>
+      </form>
+
+      {(!messages || messages.length === 0) && <p>কোনো মেসেজ পাওয়া যায়নি।</p>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {messages?.map((m) => (
+          <div
+            key={m.id}
+            style={{
+              padding: 12,
+              background: "white",
+              borderRadius: 8,
+              border: "1px solid #eee",
+              fontSize: 13,
+              alignSelf: m.direction === "outbound" ? "flex-end" : "flex-start",
+            }}
+          >
+            <div style={{ color: "#666", fontSize: 11, marginBottom: 4 }}>
+              {m.direction === "outbound" ? m.sender_name || "AI" : m.sender_name || m.sender_phone || "(অজানা)"} —{" "}
+              {new Date(m.created_at).toLocaleString("bn-BD")}
+              {m.direction === "outbound" && statusLabel[m.status] && ` — ${statusLabel[m.status]}`}
+            </div>
+            {m.media_type && <div style={{ color: "#2563eb", marginBottom: 2 }}>{mediaLabel[m.media_type] ?? m.media_type}</div>}
+            {m.content && <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>}
+          </div>
+        ))}
+      </div>
+
+      {totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <Link
+              key={p}
+              href={`/dashboard/groups/${id}/messages?page=${p}${q ? `&q=${q}` : ""}`}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 6,
+                background: p === page ? "#16a34a" : "#eee",
+                color: p === page ? "white" : "inherit",
+                textDecoration: "none",
+              }}
+            >
+              {p}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -160,16 +160,30 @@ async function handleOneMessageStatusUpdate(item: Record<string, unknown>) {
     .eq("provider_message_id", providerMessageId)
     .maybeSingle();
 
-  if (!message) {
-    console.log(`[webhook worker] no message found matching provider_message_id=${providerMessageId}`);
+  if (message) {
+    const { data: applied } = await supabase.rpc("apply_message_status", {
+      p_message_id: message.id,
+      p_new_status: newStatus,
+    });
+    console.log(`[webhook worker] message ${message.id} → ${newStatus}, applied=${applied}`);
     return;
   }
 
-  const { data: applied } = await supabase.rpc("apply_message_status", {
-    p_message_id: message.id,
-    p_new_status: newStatus,
-  });
-  console.log(`[webhook worker] message ${message.id} → ${newStatus}, applied=${applied}`);
+  // ১:১ ক্যাম্পেইন/চ্যাট মেসেজে না মিললে, বটের নিজের পাঠানো গ্রুপ রিপ্লাই (welcome/keyword/AI)
+  // হতে পারে — group_messages এও চেক করা হয়
+  const { data: groupMessage } = await supabase
+    .from("group_messages")
+    .update({ status: newStatus })
+    .eq("provider_message_id", providerMessageId)
+    .select("id")
+    .maybeSingle();
+
+  if (groupMessage) {
+    console.log(`[group-messages] message ${groupMessage.id} → ${newStatus}`);
+    return;
+  }
+
+  console.log(`[webhook worker] no message/group_message found matching provider_message_id=${providerMessageId}`);
 }
 
 // ডেলিভারি/read স্ট্যাটাস আপডেট (আমাদের পাঠানো মেসেজের ack)
@@ -271,16 +285,61 @@ async function handleGroupParticipantsUpdate(instanceName: string, data: Record<
 }
 
 // গ্রুপ মেসেজে শুধু কিওয়ার্ড-বেসড অটো-রিপ্লাই চেক হয় (AI/RAG চলে না, সেটা শুধু ১:১ চ্যাটের জন্য)।
+type GroupMessageContent = { text: string; mediaType: "image" | "document" | "video" | "audio" | "sticker" | null };
+
+// Baileys/Evolution এর মেসেজ অবজেক্ট থেকে টেক্সট বা মিডিয়া (ক্যাপশনসহ) বের করে। মিডিয়া
+// ফাইল আসলেই ডাউনলোড করে স্টোরেজে সেভ করা এখনো implement করা হয়নি (Evolution base64 কোন
+// ফিল্ডে পাঠায় লাইভ payload না দেখে নিশ্চিত না) — তাই raw media অবজেক্ট একবার লগ করা হয়,
+// যাতে পরের ধাপে সঠিক ফিল্ড ধরে media_url পপুলেট করা যায়
+function extractGroupMessageContent(data: Record<string, unknown>): GroupMessageContent {
+  const message = data.message as Record<string, any> | undefined;
+  if (!message) return { text: "", mediaType: null };
+
+  if (typeof message.conversation === "string") return { text: message.conversation, mediaType: null };
+  if (typeof message.extendedTextMessage?.text === "string") return { text: message.extendedTextMessage.text, mediaType: null };
+
+  const mediaFields: Array<[string, GroupMessageContent["mediaType"]]> = [
+    ["imageMessage", "image"],
+    ["documentMessage", "document"],
+    ["videoMessage", "video"],
+    ["audioMessage", "audio"],
+    ["stickerMessage", "sticker"],
+  ];
+  for (const [key, type] of mediaFields) {
+    const media = message[key];
+    if (media) {
+      console.log(`[group-messages] media message detected (type=${type}): ${JSON.stringify(media).slice(0, 300)}`);
+      return { text: typeof media.caption === "string" ? media.caption : "", mediaType: type };
+    }
+  }
+  return { text: "", mediaType: null };
+}
+
+const GROUP_MEDIA_LABEL_BN: Record<string, string> = {
+  image: "[ছবি পাঠিয়েছে]",
+  document: "[ডকুমেন্ট পাঠিয়েছে]",
+  video: "[ভিডিও পাঠিয়েছে]",
+  audio: "[অডিও পাঠিয়েছে]",
+  sticker: "[স্টিকার পাঠিয়েছে]",
+};
+
 async function logGroupMessage(
   supabase: ReturnType<typeof getSupabase>,
   groupId: string,
   workspaceId: string,
   senderPhone: string,
-  text: string
+  text: string,
+  mediaType: string | null
 ) {
-  await supabase
-    .from("group_messages")
-    .insert({ group_id: groupId, workspace_id: workspaceId, direction: "inbound", sender_phone: senderPhone, content: text });
+  await supabase.from("group_messages").insert({
+    group_id: groupId,
+    workspace_id: workspaceId,
+    direction: "inbound",
+    sender_phone: senderPhone,
+    content: text || null,
+    media_type: mediaType,
+    status: "received",
+  });
 }
 
 // গ্রুপটা এখনো sync করা না থাকলে (groups টেবিলে নেই) কিছু করার নেই, স্কিপ। প্রতিটা মেসেজ
@@ -293,11 +352,8 @@ async function handleGroupMessage(
   data: Record<string, unknown>,
   key: { remoteJid?: string; participant?: string }
 ) {
-  const text =
-    (data.message as { conversation?: string } | undefined)?.conversation ??
-    (data.message as { extendedTextMessage?: { text?: string } } | undefined)?.extendedTextMessage?.text ??
-    "";
-  if (!text.trim()) return;
+  const { text, mediaType } = extractGroupMessageContent(data);
+  if (!text.trim() && !mediaType) return; // অচেনা/অপ্রাসঙ্গিক মেসেজ টাইপ (reaction, poll, protocol ইত্যাদি)
 
   const groupJid = key.remoteJid;
   if (!groupJid) return;
@@ -349,7 +405,7 @@ async function handleGroupMessage(
   );
 
   if (!matched) {
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
     // ডায়াগনস্টিক লগ — কোনো mention-trigger রুল থাকা সত্ত্বেও মেলেনি মানে হয় mention করা হয়নি,
     // অথবা বট নিজের নাম্বার আর @<নাম্বার> এর ফরম্যাট মিলছে না (যেমন leading zero/country code
     // ভিন্নতা)। rules থাকলেই শুধু লগ হয়, তাই সাধারণ গ্রুপের মেসেজে স্প্যাম হয় না
@@ -375,12 +431,12 @@ async function handleGroupMessage(
 
   if (!won) {
     console.log(`[group-autoreply] cooldown active for rule=${matched.id} in group=${groupJid}, skipping`);
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
     return;
   }
 
   if (matched.reply_mode === "fixed") {
-    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
 
     const jobData: GroupReplyJobData = {
       workspaceId: number.workspace_id,
@@ -399,19 +455,24 @@ async function handleGroupMessage(
   // inbound turn সেন্ডারের নাম্বার দিয়ে prefix করা হয় (১:১ তে একজনই কাস্টমার বলে দরকার নেই)
   const { data: historyRows } = await supabase
     .from("group_messages")
-    .select("direction, sender_phone, sender_name, content")
+    .select("direction, sender_phone, sender_name, content, media_type")
     .eq("group_id", group.id)
     .order("created_at", { ascending: false })
     .limit(MAX_HISTORY_MESSAGES);
 
   const history: ChatTurn[] = (historyRows ?? [])
     .reverse()
-    .map((m: { direction: string; sender_phone: string | null; sender_name: string | null; content: string }) => ({
-      role: m.direction === "inbound" ? "user" : "assistant",
-      content: m.direction === "inbound" ? `[${m.sender_name || m.sender_phone || "member"}]: ${m.content}` : m.content,
-    }));
+    .map(
+      (m: { direction: string; sender_phone: string | null; sender_name: string | null; content: string | null; media_type: string | null }) => {
+        const shown = m.content || (m.media_type ? GROUP_MEDIA_LABEL_BN[m.media_type] : "") || "";
+        return {
+          role: m.direction === "inbound" ? "user" : "assistant",
+          content: m.direction === "inbound" ? `[${m.sender_name || m.sender_phone || "member"}]: ${shown}` : shown,
+        };
+      }
+    );
 
-  await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+  await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType);
 
   // mention ট্রিগারে মেসেজে "@৮৮০১..." টাইপ raw নাম্বার থাকে, LLM কে বিভ্রান্ত না করতে ছেঁটে ফেলা হয়
   const cleanedQuestion = text.replace(/@\d{7,15}/g, "").trim() || text;
