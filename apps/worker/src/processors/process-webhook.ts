@@ -14,6 +14,7 @@ import {
   ORDER_BLOCK_END,
 } from "@whatsapp-saas/core/chatbot/constants";
 import { extractOrderBlock, type ParsedOrder } from "@whatsapp-saas/core/chatbot/order-block";
+import type { GroupReplyJobData } from "@whatsapp-saas/core/groups/types";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -172,9 +173,14 @@ async function handleMessageStatusUpdate(data: Record<string, unknown> | Record<
 
 // ইনকামিং মেসেজ — STOP/বন্ধ (opt-out), START/চালু (আবার opt-in), আর AI auto-reply
 async function handleIncomingMessage(instanceName: string, data: Record<string, unknown>) {
-  const key = data.key as { remoteJid?: string; fromMe?: boolean; id?: string } | undefined;
+  const key = data.key as { remoteJid?: string; fromMe?: boolean; id?: string; participant?: string } | undefined;
   if (!key || key.fromMe) return; // নিজের পাঠানো মেসেজের echo, স্কিপ
-  if (key.remoteJid?.endsWith("@g.us")) return; // গ্রুপ মেসেজ — auto-reply শুধু personal chat এর জন্য
+
+  if (key.remoteJid?.endsWith("@g.us")) {
+    // গ্রুপ মেসেজ — ১:১ AI চ্যাটবট এখানে চলে না, শুধু কিওয়ার্ড অটো-রিপ্লাই (থাকলে) চেক হয়
+    await handleGroupMessage(instanceName, data, key);
+    return;
+  }
 
   const text =
     (data.message as { conversation?: string } | undefined)?.conversation ??
@@ -205,6 +211,83 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
   }
 
   await handleAutoReply(supabase, number, phone, text, providerMessageId);
+}
+
+// গ্রুপ মেসেজে শুধু কিওয়ার্ড-বেসড অটো-রিপ্লাই চেক হয় (AI/RAG চলে না, সেটা শুধু ১:১ চ্যাটের জন্য)।
+// গ্রুপটা এখনো sync করা না থাকলে (groups টেবিলে নেই) কিছু করার নেই, স্কিপ। প্রথম যে কিওয়ার্ড
+// মেসেজে মিলে যায় সেটাই ট্রিগার হয় — cooldown atomically চেক+সেট হয় (নিচে দেখুন) যাতে একই
+// কিওয়ার্ডে বারবার বা ডুপ্লিকেট webhook এ দুইবার রিপ্লাই না যায়
+async function handleGroupMessage(
+  instanceName: string,
+  data: Record<string, unknown>,
+  key: { remoteJid?: string; participant?: string }
+) {
+  const text =
+    (data.message as { conversation?: string } | undefined)?.conversation ??
+    (data.message as { extendedTextMessage?: { text?: string } } | undefined)?.extendedTextMessage?.text ??
+    "";
+  if (!text.trim()) return;
+
+  const groupJid = key.remoteJid;
+  if (!groupJid) return;
+
+  const supabase = getSupabase();
+  const { data: number } = await supabase
+    .from("whatsapp_numbers")
+    .select("id, workspace_id")
+    .eq("instance_name", instanceName)
+    .maybeSingle();
+  if (!number) return;
+
+  const { data: group } = await supabase
+    .from("groups")
+    .select("id")
+    .eq("whatsapp_number_id", number.id)
+    .eq("group_jid", groupJid)
+    .maybeSingle();
+
+  if (!group) {
+    console.log(`[group-autoreply] group=${groupJid} not synced yet (no row in groups table), skipping keyword check`);
+    return;
+  }
+
+  const { data: rules } = await supabase
+    .from("group_keyword_replies")
+    .select("id, keyword, reply_text, cooldown_seconds")
+    .eq("group_id", group.id)
+    .eq("is_active", true);
+
+  if (!rules || rules.length === 0) return;
+
+  const lowerText = text.toLowerCase();
+  const matched = rules.find((r: { keyword: string }) => lowerText.includes(r.keyword.toLowerCase()));
+  if (!matched) return;
+
+  // atomic conditional UPDATE — cooldown শেষ হয়ে থাকলেই (বা কখনো ট্রিগার না হয়ে থাকলে) এই
+  // আপডেট একটা row রিটার্ন করে, তখনই আমরা "জিতেছি" ধরে রিপ্লাই পাঠাই। দুইটা worker/ডুপ্লিকেট
+  // webhook একই সময়ে এলেও শুধু একটাই এই রেসে জিতবে (DB level atomicity)
+  const cooldownCutoff = new Date(Date.now() - matched.cooldown_seconds * 1000).toISOString();
+  const { data: won } = await supabase
+    .from("group_keyword_replies")
+    .update({ last_triggered_at: new Date().toISOString() })
+    .eq("id", matched.id)
+    .or(`last_triggered_at.is.null,last_triggered_at.lt.${cooldownCutoff}`)
+    .select("id")
+    .maybeSingle();
+
+  if (!won) {
+    console.log(`[group-autoreply] cooldown active for keyword="${matched.keyword}" in group=${groupJid}, skipping`);
+    return;
+  }
+
+  const jobData: GroupReplyJobData = {
+    workspaceId: number.workspace_id,
+    whatsappNumberId: number.id,
+    groupJid,
+    replyText: matched.reply_text,
+  };
+  await getAutoReplyQueue().add("group-reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+  console.log(`[group-autoreply] matched keyword="${matched.keyword}" in group=${groupJid}, reply job queued`);
 }
 
 // একই WhatsApp মেসেজ (key.id) নিয়ে Evolution/Baileys মাঝেমধ্যে messages.upsert

@@ -24,6 +24,7 @@ import { SUBSCRIPTION_MAINTENANCE_QUEUE_NAME } from "./queues/subscription-maint
 import { runSubscriptionMaintenanceTick } from "./processors/subscription-maintenance";
 import { AUTOREPLY_QUEUE_NAME } from "./queues/autoreply-queue";
 import { processAutoReply } from "./processors/process-autoreply";
+import { processGroupReply } from "./processors/process-group-reply";
 import { KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/knowledge-base-queue";
 import { processKnowledgeBaseDocument } from "./processors/process-knowledge-base";
 
@@ -108,11 +109,16 @@ subscriptionWorker.on("failed", (job, err) => {
   console.error(`[subscription-maintenance] tick ব্যর্থ:`, err.message);
 });
 
-// keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job
+// keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job — একই queue তে ১:১ চ্যাটের "reply"
+// আর গ্রুপ কিওয়ার্ডের "group-reply" দুই ধরনের job আসে, job.name দিয়ে আলাদা করা হয়
 const autoReplyWorker = new Worker(
   AUTOREPLY_QUEUE_NAME,
   async (job) => {
-    await processAutoReply(job.data);
+    if (job.name === "group-reply") {
+      await processGroupReply(job.data);
+    } else {
+      await processAutoReply(job.data);
+    }
   },
   { connection }
 );

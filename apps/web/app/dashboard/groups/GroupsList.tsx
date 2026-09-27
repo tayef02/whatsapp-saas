@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { syncGroups, getInviteLink, rotateInviteLink } from "./actions";
@@ -109,6 +110,9 @@ export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumbe
                   )}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                  <Link href={`/dashboard/groups/${g.id}/keywords`} style={{ fontSize: 13 }}>
+                    কিওয়ার্ড রিপ্লাই →
+                  </Link>
                   <button disabled={busyId === g.id} onClick={() => handleGetInvite(g.id)} style={{ width: "auto" }}>
                     ইনভাইট লিংক আনুন
                   </button>
