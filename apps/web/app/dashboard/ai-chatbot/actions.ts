@@ -19,13 +19,13 @@ export async function saveAiSettings(formData: FormData) {
 
   const llmProvider = String(formData.get("llmProvider") ?? "");
   const systemPrompt = String(formData.get("systemPrompt") ?? "").trim() || null;
-  const confidenceThreshold = Number(formData.get("confidenceThreshold") ?? 0.75);
+  const supportPhone = String(formData.get("supportPhone") ?? "").trim() || null;
 
   if (llmProvider !== "openai" && llmProvider !== "gemini") return { error: "provider বাছাই করুন" };
 
   const { data: existing } = await supabase.from("workspace_ai_settings").select("workspace_id").eq("workspace_id", workspaceId).maybeSingle();
 
-  const payload = { llm_provider: llmProvider, system_prompt: systemPrompt, confidence_threshold: confidenceThreshold };
+  const payload = { llm_provider: llmProvider, system_prompt: systemPrompt, support_phone: supportPhone };
 
   const { error } = existing
     ? await supabase.from("workspace_ai_settings").update(payload).eq("workspace_id", workspaceId)

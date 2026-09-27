@@ -49,9 +49,12 @@ export default function NumberStatus({ initial }: { initial: NumberData }) {
 
       {data.status === "online" && <p style={{ color: "#166534" }}>{data.phone_number}</p>}
 
-      <p style={{ marginTop: 16 }}>
-        <Link href={`/dashboard/numbers/${data.id}/autoreply`}>Auto-Reply সেটিংস →</Link>
-      </p>
+      {data.status === "online" && (
+        <p style={{ marginTop: 16, fontSize: 13, color: "#666" }}>
+          AI Chatbot এই নাম্বারে সবসময় চালু আছে —{" "}
+          <Link href="/dashboard/ai-chatbot">সেটিংস (system prompt, knowledge base) এখানে</Link>
+        </p>
+      )}
     </div>
   );
 }

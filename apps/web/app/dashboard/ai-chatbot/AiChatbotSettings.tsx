@@ -7,7 +7,7 @@ import { saveAiSettings, setApiKey, uploadDocument, reprocessDocument, deleteDoc
 type Settings = {
   llm_provider: string | null;
   system_prompt: string | null;
-  confidence_threshold: number;
+  support_phone: string | null;
   api_key_secret_id: string | null;
 } | null;
 
@@ -104,11 +104,15 @@ export default function AiChatbotSettings({
     <div>
       <h1>AI Chatbot (Knowledge Base)</h1>
       <p style={{ color: "#666", fontSize: 13, marginBottom: 8 }}>
-        কাস্টমারের প্রতিটা মেসেজে AI আপনার আপলোড করা ডকুমেন্ট দেখে উত্তর দেয়। ডকুমেন্ট ছোট/মাঝারি
-        হলে ({fullTextModeMaxWords.toLocaleString("bn-BD")} শব্দের মধ্যে) পুরো টেক্সট সরাসরি AI-কে
-        দেওয়া হয় — একজন এজেন্টের মতো পুরো শীট পড়ে যেকোনো ধরনের প্রশ্নের উত্তর বুঝে দিতে পারে। এর
-        বেশি বড় হলে শুধু প্রাসঙ্গিক অংশ খুঁজে ব্যবহার করা হয়। কোনো উত্তর না পেলে এজেন্টের কাছে চলে
-        যাবে। API key খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
+        এই সেটিংস প্রতিটা কানেক্টেড নাম্বারে সবসময় চালু থাকে (আলাদা করে নাম্বার-ভিত্তিক অন/অফ নেই)।
+        কোনো hardcoded rule নেই — System Prompt-ই একমাত্র নিয়ন্ত্রক: বট কীভাবে কথা বলবে, কী জানলে
+        কী উত্তর দেবে, না জানলে কীভাবে ভদ্রভাবে বলবে, কীভাবে অর্ডার নেবে — সবকিছু এখানেই লিখে দিন,
+        যেমন একজন এজেন্টকে ব্রিফ করছেন। ডকুমেন্ট ছোট/মাঝারি হলে (
+        {fullTextModeMaxWords.toLocaleString("bn-BD")} শব্দের মধ্যে) পুরো টেক্সট সরাসরি AI-কে দেওয়া
+        হয় যাতে যেকোনো ধরনের প্রশ্নের উত্তর বুঝে দিতে পারে; বেশি বড় হলে প্রাসঙ্গিক অংশ খুঁজে ব্যবহার
+        হয়। AI যখন নিজেই বলবে জানে না, সেটাই কাস্টমারকে পাঠানো হবে (আলাদা fixed বার্তা নেই) —
+        শুধু প্রকৃত টেকনিক্যাল সমস্যায় নিচের সাপোর্ট নাম্বার সহ একটা জেনেরিক মেসেজ যাবে। API key
+        খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
       </p>
       <p style={{ fontSize: 12, color: totalReadyWords > fullTextModeMaxWords ? "#b45309" : "#166534", marginBottom: 20 }}>
         মোট {totalReadyWords.toLocaleString("bn-BD")} শব্দ (রেডি ডকুমেন্ট মিলিয়ে) —{" "}
@@ -153,18 +157,10 @@ export default function AiChatbotSettings({
         </label>
 
         <label style={{ display: "block", marginTop: 12 }}>
-          Confidence Threshold ({settings?.confidence_threshold ?? 0.5}) — শুধু বড় knowledge base
-          (খোঁজা-ভিত্তিক মোড) এর জন্য প্রযোজ্য। বেশি হলে কম ক্ষেত্রে AI উত্তর দেবে, কম হলে বেশি ক্ষেত্রে
-          (কিন্তু ভুল উত্তরের ঝুঁকি বাড়ে)
-          <input
-            type="number"
-            name="confidenceThreshold"
-            defaultValue={settings?.confidence_threshold ?? 0.5}
-            min={0}
-            max={1}
-            step={0.05}
-            style={{ width: 100 }}
-          />
+          সাপোর্ট নাম্বার (ঐচ্ছিক) — AI-এর প্রকৃত টেকনিক্যাল সমস্যা হলে (key ভুল, quota শেষ,
+          network সমস্যা) এই নাম্বারসহ একটা safety-net মেসেজ যাবে, যাতে কাস্টমার কখনো একদম
+          নিরুত্তর না থাকে
+          <input type="text" name="supportPhone" defaultValue={settings?.support_phone ?? ""} placeholder="01XXXXXXXXX" style={{ width: "100%" }} />
         </label>
 
         <button type="submit" disabled={busy} style={{ marginTop: 12 }}>

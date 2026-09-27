@@ -7,7 +7,7 @@ export default async function AiChatbotPage() {
 
   const { data: settings } = await supabase
     .from("workspace_ai_settings")
-    .select("llm_provider, system_prompt, confidence_threshold, api_key_secret_id")
+    .select("llm_provider, system_prompt, support_phone, api_key_secret_id")
     .maybeSingle();
 
   const { data: documents } = await supabase

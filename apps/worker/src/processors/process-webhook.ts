@@ -2,12 +2,11 @@ import { Queue } from "bullmq";
 import { getSupabase } from "../lib/supabase";
 import { pauseCampaignsForNumber } from "../lib/campaign-safety";
 import { isStopKeyword, isStartKeyword } from "@whatsapp-saas/core/campaigns/stop-keywords";
-import { renderMessage } from "@whatsapp-saas/core/templates/render";
 import { AUTOREPLY_QUEUE_NAME } from "../queues/autoreply-queue";
 import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
 import { createNotification } from "../lib/notify";
-import { generateEmbedding, generateChatReply, type LlmProvider } from "@whatsapp-saas/core/chatbot/llm";
-import { FULL_TEXT_MODE_MAX_WORDS, NO_ANSWER_MARKER } from "@whatsapp-saas/core/chatbot/constants";
+import { generateEmbedding, generateChatReply, type LlmProvider, type ChatTurn } from "@whatsapp-saas/core/chatbot/llm";
+import { FULL_TEXT_MODE_MAX_WORDS, NO_ANSWER_MARKER, MAX_HISTORY_MESSAGES } from "@whatsapp-saas/core/chatbot/constants";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -200,24 +199,16 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
 }
 
 // contact না থাকলে অটো-তৈরি করে, conversation খুঁজে/বানায়, ইতিহাসে লেখে, AI/knowledge-base
-// RAG দিয়ে reply জেনারেট করে পাঠানোর job বসায়
+// RAG দিয়ে reply জেনারেট করে পাঠানোর job বসায়। প্রতিটা কানেক্টেড নাম্বারে এটা সবসময় চলে
+// (কোনো per-number on/off নেই) — workspace এ AI সেটআপ না থাকলে সেটাও একটা টেকনিক্যাল
+// ব্যর্থতা হিসেবে গণ্য হয়ে সাপোর্ট-নাম্বার সহ safety-net মেসেজ পাঠাবে, কাস্টমার কখনো
+// একদম নিরুত্তর থাকবে না
 async function handleAutoReply(
   supabase: ReturnType<typeof getSupabase>,
   number: { id: string; workspace_id: string },
   phone: string,
   text: string
 ) {
-  const { data: config } = await supabase
-    .from("chatbot_configs")
-    .select("id, is_active, fallback_message")
-    .eq("whatsapp_number_id", number.id)
-    .maybeSingle();
-
-  if (!config || !config.is_active) {
-    console.log(`[autoreply] number=${number.id} has no chatbot config or is_active=false, skipping`);
-    return;
-  }
-
   let { data: contact } = await supabase
     .from("contacts")
     .select("id, name, custom_fields")
@@ -249,16 +240,15 @@ async function handleAutoReply(
     return;
   }
 
-  await supabase
-    .from("conversation_messages")
-    .insert({ conversation_id: conversation.id, direction: "inbound", sender_type: "customer", content: text });
-
   console.log(`[autoreply] conversation=${conversation.id} status=${conversation.status}, text="${text}"`);
 
   // এজেন্ট হ্যান্ডল করছে এমন কথোপকথনে bot চুপ থাকবে — এজেন্ট Inbox থেকে "আবার চালু করুন"
   // না চাপা পর্যন্ত পরের সব মেসেজেও চুপ থাকবে (ইচ্ছাকৃতভাবে sticky, ইনবাউন্ড মেসেজ তবুও সেভ হয়)
   if (conversation.status === "handed_off") {
     console.log(`[autoreply] conversation=${conversation.id} is handed_off, bot staying silent`);
+    await supabase
+      .from("conversation_messages")
+      .insert({ conversation_id: conversation.id, direction: "inbound", sender_type: "customer", content: text });
     return;
   }
 
@@ -267,81 +257,123 @@ async function handleAutoReply(
     await supabase.from("conversations").update({ status: "active" }).eq("id", conversation.id);
   }
 
-  const renderContact = { name: contact.name, phone, custom_fields: contact.custom_fields };
+  // বর্তমান মেসেজ ইনসার্ট করার *আগে* ইতিহাস টেনে আনা হচ্ছে, যাতে এই মেসেজটা নিজেই
+  // history-তে ডুপ্লিকেট হয়ে না যায় (এটা আলাদাভাবে "question" হিসেবে পাঠানো হবে)
+  const { data: historyRows } = await supabase
+    .from("conversation_messages")
+    .select("direction, content")
+    .eq("conversation_id", conversation.id)
+    .order("created_at", { ascending: false })
+    .limit(MAX_HISTORY_MESSAGES);
+  const history: ChatTurn[] = (historyRows ?? [])
+    .reverse()
+    .map((m: { direction: string; content: string }) => ({ role: m.direction === "inbound" ? "user" : "assistant", content: m.content }));
 
-  // সব ইনকামিং মেসেজ সরাসরি AI/knowledge-base RAG ফ্লো তে যায় (কোনো keyword rule
-  // matching ধাপ নেই) — workspace এ AI সেটআপ না থাকলে/ব্যর্থ হলে নিচের fallback এ যাবে
-  const aiReply = await tryAiReply(supabase, number.workspace_id, text);
-  if (aiReply) {
+  await supabase
+    .from("conversation_messages")
+    .insert({ conversation_id: conversation.id, direction: "inbound", sender_type: "customer", content: text });
+
+  // n8n AI Agent node এর মতো — কোনো keyword rule/rigid logic নেই, system prompt-ই
+  // একমাত্র নিয়ন্ত্রক। LLM নিজে সিদ্ধান্ত নেয় উত্তর দেবে, না জানলে (system prompt এর
+  // নির্দেশ অনুযায়ী) ভদ্রভাবে বলবে, নাকি এটা প্রকৃত টেকনিক্যাল ব্যর্থতা।
+  const result = await tryAiReply(supabase, number.workspace_id, history, text);
+
+  if (result.kind === "answer") {
     const jobData: AutoReplyJobData = {
       conversationId: conversation.id,
       workspaceId: number.workspace_id,
       whatsappNumberId: number.id,
       phone,
-      replyText: aiReply,
+      replyText: result.text,
       markHandedOff: false,
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-    console.log(`[autoreply] AI/RAG reply generated, reply job queued`);
+    console.log(`[autoreply] AI answered, reply job queued`);
     return;
   }
 
-  // AI কোনো উত্তর দিতে পারেনি (সেটআপ নেই/confidence কম/এরর) — এজেন্টের কাছে হ্যান্ডঅফ,
-  // পারলে fallback মেসেজও পাঠানো হবে
-  if (config.fallback_message) {
+  if (result.kind === "needs_human") {
+    // LLM নিজের ভাষায় "জানি না" বলেছে (system prompt অনুযায়ী) — সেই টেক্সটাই কাস্টমারকে
+    // পাঠানো হবে, কোনো আলাদা fixed মেসেজ না
     const jobData: AutoReplyJobData = {
       conversationId: conversation.id,
       workspaceId: number.workspace_id,
       whatsappNumberId: number.id,
       phone,
-      replyText: renderMessage(config.fallback_message, renderContact),
+      replyText: result.text,
       markHandedOff: true,
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-    console.log(`[autoreply] AI could not answer, fallback job queued, will be handed_off`);
-  } else {
-    console.log(`[autoreply] AI could not answer and no fallback configured, marking handed_off directly`);
-    await supabase.from("conversations").update({ status: "handed_off" }).eq("id", conversation.id);
-    await createNotification(
-      number.workspace_id,
-      "conversation_handed_off",
-      "একটা কথোপকথনে এজেন্টের সাহায্য দরকার",
-      "কাস্টমারের মেসেজের প্রশ্নের কোনো উত্তর পাওয়া যায়নি — Inbox এ গিয়ে দেখুন।"
-    );
+    console.log(`[autoreply] AI said it needs a human (natural-language reply), reply job queued, will be handed_off`);
+    return;
   }
+
+  // technical_failure — key নেই/ভুল, quota শেষ, network timeout ইত্যাদি প্রকৃত ব্যর্থতা।
+  // এটাই একমাত্র জায়গা যেখানে একটা fixed generic মেসেজ পাঠানো হয়, LLM এর কথায় না
+  console.log(`[autoreply] technical failure, sending generic safety-net message`);
+  const safetyNetText = result.supportPhone
+    ? `দুঃখিত, এই মুহূর্তে প্রযুক্তিগত সমস্যার কারণে সাড়া দিতে পারছি না। সরাসরি যোগাযোগ করুন: ${result.supportPhone}`
+    : "দুঃখিত, এই মুহূর্তে প্রযুক্তিগত সমস্যার কারণে সাড়া দিতে পারছি না। শীঘ্রই একজন প্রতিনিধি যোগাযোগ করবেন।";
+  const jobData: AutoReplyJobData = {
+    conversationId: conversation.id,
+    workspaceId: number.workspace_id,
+    whatsappNumberId: number.id,
+    phone,
+    replyText: safetyNetText,
+    markHandedOff: true,
+  };
+  await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+  await createNotification(
+    number.workspace_id,
+    "conversation_handed_off",
+    "AI চ্যাটবট টেকনিক্যাল সমস্যায় পড়েছে",
+    "কাস্টমারের মেসেজে AI সাড়া দিতে পারেনি (API key/quota/network সমস্যা) — Inbox এ গিয়ে দেখুন আর AI Chatbot সেটিংস চেক করুন।"
+  );
 }
 
-// একজন হিউম্যান এজেন্টের মতো — কম/মাঝারি সাইজের knowledge base হলে পুরো ডকুমেন্ট টেক্সট
-// সরাসরি LLM কে context হিসেবে দেওয়া হয় (chunk/similarity গেট ছাড়াই), যাতে LLM নিজেই
-// পুরো তথ্য "পড়ে" প্রশ্নের ধরন যাই হোক (নির্দিষ্ট আইটেম, পুরো লিস্ট, তুলনা, ঘুরিয়ে জিজ্ঞেস
-// করা) বুদ্ধি খাটিয়ে উত্তর দিতে পারে। তথ্য না থাকলে LLM কে NO_ANSWER_MARKER দিতে বলা হয় —
-// প্রাকৃতিক ভাষায় "জানি না" পার্স করার অনির্ভরযোগ্যতা এড়াতে। ডকুমেন্ট অনেক বড় হলে
-// (FULL_TEXT_MODE_MAX_WORDS এর বেশি) পুরনো chunk+embedding+confidence-threshold
-// retrieval পদ্ধতি ব্যাকআপ হিসেবে ব্যবহার হয়। কোনো ধাপে সমস্যা হলে (key নেই, এরর) null
-// রিটার্ন করে — caller তখন fallback/handoff এ চলে যাবে, কখনো crash করবে না
+type AiReplyResult =
+  | { kind: "answer"; text: string }
+  | { kind: "needs_human"; text: string }
+  | { kind: "technical_failure"; supportPhone: string | null };
+
+// একজন হিউম্যান এজেন্টের মতো — কোনো hardcoded rule/rigid logic নেই, system prompt +
+// knowledge base + কথোপকথনের ইতিহাস দেখে LLM নিজেই বুদ্ধি খাটিয়ে সিদ্ধান্ত নেয়। কম/মাঝারি
+// সাইজের knowledge base হলে (FULL_TEXT_MODE_MAX_WORDS এর মধ্যে) পুরো ডকুমেন্ট টেক্সট সরাসরি
+// context হিসেবে দেওয়া হয়, যাতে প্রশ্নের ধরন যাই হোক (নির্দিষ্ট আইটেম, পুরো লিস্ট, তুলনা,
+// ঘুরিয়ে জিজ্ঞেস করা) LLM পুরো তথ্য "পড়ে" উত্তর বুঝতে পারে। বড় হলে top-K chunk retrieval
+// দিয়ে context বানানো হয় (কোনো hard similarity গেট নেই — LLM নিজেই প্রাসঙ্গিকতা বিচার করে)।
+// LLM নিজে না জানলে system prompt এর নির্দেশ অনুযায়ী প্রাকৃতিক ভাষায় বলে, শুধু নিজের উত্তরের
+// শুরুতে NO_ANSWER_MARKER বসায় (কাস্টমার দেখে না, কোড ছেঁটে ফেলে) — এটাই "needs_human"
+// সিগন্যাল, প্রাকৃতিক ভাষা পার্স করার অনির্ভরযোগ্যতা এড়াতে। শুধু প্রকৃত টেকনিক্যাল ব্যর্থতায়
+// (key নেই/ভুল, API এরর, কোনো response-ই আসেনি) "technical_failure" রিটার্ন হয়।
 async function tryAiReply(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
+  history: ChatTurn[],
   question: string
-): Promise<string | null> {
-  const { data: settings } = await supabase
-    .from("workspace_ai_settings")
-    .select("llm_provider, system_prompt, confidence_threshold")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-
-  if (!settings?.llm_provider) {
-    console.log(`[autoreply] workspace=${workspaceId} has no AI provider configured, skipping AI`);
-    return null;
-  }
-
-  const provider = settings.llm_provider as LlmProvider;
+): Promise<AiReplyResult> {
+  let supportPhone: string | null = null;
 
   try {
+    const { data: settings } = await supabase
+      .from("workspace_ai_settings")
+      .select("llm_provider, system_prompt, support_phone")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+
+    supportPhone = settings?.support_phone ?? null;
+
+    if (!settings?.llm_provider) {
+      console.log(`[autoreply] workspace=${workspaceId} has no AI provider configured`);
+      return { kind: "technical_failure", supportPhone };
+    }
+
+    const provider = settings.llm_provider as LlmProvider;
+
     const { data: apiKey } = await supabase.rpc("get_workspace_api_key", { p_workspace_id: workspaceId });
     if (!apiKey) {
-      console.log(`[autoreply] workspace=${workspaceId} has a provider set but no API key, skipping AI`);
-      return null;
+      console.log(`[autoreply] workspace=${workspaceId} has a provider set but no API key`);
+      return { kind: "technical_failure", supportPhone };
     }
 
     const { data: documents } = await supabase
@@ -354,54 +386,47 @@ async function tryAiReply(
     const totalWords = readyDocs.reduce((sum: number, d: { word_count: number }) => sum + d.word_count, 0);
 
     console.log(
-      `[autoreply] workspace=${workspaceId} has ${readyDocs.length} ready document(s), ${totalWords} total words (full-text mode limit: ${FULL_TEXT_MODE_MAX_WORDS})`
+      `[autoreply] workspace=${workspaceId}: ${readyDocs.length} ready document(s), ${totalWords} total words (full-text mode limit: ${FULL_TEXT_MODE_MAX_WORDS})`
     );
 
+    let context = "";
     if (readyDocs.length > 0 && totalWords <= FULL_TEXT_MODE_MAX_WORDS) {
-      return await tryFullTextReply(provider, apiKey, settings.system_prompt ?? "", readyDocs, question);
+      context = readyDocs.map((d: { file_name: string; full_text: string | null }) => `# ${d.file_name}\n${d.full_text}`).join("\n\n---\n\n");
+    } else if (readyDocs.length > 0) {
+      context = await buildChunkContext(supabase, workspaceId, provider, apiKey, question);
+    }
+    // readyDocs.length === 0 হলে context ফাঁকা থাকে — LLM তবুও কল হয়, শুধু system prompt
+    // দিয়েই (সাধারণ কথাবার্তা/অর্ডার প্রসেসের নির্দেশনা system prompt-এই থাকতে পারে)
+
+    const promptWithMarker = `${settings.system_prompt ?? ""}\n\nউপরের তথ্যে প্রশ্নের সঠিক উত্তর না থাকলে, system prompt এর নির্দেশ অনুযায়ী ভদ্রভাবে জানাও যে নিশ্চিত না — কিন্তু তোমার উত্তরের একদম প্রথম শব্দ হিসেবে অবশ্যই এটা বসাও (কাস্টমার এটা দেখবে না): ${NO_ANSWER_MARKER}`;
+
+    const reply = await generateChatReply(provider, apiKey, promptWithMarker, context, history, question);
+    const trimmed = reply.trim();
+    console.log(`[autoreply] LLM reply (first 150 chars): "${trimmed.slice(0, 150)}"`);
+
+    if (!trimmed) {
+      return { kind: "technical_failure", supportPhone };
     }
 
-    if (readyDocs.length === 0) {
-      console.log(`[autoreply] workspace=${workspaceId} has no ready documents, skipping AI`);
-      return null;
+    if (trimmed.includes(NO_ANSWER_MARKER)) {
+      const naturalText = trimmed.replace(NO_ANSWER_MARKER, "").trim();
+      return { kind: "needs_human", text: naturalText || "দুঃখিত, এই মুহূর্তে সঠিক তথ্য দিতে পারছি না।" };
     }
 
-    return await tryChunkRetrievalReply(supabase, workspaceId, provider, apiKey, settings, question);
+    return { kind: "answer", text: trimmed };
   } catch (err) {
-    console.error(`[autoreply] failed to generate AI reply (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
-    return null; // AI ব্যর্থ হলে চুপচাপ fallback এ যাক, কাস্টমার যেন কখনো crash/no-response না দেখে
+    console.error(`[autoreply] AI call failed (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
+    return { kind: "technical_failure", supportPhone };
   }
 }
 
-async function tryFullTextReply(
-  provider: LlmProvider,
-  apiKey: string,
-  systemPrompt: string,
-  documents: { file_name: string; full_text: string | null }[],
-  question: string
-): Promise<string | null> {
-  const context = documents.map((d) => `# ${d.file_name}\n${d.full_text}`).join("\n\n---\n\n");
-  const promptWithMarker = `${systemPrompt}\n\nনিচের তথ্যের মধ্যে প্রশ্নের উত্তর না থাকলে অন্য কিছু না লিখে ঠিক এই শব্দটাই লিখো: ${NO_ANSWER_MARKER}`;
-
-  const reply = await generateChatReply(provider, apiKey, promptWithMarker, context, question);
-  const trimmed = reply.trim();
-
-  console.log(`[autoreply] full-text mode reply (first 100 chars): "${trimmed.slice(0, 100)}"`);
-
-  if (!trimmed || trimmed.includes(NO_ANSWER_MARKER)) {
-    return null; // LLM নিজেই বলল তথ্য নেই, fallback এ যাক
-  }
-  return trimmed;
-}
-
-async function tryChunkRetrievalReply(
+async function buildChunkContext(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
   provider: LlmProvider,
   apiKey: string,
-  settings: { system_prompt: string | null; confidence_threshold: number },
   question: string
-): Promise<string | null> {
+): Promise<string> {
   const queryEmbedding = await generateEmbedding(provider, apiKey, question);
 
   const { data: matches } = await supabase.rpc("search_knowledge_base", {
@@ -411,16 +436,6 @@ async function tryChunkRetrievalReply(
     p_match_count: 4,
   });
 
-  const best = matches?.[0];
-  console.log(
-    `[autoreply] chunk retrieval (large KB fallback): found ${matches?.length ?? 0} chunk(s), best similarity=${best?.similarity ?? "N/A"}, threshold=${settings.confidence_threshold}`
-  );
-
-  if (!best || best.similarity < settings.confidence_threshold) {
-    return null; // যথেষ্ট প্রাসঙ্গিক তথ্য নেই, fallback এ যাক
-  }
-
-  const context = (matches ?? []).map((m: { content: string }) => m.content).join("\n\n---\n\n");
-  const reply = await generateChatReply(provider, apiKey, settings.system_prompt ?? "", context, question);
-  return reply.trim() || null;
+  console.log(`[autoreply] chunk retrieval (large KB): found ${matches?.length ?? 0} chunk(s)`);
+  return (matches ?? []).map((m: { content: string }) => m.content).join("\n\n---\n\n");
 }

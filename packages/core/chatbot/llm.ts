@@ -39,15 +39,22 @@ export async function generateEmbedding(provider: LlmProvider, apiKey: string, t
   return data.embedding.values as number[];
 }
 
-// knowledge base থেকে পাওয়া প্রাসঙ্গিক অংশ + system prompt দিয়ে স্বাভাবিক ভাষায় উত্তর জেনারেট করে
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+// knowledge base থেকে পাওয়া প্রাসঙ্গিক টেক্সট + সাম্প্রতিক কথোপকথনের ইতিহাস + system
+// prompt দিয়ে স্বাভাবিক ভাষায় উত্তর জেনারেট করে (n8n AI Agent node এর মতো — কোনো
+// hardcoded rule না, system prompt-ই একমাত্র নিয়ন্ত্রক)
 export async function generateChatReply(
   provider: LlmProvider,
   apiKey: string,
   systemPrompt: string,
   context: string,
+  history: ChatTurn[],
   question: string
 ): Promise<string> {
-  const fullSystemPrompt = `${systemPrompt}\n\nনিচের তথ্যের ভিত্তিতে কাস্টমারের প্রশ্নের উত্তর দাও। তথ্যে না থাকলে অনুমান করে উত্তর দিও না।\n\n${context}`;
+  const fullSystemPrompt = context
+    ? `${systemPrompt}\n\nনিচের তথ্যের ভিত্তিতে কাস্টমারের প্রশ্নের উত্তর দাও। তথ্যে না থাকলে অনুমান করে উত্তর দিও না।\n\n${context}`
+    : systemPrompt;
 
   if (provider === "openai") {
     const res = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
@@ -57,6 +64,7 @@ export async function generateChatReply(
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: fullSystemPrompt },
+          ...history.map((h) => ({ role: h.role, content: h.content })),
           { role: "user", content: question },
         ],
         max_tokens: 500,
@@ -74,7 +82,10 @@ export async function generateChatReply(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: fullSystemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: question }] }],
+        contents: [
+          ...history.map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.content }] })),
+          { role: "user", parts: [{ text: question }] },
+        ],
       }),
     }
   );
