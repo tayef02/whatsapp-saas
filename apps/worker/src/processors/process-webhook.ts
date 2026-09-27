@@ -15,6 +15,7 @@ import {
 } from "@whatsapp-saas/core/chatbot/constants";
 import { extractOrderBlock, type ParsedOrder } from "@whatsapp-saas/core/chatbot/order-block";
 import type { GroupReplyJobData, DeleteGroupMessageJobData, DownloadGroupMediaJobData } from "@whatsapp-saas/core/groups/types";
+import { extractStructuredOrder } from "@whatsapp-saas/core/groups/order-capture";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -489,6 +490,81 @@ async function handleGroupMessage(
       );
       console.log(`[group-moderation] no message id available, notified workspace instead (group=${groupJid})`);
     }
+    return;
+  }
+
+  // Structured (non-AI) অর্ডার ক্যাপচার — "ORDER: নাম, নাম্বার, প্রোডাক্ট" ফরম্যাটে মেসেজ এলে
+  // সরাসরি regex দিয়ে ধরা হয়, AI/keyword ট্রিগার ছাড়াই — AI চালু নেই এমন workspace-এও কাজ করে।
+  // কিওয়ার্ড/মেনশন ট্রিগারের আগে চেক হয়, ম্যাচ করলে বাকি প্রসেসিং স্কিপ হয়ে যায়
+  const structuredOrder = extractStructuredOrder(text);
+  if (structuredOrder) {
+    const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
+    await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
+
+    if (!structuredOrder.name || !structuredOrder.phone) {
+      // অসম্পূর্ণ ফরম্যাট — silent fail না করে raw_summary হিসেবে সেভ করা হয়, ডাটা হারায় না
+      console.error(`[group-order-capture] malformed structured order in group=${groupJid}: "${text}"`);
+      const { data: order } = await supabase
+        .from("orders")
+        .insert({
+          workspace_id: group.workspace_id,
+          group_id: group.id,
+          whatsapp_number_id: number.id,
+          contact_phone: senderPhone,
+          raw_summary: text,
+        })
+        .select("id, order_number")
+        .maybeSingle();
+      await createNotification(
+        group.workspace_id,
+        "group_order_capture_failed",
+        "গ্রুপে অর্ডার ফরম্যাট বুঝা যায়নি",
+        `"${text}" — নাম/নাম্বার পাওয়া যায়নি, raw_summary হিসেবে সেভ হয়েছে${order ? ` (#${order.order_number})` : ""}, ম্যানুয়ালি দেখুন।`
+      );
+      return;
+    }
+
+    const { data: order, error } = await supabase
+      .from("orders")
+      .insert({
+        workspace_id: group.workspace_id,
+        group_id: group.id,
+        whatsapp_number_id: number.id,
+        contact_phone: structuredOrder.phone,
+        product_name: structuredOrder.product,
+        quantity: structuredOrder.quantity,
+        delivery_name: structuredOrder.name,
+        delivery_phone: structuredOrder.phone,
+        raw_summary: text,
+      })
+      .select("id, order_number")
+      .maybeSingle();
+
+    if (error || !order) {
+      console.error(`[group-order-capture] failed to save order in group=${groupJid}:`, error?.message);
+      return;
+    }
+
+    await supabase
+      .from("order_status_history")
+      .insert({ order_id: order.id, workspace_id: group.workspace_id, from_status: null, to_status: "pending" });
+
+    console.log(`[group-order-capture] order #${order.order_number} captured in group=${groupJid}`);
+    await createNotification(
+      group.workspace_id,
+      "new_order",
+      `নতুন অর্ডার #${order.order_number} (গ্রুপ থেকে)`,
+      `${structuredOrder.product ? `${structuredOrder.product}${structuredOrder.quantity ? ` (${structuredOrder.quantity})` : ""} — ` : ""}কাস্টমার: ${structuredOrder.name} (${structuredOrder.phone})`
+    );
+
+    const confirmJobData: GroupReplyJobData = {
+      workspaceId: group.workspace_id,
+      whatsappNumberId: number.id,
+      groupId: group.id,
+      groupJid,
+      replyText: `ধন্যবাদ! আপনার অর্ডার রেকর্ড করা হয়েছে। অর্ডার আইডি: #${order.order_number.toLocaleString("bn-BD")}`,
+    };
+    await getAutoReplyQueue().add("group-reply", confirmJobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
     return;
   }
 

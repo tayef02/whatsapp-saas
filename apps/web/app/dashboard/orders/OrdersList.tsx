@@ -17,6 +17,7 @@ type Order = {
   cancel_reason: string | null;
   raw_summary: string | null;
   created_at: string;
+  group_name: string | null;
 };
 
 type HistoryRow = { from_status: string | null; to_status: string; reason: string | null; created_at: string };
@@ -81,7 +82,10 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
             <div style={{ fontSize: 13 }}>
               <strong>#{o.order_number}</strong> <strong>{o.product_name || "(পণ্যের নাম নেই)"}</strong>
               {o.quantity && <span style={{ color: "#666" }}> × {o.quantity}</span>}
-              <div style={{ color: "#666", marginTop: 4 }}>কাস্টমার: {o.contact_phone}</div>
+              <div style={{ color: "#666", marginTop: 4 }}>
+                কাস্টমার: {o.contact_phone}
+                {o.group_name && ` — 👥 গ্রুপ: ${o.group_name}`}
+              </div>
               {(o.delivery_name || o.delivery_phone || o.delivery_address) && (
                 <div style={{ color: "#666", marginTop: 2 }}>
                   ডেলিভারি: {[o.delivery_name, o.delivery_phone, o.delivery_address].filter(Boolean).join(", ")}
@@ -92,7 +96,7 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
               )}
               {!o.product_name && o.raw_summary && (
                 <div style={{ color: "#b45309", marginTop: 4, fontSize: 12 }}>
-                  ⚠️ AI এর ডাটা পার্স করা যায়নি, আসল টেক্সট: {o.raw_summary}
+                  ⚠️ ডাটা পুরোপুরি পার্স করা যায়নি, আসল টেক্সট: {o.raw_summary}
                 </div>
               )}
               <div style={{ color: "#999", marginTop: 4, fontSize: 11 }}>{new Date(o.created_at).toLocaleString("bn-BD")}</div>
