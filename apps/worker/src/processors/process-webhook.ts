@@ -285,6 +285,14 @@ async function handleGroupMessage(
 
   if (!matched) {
     await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+    // ডায়াগনস্টিক লগ — কোনো mention-trigger রুল থাকা সত্ত্বেও মেলেনি মানে হয় mention করা হয়নি,
+    // অথবা mentionedJid ফিল্ডের আসল শেপ আমাদের ধারণার সাথে মিলছে না। rules থাকলেই শুধু লগ হয়,
+    // তাই সাধারণ গ্রুপের মেসেজে স্প্যাম হয় না
+    if (rules && rules.some((r: { trigger_type: string }) => r.trigger_type === "mention")) {
+      console.log(
+        `[group-autoreply] no rule matched (mention check) group=${groupJid}: mentionedJids=${JSON.stringify(mentionedJids)}, botPhone=${number.phone_number}, raw message=${JSON.stringify(data.message)}`
+      );
+    }
     return;
   }
 
