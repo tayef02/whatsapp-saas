@@ -36,6 +36,9 @@ export default async function DashboardHome() {
         </Link>
       </p>
       <p>
+        <Link href="/dashboard/groups">গ্রুপ ম্যানেজ করুন →</Link>
+      </p>
+      <p>
         <Link href="/dashboard/billing">প্ল্যান ও বিলিং →</Link>
       </p>
       <p>

@@ -8,6 +8,18 @@ export interface CreateInstanceResult {
   qrCodeBase64: string | null;
 }
 
+export interface GroupParticipant {
+  jid: string;
+  isAdmin: boolean;
+}
+
+export interface GroupInfo {
+  groupJid: string;
+  name: string;
+  description: string | null;
+  participants: GroupParticipant[];
+}
+
 export interface WhatsAppProvider {
   // webhookUrl দিলে প্রতিটা instance তার নিজের webhook নিয়ে বসবে (শেয়ার্ড Evolution সার্ভারে
   // গ্লোবাল webhook বদলানো ছাড়াই) — প্রোডাকশনে এটা বাধ্যতামূলক, কারণ একই সার্ভারে অন্য অ্যাপের
@@ -27,4 +39,8 @@ export interface WhatsAppProvider {
   // রিপ্লাই পাঠানোর ঠিক আগে "টাইপ করছে..." দেখানোর জন্য — এটা শুধু কসমেটিক (মানুষ-এজেন্টের
   // মতো অনুভূতি দেয়), ব্যর্থ হলেও মূল sendMessage আটকানো উচিত না
   sendPresence(instanceName: string, to: string, presence: "composing" | "paused"): Promise<void>;
+  // গ্রুপ টুলস (Phase ২) — গ্রুপ লিস্ট + মেম্বার/অ্যাডমিন sync, ইনভাইট লিংক জেনারেট/রোটেট
+  listGroups(instanceName: string): Promise<GroupInfo[]>;
+  getGroupInviteCode(instanceName: string, groupJid: string): Promise<string>;
+  revokeGroupInviteCode(instanceName: string, groupJid: string): Promise<string>;
 }

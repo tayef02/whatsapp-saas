@@ -1,4 +1,4 @@
-import type { ConnectionStatus, CreateInstanceResult, WhatsAppProvider } from "./types";
+import type { ConnectionStatus, CreateInstanceResult, GroupInfo, WhatsAppProvider } from "./types";
 
 interface EvolutionServerConfig {
   apiUrl: string;
@@ -126,6 +126,59 @@ export class EvolutionProvider implements WhatsAppProvider {
     } catch (err) {
       console.log(`[evolution] sendPresence failed, non-critical: ${err instanceof Error ? err.message : err}`);
     }
+  }
+
+  // Evolution API v2 এর ডকুমেন্টেড কনভেনশন অনুযায়ী এন্ডপয়েন্ট — sendMessage/createInstance এর
+  // মতো VPS এর আসল ইনস্ট্যান্সে যাচাই করা হয়নি এখনো, তাই প্রথমবার লাইভ গ্রুপে টেস্ট করে দেখা জরুরি
+  async listGroups(instanceName: string): Promise<GroupInfo[]> {
+    const res = await this.request(`/group/fetchAllGroups/${instanceName}?getParticipants=true`, {
+      headers: this.headers(),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution listGroups ব্যর্থ (${res.status}): ${body}`);
+    }
+
+    const data = (await res.json()) as any[];
+    return (data ?? []).map((g) => ({
+      groupJid: g.id as string,
+      name: (g.subject as string) ?? "",
+      description: (g.desc as string) ?? null,
+      participants: ((g.participants as any[]) ?? []).map((p) => ({
+        jid: p.id as string,
+        isAdmin: p.admin === "admin" || p.admin === "superadmin",
+      })),
+    }));
+  }
+
+  async getGroupInviteCode(instanceName: string, groupJid: string): Promise<string> {
+    const res = await this.request(`/group/inviteCode/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`, {
+      headers: this.headers(),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution getGroupInviteCode ব্যর্থ (${res.status}): ${body}`);
+    }
+
+    const data = (await res.json()) as any;
+    return (data?.inviteCode as string) ?? "";
+  }
+
+  async revokeGroupInviteCode(instanceName: string, groupJid: string): Promise<string> {
+    const res = await this.request(`/group/revokeInviteCode/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`, {
+      method: "PUT",
+      headers: this.headers(),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution revokeGroupInviteCode ব্যর্থ (${res.status}): ${body}`);
+    }
+
+    const data = (await res.json()) as any;
+    return (data?.inviteCode as string) ?? "";
   }
 
   async sendMedia(
