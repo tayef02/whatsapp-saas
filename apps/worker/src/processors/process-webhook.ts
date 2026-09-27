@@ -69,7 +69,11 @@ export async function processWebhookEvent(body: EvolutionWebhookBody) {
     return;
   }
 
-  if (event === "group.participants.update") {
+  // লাইভ VPS-এ যাচাই করা হয়েছে: এই ইভেন্টটা Evolution অন্যগুলোর (UPPER_SNAKE_CASE) মতো না
+  // পাঠিয়ে সরাসরি "group-participants.update" (kebab-case + dot) হিসেবে পাঠায়, তাই
+  // normalizeEvent এর underscore→dot রূপান্তরের পরও হাইফেনটা থেকে যায় — dot ভার্সনের বদলে
+  // এই আসল ফরম্যাটটাই ম্যাচ করা হচ্ছে
+  if (event === "group-participants.update") {
     await handleGroupParticipantsUpdate(instanceName, data);
     return;
   }
