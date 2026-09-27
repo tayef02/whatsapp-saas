@@ -172,7 +172,7 @@ async function handleMessageStatusUpdate(data: Record<string, unknown> | Record<
 
 // ইনকামিং মেসেজ — STOP/বন্ধ (opt-out), START/চালু (আবার opt-in), আর AI auto-reply
 async function handleIncomingMessage(instanceName: string, data: Record<string, unknown>) {
-  const key = data.key as { remoteJid?: string; fromMe?: boolean } | undefined;
+  const key = data.key as { remoteJid?: string; fromMe?: boolean; id?: string } | undefined;
   if (!key || key.fromMe) return; // নিজের পাঠানো মেসেজের echo, স্কিপ
   if (key.remoteJid?.endsWith("@g.us")) return; // গ্রুপ মেসেজ — auto-reply শুধু personal chat এর জন্য
 
@@ -184,6 +184,8 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
 
   const phone = phoneFromJid(key.remoteJid);
   if (!phone) return;
+
+  const providerMessageId = key.id;
 
   const supabase = getSupabase();
   const { data: number } = await supabase
@@ -202,7 +204,35 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
     return; // STOP/START নিজেই একটা কমান্ড — auto-reply এর দরকার নেই
   }
 
-  await handleAutoReply(supabase, number, phone, text);
+  await handleAutoReply(supabase, number, phone, text, providerMessageId);
+}
+
+// একই WhatsApp মেসেজ (key.id) নিয়ে Evolution/Baileys মাঝেমধ্যে messages.upsert
+// ইভেন্ট দুইবার পাঠায় (reconnect resync/retry) — এখানে ইনসার্ট করার সময় ইউনিক
+// কনস্ট্রেইন্ট ভায়োলেশন (23505) ধরে সেটা শনাক্ত করা হয়, যাতে ডুপ্লিকেট AI রিপ্লাই/
+// ডুপ্লিকেট মেসেজ কাস্টমারকে না যায়
+async function insertInboundMessage(
+  supabase: ReturnType<typeof getSupabase>,
+  conversationId: string,
+  text: string,
+  providerMessageId: string | undefined
+): Promise<{ isDuplicate: boolean }> {
+  const { error } = await supabase.from("conversation_messages").insert({
+    conversation_id: conversationId,
+    direction: "inbound",
+    sender_type: "customer",
+    content: text,
+    provider_message_id: providerMessageId ?? null,
+  });
+
+  if (error?.code === "23505") {
+    console.log(`[autoreply] duplicate inbound message ignored (conversation=${conversationId}, providerMessageId=${providerMessageId})`);
+    return { isDuplicate: true };
+  }
+  if (error) {
+    console.error(`[autoreply] failed to insert inbound message (conversation=${conversationId}):`, error.message);
+  }
+  return { isDuplicate: false };
 }
 
 // contact না থাকলে অটো-তৈরি করে, conversation খুঁজে/বানায়, ইতিহাসে লেখে, AI/knowledge-base
@@ -214,7 +244,8 @@ async function handleAutoReply(
   supabase: ReturnType<typeof getSupabase>,
   number: { id: string; workspace_id: string },
   phone: string,
-  text: string
+  text: string,
+  providerMessageId: string | undefined
 ) {
   let { data: contact } = await supabase
     .from("contacts")
@@ -253,9 +284,7 @@ async function handleAutoReply(
   // না চাপা পর্যন্ত পরের সব মেসেজেও চুপ থাকবে (ইচ্ছাকৃতভাবে sticky, ইনবাউন্ড মেসেজ তবুও সেভ হয়)
   if (conversation.status === "handed_off") {
     console.log(`[autoreply] conversation=${conversation.id} is handed_off, bot staying silent`);
-    await supabase
-      .from("conversation_messages")
-      .insert({ conversation_id: conversation.id, direction: "inbound", sender_type: "customer", content: text });
+    await insertInboundMessage(supabase, conversation.id, text, providerMessageId);
     return;
   }
 
@@ -276,14 +305,16 @@ async function handleAutoReply(
     .reverse()
     .map((m: { direction: string; content: string }) => ({ role: m.direction === "inbound" ? "user" : "assistant", content: m.content }));
 
-  await supabase
-    .from("conversation_messages")
-    .insert({ conversation_id: conversation.id, direction: "inbound", sender_type: "customer", content: text });
+  const { isDuplicate } = await insertInboundMessage(supabase, conversation.id, text, providerMessageId);
+  if (isDuplicate) {
+    console.log(`[autoreply] skipping AI call — duplicate webhook event for an already-processed message`);
+    return;
+  }
 
   // n8n AI Agent node এর মতো — কোনো keyword rule/rigid logic নেই, system prompt-ই
   // একমাত্র নিয়ন্ত্রক। LLM নিজে সিদ্ধান্ত নেয় উত্তর দেবে, না জানলে (system prompt এর
   // নির্দেশ অনুযায়ী) ভদ্রভাবে বলবে, নাকি এটা প্রকৃত টেকনিক্যাল ব্যর্থতা।
-  const result = await tryAiReply(supabase, number.workspace_id, conversation.id, phone, history, text);
+  const result = await tryAiReply(supabase, number.workspace_id, conversation.id, number.id, phone, history, text);
 
   if (result.kind === "answer") {
     const jobData: AutoReplyJobData = {
@@ -357,6 +388,7 @@ async function tryAiReply(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
   conversationId: string,
+  whatsappNumberId: string,
   phone: string,
   history: ChatTurn[],
   question: string
@@ -407,13 +439,24 @@ async function tryAiReply(
     // readyDocs.length === 0 হলে context ফাঁকা থাকে — LLM তবুও কল হয়, শুধু system prompt
     // দিয়েই (সাধারণ কথাবার্তা/অর্ডার প্রসেসের নির্দেশনা system prompt-এই থাকতে পারে)
 
+    // এই কাস্টমারের আগের অর্ডার আছে কিনা — থাকলে সেই সত্যিকারের ডাটাবেস তথ্য context এ
+    // যোগ হয়, যাতে "অর্ডারের কী অবস্থা?" জিজ্ঞেস করলে LLM অনুমান না করে সঠিক উত্তর দিতে পারে
+    const orderContext = await buildOrderContext(supabase, workspaceId, phone);
+    if (orderContext) {
+      context = context ? `${orderContext}\n\n---\n\n${context}` : orderContext;
+    }
+
     const promptWithMarker = `${settings.system_prompt ?? ""}
 
 উপরের তথ্যে প্রশ্নের সঠিক উত্তর না থাকলে, system prompt এর নির্দেশ অনুযায়ী ভদ্রভাবে জানাও যে নিশ্চিত না — কিন্তু তোমার উত্তরের একদম প্রথম শব্দ হিসেবে অবশ্যই এটা বসাও (কাস্টমার এটা দেখবে না): ${NO_ANSWER_MARKER}
 
 কাস্টমার যদি অর্ডার কনফার্ম করে (সব প্রয়োজনীয় তথ্য দিয়ে নিশ্চিত করেছে — কবে/কীভাবে অর্ডার নিতে হবে সেটা তোমার নিজের সিদ্ধান্ত, system prompt এর নির্দেশ অনুযায়ী), তাহলে কাস্টমারকে দেওয়া স্বাভাবিক উত্তরের একদম শেষে (নতুন লাইনে) এই ফরম্যাটে একটা ব্লক যোগ করবে (কাস্টমার এটা দেখবে না, শুধু সিস্টেম বুঝতে ব্যবহার করবে):
 ${ORDER_BLOCK_START}{"product_name": "...", "quantity": "...", "delivery_name": "...", "delivery_phone": "...", "delivery_address": "..."}${ORDER_BLOCK_END}
-কোনো তথ্য না জানলে সেই ফিল্ডে খালি স্ট্রিং ("") দেবে। এই ব্লকটা শুধু তখনই দেবে যখন অর্ডার সত্যিই কনফার্ম হয়েছে, প্রতিটা মেসেজে না।`;
+কোনো তথ্য না জানলে সেই ফিল্ডে খালি স্ট্রিং ("") দেবে। এই ব্লকটা শুধু তখনই দেবে যখন অর্ডার সত্যিই কনফার্ম হয়েছে, প্রতিটা মেসেজে না।
+
+কাস্টমার যদি তার আগের অর্ডারের status/অবস্থা জিজ্ঞেস করে, উপরে "সাম্প্রতিক অর্ডার" শিরোনামে দেওয়া
+তথ্য (যদি থাকে) থেকে সরাসরি সঠিক উত্তর দাও — কখনো অনুমান কোরো না। সেই তথ্য না থাকলে সততার সাথে
+বলো যে তোমার কোনো অর্ডার খুঁজে পাওনি।`;
 
     const reply = await generateChatReply(provider, apiKey, promptWithMarker, context, history, question);
     const trimmed = reply.trim();
@@ -429,11 +472,15 @@ ${ORDER_BLOCK_START}{"product_name": "...", "quantity": "...", "delivery_name": 
     }
 
     const { cleanText, rawBlock, parsed, parseError } = extractOrderBlock(trimmed);
+    let finalText = cleanText || trimmed;
     if (rawBlock) {
-      await saveOrder(supabase, workspaceId, conversationId, phone, rawBlock, parsed, parseError);
+      const orderNumber = await saveOrder(supabase, workspaceId, conversationId, whatsappNumberId, phone, rawBlock, parsed, parseError);
+      if (orderNumber !== null) {
+        finalText += `\n\nআপনার অর্ডার আইডি: #${orderNumber.toLocaleString("bn-BD")} — এটা দিয়ে পরে "আমার অর্ডারের কী অবস্থা?" জিজ্ঞেস করলে জানতে পারবেন।`;
+      }
     }
 
-    return { kind: "answer", text: cleanText || trimmed };
+    return { kind: "answer", text: finalText };
   } catch (err) {
     console.error(`[autoreply] AI call failed (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
     return { kind: "technical_failure", supportPhone };
@@ -442,44 +489,89 @@ ${ORDER_BLOCK_START}{"product_name": "...", "quantity": "...", "delivery_name": 
 
 // LLM এর ORDER_CONFIRMED ব্লক পেলে এখানে সেভ হয়। JSON পার্স ব্যর্থ হলেও raw_summary
 // হিসেবে আসল টেক্সট সেভ হয় (silent fail না করে worker লগে স্পষ্ট এরর লেখা হয়) — যাতে
-// অন্তত ডাটা না হারায়, পরে দরকার হলে ম্যানুয়ালি দেখা যায়
+// অন্তত ডাটা না হারায়, পরে দরকার হলে ম্যানুয়ালি দেখা যায়। সফল হলে ছোট readable
+// order_number রিটার্ন করে যাতে caller সেটা কাস্টমারকে জানাতে পারে
 async function saveOrder(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
   conversationId: string,
+  whatsappNumberId: string,
   phone: string,
   rawBlock: string,
   parsed: ParsedOrder | null,
   parseError: string | null
-) {
+): Promise<number | null> {
   if (parseError) {
     console.error(`[autoreply] ORDER_CONFIRMED JSON parse failed (workspace=${workspaceId}, conversation=${conversationId}): ${parseError}. raw="${rawBlock}"`);
   }
 
-  const { error } = await supabase.from("orders").insert({
-    workspace_id: workspaceId,
-    conversation_id: conversationId,
-    contact_phone: phone,
-    product_name: parsed?.product_name || null,
-    quantity: parsed?.quantity || null,
-    delivery_name: parsed?.delivery_name || null,
-    delivery_phone: parsed?.delivery_phone || null,
-    delivery_address: parsed?.delivery_address || null,
-    raw_summary: rawBlock,
-  });
+  const { data: order, error } = await supabase
+    .from("orders")
+    .insert({
+      workspace_id: workspaceId,
+      conversation_id: conversationId,
+      whatsapp_number_id: whatsappNumberId,
+      contact_phone: phone,
+      product_name: parsed?.product_name || null,
+      quantity: parsed?.quantity || null,
+      delivery_name: parsed?.delivery_name || null,
+      delivery_phone: parsed?.delivery_phone || null,
+      delivery_address: parsed?.delivery_address || null,
+      raw_summary: rawBlock,
+    })
+    .select("id, order_number")
+    .maybeSingle();
 
-  if (error) {
-    console.error(`[autoreply] failed to save order (workspace=${workspaceId}, conversation=${conversationId}):`, error.message);
-    return;
+  if (error || !order) {
+    console.error(`[autoreply] failed to save order (workspace=${workspaceId}, conversation=${conversationId}):`, error?.message);
+    return null;
   }
 
-  console.log(`[autoreply] order saved (workspace=${workspaceId}, conversation=${conversationId}, parsed=${!parseError})`);
+  await supabase.from("order_status_history").insert({
+    order_id: order.id,
+    workspace_id: workspaceId,
+    from_status: null,
+    to_status: "pending",
+  });
+
+  console.log(`[autoreply] order #${order.order_number} saved (workspace=${workspaceId}, conversation=${conversationId}, parsed=${!parseError})`);
   await createNotification(
     workspaceId,
     "new_order",
-    "নতুন অর্ডার এসেছে",
+    `নতুন অর্ডার #${order.order_number}`,
     parsed?.product_name ? `${parsed.product_name}${parsed.quantity ? ` (${parsed.quantity})` : ""} — কাস্টমার: ${phone}` : `কাস্টমার ${phone} থেকে নতুন অর্ডার — বিস্তারিত দেখতে Orders পেজে যান।`
   );
+
+  return order.order_number;
+}
+
+// প্রতিটা ইনকামিং মেসেজে এই ফোন নাম্বারের সাম্প্রতিক অর্ডার(গুলো) ডাটাবেস থেকে সরাসরি
+// টেনে এনে LLM এর context এ যোগ করা হয় — যাতে "অর্ডারের কী অবস্থা?" জিজ্ঞেস করলে LLM
+// conversation history থেকে অনুমান না করে সঠিক, up-to-date তথ্য দিয়ে উত্তর দিতে পারে
+const ORDER_STATUS_LABEL_BN: Record<string, string> = {
+  pending: "নতুন/প্রক্রিয়াধীন",
+  confirmed: "কনফার্ম হয়েছে",
+  shipped: "পাঠানো হয়েছে",
+  cancelled: "বাতিল হয়েছে",
+};
+
+async function buildOrderContext(supabase: ReturnType<typeof getSupabase>, workspaceId: string, phone: string): Promise<string> {
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("order_number, product_name, quantity, status, created_at")
+    .eq("workspace_id", workspaceId)
+    .eq("contact_phone", phone)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (!orders || orders.length === 0) return "";
+
+  const lines = orders.map(
+    (o: { order_number: number; product_name: string | null; quantity: string | null; status: string; created_at: string }) =>
+      `- অর্ডার #${o.order_number}: ${o.product_name || "(নাম নেই)"}${o.quantity ? ` × ${o.quantity}` : ""}, বর্তমান status: ${ORDER_STATUS_LABEL_BN[o.status] ?? o.status} (তারিখ: ${new Date(o.created_at).toLocaleDateString("bn-BD")})`
+  );
+
+  return `### এই কাস্টমারের সাম্প্রতিক অর্ডার (সরাসরি ডাটাবেস থেকে, সবসময় নির্ভুল — অনুমান কোরো না):\n${lines.join("\n")}`;
 }
 
 async function buildChunkContext(
