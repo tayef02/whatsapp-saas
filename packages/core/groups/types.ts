@@ -3,6 +3,8 @@
 export type GroupReplyJobData = {
   workspaceId: string;
   whatsappNumberId: string;
+  // AI মোডে outbound রিপ্লাই group_messages এ লগ করার জন্য দরকার (future context এর জন্য)
+  groupId: string;
   groupJid: string;
   replyText: string;
 };

@@ -214,9 +214,23 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
 }
 
 // গ্রুপ মেসেজে শুধু কিওয়ার্ড-বেসড অটো-রিপ্লাই চেক হয় (AI/RAG চলে না, সেটা শুধু ১:১ চ্যাটের জন্য)।
-// গ্রুপটা এখনো sync করা না থাকলে (groups টেবিলে নেই) কিছু করার নেই, স্কিপ। প্রথম যে কিওয়ার্ড
-// মেসেজে মিলে যায় সেটাই ট্রিগার হয় — cooldown atomically চেক+সেট হয় (নিচে দেখুন) যাতে একই
-// কিওয়ার্ডে বারবার বা ডুপ্লিকেট webhook এ দুইবার রিপ্লাই না যায়
+async function logGroupMessage(
+  supabase: ReturnType<typeof getSupabase>,
+  groupId: string,
+  workspaceId: string,
+  senderPhone: string,
+  text: string
+) {
+  await supabase
+    .from("group_messages")
+    .insert({ group_id: groupId, workspace_id: workspaceId, direction: "inbound", sender_phone: senderPhone, content: text });
+}
+
+// গ্রুপটা এখনো sync করা না থাকলে (groups টেবিলে নেই) কিছু করার নেই, স্কিপ। প্রতিটা মেসেজ
+// group_messages এ লগ হয় (ট্রিগার মিলুক বা না মিলুক) — ভবিষ্যতে AI ট্রিগার হলে যেন গ্রুপের
+// আসল কথোপকথনের প্রসঙ্গ থাকে। প্রথম যে রুল (keyword বা @mention) মেসেজে মেলে সেটাই ট্রিগার
+// হয় — cooldown atomically চেক+সেট হয় (fixed মোডে মানে "একই রিপ্লাই বারবার না", AI মোডে
+// মানে "কত ঘন ঘন AI call হতে পারবে", LLM cost/স্প্যাম নিয়ন্ত্রণে)
 async function handleGroupMessage(
   instanceName: string,
   data: Record<string, unknown>,
@@ -231,37 +245,48 @@ async function handleGroupMessage(
   const groupJid = key.remoteJid;
   if (!groupJid) return;
 
+  const senderPhone = phoneFromJid(key.participant) ?? "unknown";
+  const mentionedJids =
+    (data.message as { extendedTextMessage?: { contextInfo?: { mentionedJid?: string[] } } } | undefined)?.extendedTextMessage
+      ?.contextInfo?.mentionedJid ?? [];
+
   const supabase = getSupabase();
   const { data: number } = await supabase
     .from("whatsapp_numbers")
-    .select("id, workspace_id")
+    .select("id, workspace_id, phone_number")
     .eq("instance_name", instanceName)
     .maybeSingle();
   if (!number) return;
 
   const { data: group } = await supabase
     .from("groups")
-    .select("id")
+    .select("id, workspace_id")
     .eq("whatsapp_number_id", number.id)
     .eq("group_jid", groupJid)
     .maybeSingle();
 
   if (!group) {
-    console.log(`[group-autoreply] group=${groupJid} not synced yet (no row in groups table), skipping keyword check`);
+    console.log(`[group-autoreply] group=${groupJid} not synced yet (no row in groups table), skipping`);
     return;
   }
 
   const { data: rules } = await supabase
     .from("group_keyword_replies")
-    .select("id, keyword, reply_text, cooldown_seconds")
+    .select("id, trigger_type, reply_mode, keyword, reply_text, cooldown_seconds")
     .eq("group_id", group.id)
     .eq("is_active", true);
 
-  if (!rules || rules.length === 0) return;
-
   const lowerText = text.toLowerCase();
-  const matched = rules.find((r: { keyword: string }) => lowerText.includes(r.keyword.toLowerCase()));
-  if (!matched) return;
+  const isMentioned = number.phone_number ? mentionedJids.some((jid: string) => phoneFromJid(jid) === number.phone_number) : false;
+
+  const matched = (rules ?? []).find((r: { trigger_type: string; keyword: string | null }) =>
+    r.trigger_type === "mention" ? isMentioned : r.keyword ? lowerText.includes(r.keyword.toLowerCase()) : false
+  );
+
+  if (!matched) {
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+    return;
+  }
 
   // atomic conditional UPDATE — cooldown শেষ হয়ে থাকলেই (বা কখনো ট্রিগার না হয়ে থাকলে) এই
   // আপডেট একটা row রিটার্ন করে, তখনই আমরা "জিতেছি" ধরে রিপ্লাই পাঠাই। দুইটা worker/ডুপ্লিকেট
@@ -276,18 +301,74 @@ async function handleGroupMessage(
     .maybeSingle();
 
   if (!won) {
-    console.log(`[group-autoreply] cooldown active for keyword="${matched.keyword}" in group=${groupJid}, skipping`);
+    console.log(`[group-autoreply] cooldown active for rule=${matched.id} in group=${groupJid}, skipping`);
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
     return;
+  }
+
+  if (matched.reply_mode === "fixed") {
+    await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+
+    const jobData: GroupReplyJobData = {
+      workspaceId: number.workspace_id,
+      whatsappNumberId: number.id,
+      groupId: group.id,
+      groupJid,
+      replyText: matched.reply_text ?? "",
+    };
+    await getAutoReplyQueue().add("group-reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+    console.log(`[group-autoreply] fixed reply (rule=${matched.id}) in group=${groupJid}, reply job queued`);
+    return;
+  }
+
+  // AI মোড — ১:১ চ্যাটবটের একই tryAiReply কোর reuse হয়, শুধু history গ্রুপের নিজস্ব
+  // group_messages থেকে আসে। একাধিক সদস্য থাকায় "কে কী বলেছে" স্পষ্ট রাখতে প্রতিটা
+  // inbound turn সেন্ডারের নাম্বার দিয়ে prefix করা হয় (১:১ তে একজনই কাস্টমার বলে দরকার নেই)
+  const { data: historyRows } = await supabase
+    .from("group_messages")
+    .select("direction, sender_phone, sender_name, content")
+    .eq("group_id", group.id)
+    .order("created_at", { ascending: false })
+    .limit(MAX_HISTORY_MESSAGES);
+
+  const history: ChatTurn[] = (historyRows ?? [])
+    .reverse()
+    .map((m: { direction: string; sender_phone: string | null; sender_name: string | null; content: string }) => ({
+      role: m.direction === "inbound" ? "user" : "assistant",
+      content: m.direction === "inbound" ? `[${m.sender_name || m.sender_phone || "member"}]: ${m.content}` : m.content,
+    }));
+
+  await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
+
+  // mention ট্রিগারে মেসেজে "@৮৮০১..." টাইপ raw নাম্বার থাকে, LLM কে বিভ্রান্ত না করতে ছেঁটে ফেলা হয়
+  const cleanedQuestion = text.replace(/@\d{7,15}/g, "").trim() || text;
+
+  const result = await tryAiReply(supabase, group.workspace_id, null, number.id, senderPhone, history, cleanedQuestion);
+
+  let replyText: string;
+  if (result.kind === "answer" || result.kind === "needs_human") {
+    replyText = result.text;
+  } else {
+    replyText = result.supportPhone
+      ? `দুঃখিত, এই মুহূর্তে প্রযুক্তিগত সমস্যার কারণে সাড়া দিতে পারছি না। সরাসরি যোগাযোগ করুন: ${result.supportPhone}`
+      : "দুঃখিত, এই মুহূর্তে প্রযুক্তিগত সমস্যার কারণে সাড়া দিতে পারছি না।";
+    await createNotification(
+      group.workspace_id,
+      "conversation_handed_off",
+      "গ্রুপে AI চ্যাটবট টেকনিক্যাল সমস্যায় পড়েছে",
+      `গ্রুপে AI সাড়া দিতে পারেনি (API key/quota/network সমস্যা) — AI Chatbot সেটিংস চেক করুন।`
+    );
   }
 
   const jobData: GroupReplyJobData = {
     workspaceId: number.workspace_id,
     whatsappNumberId: number.id,
+    groupId: group.id,
     groupJid,
-    replyText: matched.reply_text,
+    replyText,
   };
   await getAutoReplyQueue().add("group-reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-  console.log(`[group-autoreply] matched keyword="${matched.keyword}" in group=${groupJid}, reply job queued`);
+  console.log(`[group-autoreply] AI reply (rule=${matched.id}, kind=${result.kind}) in group=${groupJid}, reply job queued`);
 }
 
 // একই WhatsApp মেসেজ (key.id) নিয়ে Evolution/Baileys মাঝেমধ্যে messages.upsert
@@ -467,10 +548,12 @@ type AiReplyResult =
 // শুরুতে NO_ANSWER_MARKER বসায় (কাস্টমার দেখে না, কোড ছেঁটে ফেলে) — এটাই "needs_human"
 // সিগন্যাল, প্রাকৃতিক ভাষা পার্স করার অনির্ভরযোগ্যতা এড়াতে। শুধু প্রকৃত টেকনিক্যাল ব্যর্থতায়
 // (key নেই/ভুল, API এরর, কোনো response-ই আসেনি) "technical_failure" রিটার্ন হয়।
+// conversationId নাল হয় গ্রুপ-কনটেক্সটে কল করলে (গ্রুপের কোনো conversations row নেই) — অর্ডার
+// সেভ হলে orders.conversation_id শুধু তখন নাল থাকবে, বাকি সব লজিক অভিন্ন
 async function tryAiReply(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
-  conversationId: string,
+  conversationId: string | null,
   whatsappNumberId: string,
   phone: string,
   history: ChatTurn[],
@@ -586,7 +669,7 @@ ${ORDER_BLOCK_START}{"product_name": "...", "quantity": "...", "delivery_name": 
 async function saveOrder(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
-  conversationId: string,
+  conversationId: string | null,
   whatsappNumberId: string,
   phone: string,
   rawBlock: string,
