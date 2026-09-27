@@ -451,6 +451,10 @@ async function handleGroupMessage(
           .maybeSingle()
       : { data: null };
 
+    console.log(
+      `[group-moderation] bot admin check: botPhone=${number.phone_number}, botMember=${JSON.stringify(botMember)}, messageId=${key.id}`
+    );
+
     if (botMember?.is_group_admin && key.id) {
       const deleteJobData: DeleteGroupMessageJobData = {
         workspaceId: group.workspace_id,
@@ -458,6 +462,7 @@ async function handleGroupMessage(
         groupJid,
         messageId: key.id,
         senderPhone,
+        participantJid: key.participant,
         matchedText: matchedFilterText,
       };
       await getAutoReplyQueue().add("delete-group-message", deleteJobData, { attempts: 2, backoff: { type: "exponential", delay: 3000 } });

@@ -15,7 +15,10 @@ export async function processDeleteGroupMessage(data: DeleteGroupMessageJobData)
   try {
     await providerInfo.provider.deleteGroupMessage(providerInfo.instanceName, data.groupJid, {
       id: data.messageId,
-      participant: `${data.senderPhone}@s.whatsapp.net`,
+      // মূল participant JID (phone-JID বা @lid, যেটাই ছিল) হুবহু ব্যবহার হচ্ছে — phone নাম্বার
+      // দিয়ে পুনর্গঠন করলে LID-ভিত্তিক সেন্ডারের ক্ষেত্রে ভুল JID হয়ে যেত (mention ফিচারে
+      // একই কারণে সমস্যা হয়েছিল, সেই একই রুট-কজ এখানেও প্রযোজ্য হতে পারে)
+      participant: data.participantJid,
       fromMe: false,
     });
     console.log(`[group-moderation] deleted message ${data.messageId} in group=${data.groupJid} (matched: "${data.matchedText}")`);

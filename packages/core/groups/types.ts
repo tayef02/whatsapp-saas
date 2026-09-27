@@ -18,6 +18,10 @@ export type DeleteGroupMessageJobData = {
   groupJid: string;
   messageId: string;
   senderPhone: string;
+  // আসল key.participant JID হুবহু (phone-JID বা @lid, যেটাই এসেছিল) — WhatsApp এর LID
+  // প্রাইভেসি সিস্টেমের কারণে এটা phone নাম্বার থেকে পুনর্গঠন করা ভুল/অনির্ভরযোগ্য (mention
+  // ফিচারে একবার এই একই কারণে বাগ হয়েছিল), তাই মূল JID সরাসরি রাখা হচ্ছে
+  participantJid: string | undefined;
   matchedText: string;
 };
 
