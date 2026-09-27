@@ -4,6 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 export default async function DashboardHome() {
   const supabase = await createClient();
   const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
+  const { count: pendingOrderCount } = await supabase
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending");
 
   return (
     <div>
@@ -25,6 +29,11 @@ export default async function DashboardHome() {
       </p>
       <p>
         <Link href="/dashboard/ai-chatbot">AI Chatbot (Knowledge Base) →</Link>
+      </p>
+      <p>
+        <Link href="/dashboard/orders">
+          Orders {pendingOrderCount ? `🔴 (${pendingOrderCount} নতুন)` : ""} →
+        </Link>
       </p>
       <p>
         <Link href="/dashboard/billing">প্ল্যান ও বিলিং →</Link>

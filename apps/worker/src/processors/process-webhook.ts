@@ -6,7 +6,14 @@ import { AUTOREPLY_QUEUE_NAME } from "../queues/autoreply-queue";
 import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
 import { createNotification } from "../lib/notify";
 import { generateEmbedding, generateChatReply, type LlmProvider, type ChatTurn } from "@whatsapp-saas/core/chatbot/llm";
-import { FULL_TEXT_MODE_MAX_WORDS, NO_ANSWER_MARKER, MAX_HISTORY_MESSAGES } from "@whatsapp-saas/core/chatbot/constants";
+import {
+  FULL_TEXT_MODE_MAX_WORDS,
+  NO_ANSWER_MARKER,
+  MAX_HISTORY_MESSAGES,
+  ORDER_BLOCK_START,
+  ORDER_BLOCK_END,
+} from "@whatsapp-saas/core/chatbot/constants";
+import { extractOrderBlock, type ParsedOrder } from "@whatsapp-saas/core/chatbot/order-block";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -276,7 +283,7 @@ async function handleAutoReply(
   // n8n AI Agent node এর মতো — কোনো keyword rule/rigid logic নেই, system prompt-ই
   // একমাত্র নিয়ন্ত্রক। LLM নিজে সিদ্ধান্ত নেয় উত্তর দেবে, না জানলে (system prompt এর
   // নির্দেশ অনুযায়ী) ভদ্রভাবে বলবে, নাকি এটা প্রকৃত টেকনিক্যাল ব্যর্থতা।
-  const result = await tryAiReply(supabase, number.workspace_id, history, text);
+  const result = await tryAiReply(supabase, number.workspace_id, conversation.id, phone, history, text);
 
   if (result.kind === "answer") {
     const jobData: AutoReplyJobData = {
@@ -349,6 +356,8 @@ type AiReplyResult =
 async function tryAiReply(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
+  conversationId: string,
+  phone: string,
   history: ChatTurn[],
   question: string
 ): Promise<AiReplyResult> {
@@ -398,7 +407,13 @@ async function tryAiReply(
     // readyDocs.length === 0 হলে context ফাঁকা থাকে — LLM তবুও কল হয়, শুধু system prompt
     // দিয়েই (সাধারণ কথাবার্তা/অর্ডার প্রসেসের নির্দেশনা system prompt-এই থাকতে পারে)
 
-    const promptWithMarker = `${settings.system_prompt ?? ""}\n\nউপরের তথ্যে প্রশ্নের সঠিক উত্তর না থাকলে, system prompt এর নির্দেশ অনুযায়ী ভদ্রভাবে জানাও যে নিশ্চিত না — কিন্তু তোমার উত্তরের একদম প্রথম শব্দ হিসেবে অবশ্যই এটা বসাও (কাস্টমার এটা দেখবে না): ${NO_ANSWER_MARKER}`;
+    const promptWithMarker = `${settings.system_prompt ?? ""}
+
+উপরের তথ্যে প্রশ্নের সঠিক উত্তর না থাকলে, system prompt এর নির্দেশ অনুযায়ী ভদ্রভাবে জানাও যে নিশ্চিত না — কিন্তু তোমার উত্তরের একদম প্রথম শব্দ হিসেবে অবশ্যই এটা বসাও (কাস্টমার এটা দেখবে না): ${NO_ANSWER_MARKER}
+
+কাস্টমার যদি অর্ডার কনফার্ম করে (সব প্রয়োজনীয় তথ্য দিয়ে নিশ্চিত করেছে — কবে/কীভাবে অর্ডার নিতে হবে সেটা তোমার নিজের সিদ্ধান্ত, system prompt এর নির্দেশ অনুযায়ী), তাহলে কাস্টমারকে দেওয়া স্বাভাবিক উত্তরের একদম শেষে (নতুন লাইনে) এই ফরম্যাটে একটা ব্লক যোগ করবে (কাস্টমার এটা দেখবে না, শুধু সিস্টেম বুঝতে ব্যবহার করবে):
+${ORDER_BLOCK_START}{"product_name": "...", "quantity": "...", "delivery_name": "...", "delivery_phone": "...", "delivery_address": "..."}${ORDER_BLOCK_END}
+কোনো তথ্য না জানলে সেই ফিল্ডে খালি স্ট্রিং ("") দেবে। এই ব্লকটা শুধু তখনই দেবে যখন অর্ডার সত্যিই কনফার্ম হয়েছে, প্রতিটা মেসেজে না।`;
 
     const reply = await generateChatReply(provider, apiKey, promptWithMarker, context, history, question);
     const trimmed = reply.trim();
@@ -413,11 +428,58 @@ async function tryAiReply(
       return { kind: "needs_human", text: naturalText || "দুঃখিত, এই মুহূর্তে সঠিক তথ্য দিতে পারছি না।" };
     }
 
-    return { kind: "answer", text: trimmed };
+    const { cleanText, rawBlock, parsed, parseError } = extractOrderBlock(trimmed);
+    if (rawBlock) {
+      await saveOrder(supabase, workspaceId, conversationId, phone, rawBlock, parsed, parseError);
+    }
+
+    return { kind: "answer", text: cleanText || trimmed };
   } catch (err) {
     console.error(`[autoreply] AI call failed (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
     return { kind: "technical_failure", supportPhone };
   }
+}
+
+// LLM এর ORDER_CONFIRMED ব্লক পেলে এখানে সেভ হয়। JSON পার্স ব্যর্থ হলেও raw_summary
+// হিসেবে আসল টেক্সট সেভ হয় (silent fail না করে worker লগে স্পষ্ট এরর লেখা হয়) — যাতে
+// অন্তত ডাটা না হারায়, পরে দরকার হলে ম্যানুয়ালি দেখা যায়
+async function saveOrder(
+  supabase: ReturnType<typeof getSupabase>,
+  workspaceId: string,
+  conversationId: string,
+  phone: string,
+  rawBlock: string,
+  parsed: ParsedOrder | null,
+  parseError: string | null
+) {
+  if (parseError) {
+    console.error(`[autoreply] ORDER_CONFIRMED JSON parse failed (workspace=${workspaceId}, conversation=${conversationId}): ${parseError}. raw="${rawBlock}"`);
+  }
+
+  const { error } = await supabase.from("orders").insert({
+    workspace_id: workspaceId,
+    conversation_id: conversationId,
+    contact_phone: phone,
+    product_name: parsed?.product_name || null,
+    quantity: parsed?.quantity || null,
+    delivery_name: parsed?.delivery_name || null,
+    delivery_phone: parsed?.delivery_phone || null,
+    delivery_address: parsed?.delivery_address || null,
+    raw_summary: rawBlock,
+  });
+
+  if (error) {
+    console.error(`[autoreply] failed to save order (workspace=${workspaceId}, conversation=${conversationId}):`, error.message);
+    return;
+  }
+
+  console.log(`[autoreply] order saved (workspace=${workspaceId}, conversation=${conversationId}, parsed=${!parseError})`);
+  await createNotification(
+    workspaceId,
+    "new_order",
+    "নতুন অর্ডার এসেছে",
+    parsed?.product_name ? `${parsed.product_name}${parsed.quantity ? ` (${parsed.quantity})` : ""} — কাস্টমার: ${phone}` : `কাস্টমার ${phone} থেকে নতুন অর্ডার — বিস্তারিত দেখতে Orders পেজে যান।`
+  );
 }
 
 async function buildChunkContext(
