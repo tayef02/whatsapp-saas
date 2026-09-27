@@ -246,9 +246,15 @@ async function handleGroupMessage(
   if (!groupJid) return;
 
   const senderPhone = phoneFromJid(key.participant) ?? "unknown";
+  // লাইভ VPS-এ যাচাই করা হয়েছে: এই Evolution/Baileys ভার্সনে mentionedJid ফিল্ড সবসময়
+  // খালি আসে (২০২৬-০৯-২৭ এর লগে দেখা গেছে) — mention আসলে টেক্সটের ভেতরেই "@<নাম্বার>"
+  // হিসেবে embedded থাকে (যেমন "@128811135979553 কেমন আছেন"), তাই সেখান থেকেই বের করা হয়।
+  // mentionedJid ফিল্ডটাও রাখা হলো fallback হিসেবে, কোনো ভবিষ্যৎ Evolution আপডেটে সঠিকভাবে
+  // পপুলেট হলে সেটাও কাজ করবে, ক্ষতি নেই
   const mentionedJids =
     (data.message as { extendedTextMessage?: { contextInfo?: { mentionedJid?: string[] } } } | undefined)?.extendedTextMessage
       ?.contextInfo?.mentionedJid ?? [];
+  const mentionedPhonesFromText = [...text.matchAll(/@(\d{7,15})/g)].map((m) => m[1]);
 
   const supabase = getSupabase();
   const { data: number } = await supabase
@@ -277,7 +283,9 @@ async function handleGroupMessage(
     .eq("is_active", true);
 
   const lowerText = text.toLowerCase();
-  const isMentioned = number.phone_number ? mentionedJids.some((jid: string) => phoneFromJid(jid) === number.phone_number) : false;
+  const isMentioned = number.phone_number
+    ? mentionedJids.some((jid: string) => phoneFromJid(jid) === number.phone_number) || mentionedPhonesFromText.includes(number.phone_number)
+    : false;
 
   const matched = (rules ?? []).find((r: { trigger_type: string; keyword: string | null }) =>
     r.trigger_type === "mention" ? isMentioned : r.keyword ? lowerText.includes(r.keyword.toLowerCase()) : false
@@ -286,11 +294,11 @@ async function handleGroupMessage(
   if (!matched) {
     await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text);
     // ডায়াগনস্টিক লগ — কোনো mention-trigger রুল থাকা সত্ত্বেও মেলেনি মানে হয় mention করা হয়নি,
-    // অথবা mentionedJid ফিল্ডের আসল শেপ আমাদের ধারণার সাথে মিলছে না। rules থাকলেই শুধু লগ হয়,
-    // তাই সাধারণ গ্রুপের মেসেজে স্প্যাম হয় না
+    // অথবা বট নিজের নাম্বার আর @<নাম্বার> এর ফরম্যাট মিলছে না (যেমন leading zero/country code
+    // ভিন্নতা)। rules থাকলেই শুধু লগ হয়, তাই সাধারণ গ্রুপের মেসেজে স্প্যাম হয় না
     if (rules && rules.some((r: { trigger_type: string }) => r.trigger_type === "mention")) {
       console.log(
-        `[group-autoreply] no rule matched (mention check) group=${groupJid}: mentionedJids=${JSON.stringify(mentionedJids)}, botPhone=${number.phone_number}, raw message=${JSON.stringify(data.message)}`
+        `[group-autoreply] no rule matched (mention check) group=${groupJid}: mentionedPhonesFromText=${JSON.stringify(mentionedPhonesFromText)}, mentionedJids=${JSON.stringify(mentionedJids)}, botPhone=${number.phone_number}`
       );
     }
     return;
