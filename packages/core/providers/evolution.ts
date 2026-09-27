@@ -5,6 +5,17 @@ interface EvolutionServerConfig {
   apiKey: string;
 }
 
+// createInstance আর setWebhook দুটোই এই একই লিস্ট ব্যবহার করে, যাতে নতুন ইভেন্ট টাইপ যোগ
+// করার সময় দুই জায়গায় আলাদাভাবে আপডেট করা লাগে না এবং কখনো একটার সাথে আরেকটা মিসম্যাচ না হয়
+const WEBHOOK_EVENTS = [
+  "QRCODE_UPDATED",
+  "CONNECTION_UPDATE",
+  "MESSAGES_UPSERT",
+  "MESSAGES_UPDATE",
+  "SEND_MESSAGE",
+  "GROUP_PARTICIPANTS_UPDATE",
+];
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 // মিডিয়া পাঠাতে Evolution কে নিজে media URL থেকে ডাউনলোড+আপলোড করতে হয়, টেক্সটের চেয়ে
 // বেশি সময় লাগতে পারে (বিশেষ করে Evolution সবে রিস্টার্ট হওয়ার পর সেশন গরম হচ্ছে থাকলে)
@@ -53,7 +64,7 @@ export class EvolutionProvider implements WhatsAppProvider {
             url: webhookUrl,
             byEvents: false,
             base64: true,
-            events: ["QRCODE_UPDATED", "CONNECTION_UPDATE", "MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"],
+            events: WEBHOOK_EVENTS,
           },
         }),
       }),
@@ -69,6 +80,29 @@ export class EvolutionProvider implements WhatsAppProvider {
       instanceName,
       qrCodeBase64: data?.qrcode?.base64 ?? null,
     };
+  }
+
+  // নতুন ইভেন্ট টাইপ (যেমন GROUP_PARTICIPANTS_UPDATE) যোগ হলে ইতিমধ্যে কানেক্টেড থাকা নাম্বারগুলো
+  // আবার QR স্ক্যান/রিকানেক্ট না করেই আপডেটেড ইভেন্ট লিস্ট পেতে এটা কল করা যায় — VPS এ লাইভ
+  // যাচাই করা হয়নি, তাই প্রথমবার টেস্ট করে দেখা জরুরি
+  async setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
+    const res = await this.request(`/webhook/set/${instanceName}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        webhook: {
+          url: webhookUrl,
+          byEvents: false,
+          base64: true,
+          events: WEBHOOK_EVENTS,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution setWebhook ব্যর্থ (${res.status}): ${body}`);
+    }
   }
 
   async getStatus(instanceName: string): Promise<ConnectionStatus> {

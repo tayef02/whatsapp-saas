@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { syncGroups, getInviteLink, rotateInviteLink } from "./actions";
+import { syncGroups, getInviteLink, rotateInviteLink, resyncWebhook, updateWelcomeSettings } from "./actions";
 
 type Member = { phone: string; name: string | null; is_group_admin: boolean };
 type Group = {
@@ -12,17 +12,59 @@ type Group = {
   description: string | null;
   member_count: number;
   invite_code: string | null;
+  welcome_enabled: boolean;
+  welcome_message: string | null;
   last_synced_at: string | null;
   number_name: string | null;
   members: Member[];
 };
 type WhatsappNumber = { id: string; display_name: string };
 
+function WelcomeSettingsForm({ group, onSaved }: { group: Group; onSaved: () => void }) {
+  const [enabled, setEnabled] = useState(group.welcome_enabled);
+  const [message, setMessage] = useState(group.welcome_message ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setBusy(true);
+    setError(null);
+    const res = await updateWelcomeSettings(group.id, enabled, message);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    onSaved();
+  }
+
+  return (
+    <div style={{ marginTop: 6, background: "#f9fafb", borderRadius: 6, padding: 10, fontSize: 12 }}>
+      {error && <p style={{ color: "#dc2626", marginBottom: 6 }}>{error}</p>}
+      <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: "auto" }} />
+        নতুন মেম্বার জয়েন করলে ওয়েলকাম মেসেজ পাঠাবে
+      </label>
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        rows={3}
+        placeholder="যেমন: {{group_name}} গ্রুপে স্বাগতম! গ্রুপ রুলস মেনে চলুন। ইনভাইট লিংক: {{invite_link}}"
+        style={{ width: "100%", marginTop: 6 }}
+      />
+      <p style={{ color: "#999", marginTop: 4 }}>
+        প্লেসহোল্ডার: <code>{"{{group_name}}"}</code>, <code>{"{{invite_link}}"}</code> (আগে "ইনভাইট লিংক আনুন" চাপলে বসবে)
+      </p>
+      <button disabled={busy} onClick={handleSave} style={{ width: "auto", marginTop: 6 }}>
+        সেভ করুন
+      </button>
+    </div>
+  );
+}
+
 export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumber[]; groups: Group[] }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [welcomeOpenId, setWelcomeOpenId] = useState<string | null>(null);
 
   async function handleSync(numberId: string) {
     setBusyId(numberId);
@@ -31,6 +73,15 @@ export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumbe
     setBusyId(null);
     if (res.error) return setError(res.error);
     router.refresh();
+  }
+
+  async function handleResyncWebhook(numberId: string) {
+    setBusyId(`webhook-${numberId}`);
+    setError(null);
+    const res = await resyncWebhook(numberId);
+    setBusyId(null);
+    if (res.error) return setError(res.error);
+    alert("Webhook ইভেন্ট রিফ্রেশ হয়েছে — এখন থেকে নতুন মেম্বার জয়েন করলে ইভেন্ট পাওয়া যাবে।");
   }
 
   async function handleGetInvite(groupId: string) {
@@ -63,9 +114,14 @@ export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumbe
           {numbers.map((n) => (
             <div key={n.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 13 }}>{n.display_name}</span>
-              <button disabled={busyId === n.id} onClick={() => handleSync(n.id)} style={{ width: "auto" }}>
-                {busyId === n.id ? "সিঙ্ক হচ্ছে..." : "সিঙ্ক করুন"}
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button disabled={busyId === n.id} onClick={() => handleSync(n.id)} style={{ width: "auto" }}>
+                  {busyId === n.id ? "সিঙ্ক হচ্ছে..." : "সিঙ্ক করুন"}
+                </button>
+                <button disabled={busyId === `webhook-${n.id}`} onClick={() => handleResyncWebhook(n.id)} style={{ width: "auto" }}>
+                  Webhook ইভেন্ট রিফ্রেশ করুন
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -86,18 +142,27 @@ export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumbe
                   <div style={{ color: "#999", marginTop: 4, fontSize: 12 }}>
                     {g.member_count} জন মেম্বার, {adminCount} জন অ্যাডমিন
                     {g.last_synced_at && ` — সর্বশেষ সিঙ্ক: ${new Date(g.last_synced_at).toLocaleString("bn-BD")}`}
+                    {g.welcome_enabled && " — 👋 ওয়েলকাম চালু"}
                   </div>
                   {g.invite_code && (
                     <div style={{ marginTop: 6, fontSize: 12, wordBreak: "break-all", color: "#2563eb" }}>
                       https://chat.whatsapp.com/{g.invite_code}
                     </div>
                   )}
-                  <button
-                    onClick={() => setExpandedId(expandedId === g.id ? null : g.id)}
-                    style={{ width: "auto", background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 11, padding: 0, marginTop: 6 }}
-                  >
-                    {expandedId === g.id ? "মেম্বার লুকান" : "মেম্বার দেখুন"}
-                  </button>
+                  <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+                    <button
+                      onClick={() => setExpandedId(expandedId === g.id ? null : g.id)}
+                      style={{ width: "auto", background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 11, padding: 0 }}
+                    >
+                      {expandedId === g.id ? "মেম্বার লুকান" : "মেম্বার দেখুন"}
+                    </button>
+                    <button
+                      onClick={() => setWelcomeOpenId(welcomeOpenId === g.id ? null : g.id)}
+                      style={{ width: "auto", background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 11, padding: 0 }}
+                    >
+                      {welcomeOpenId === g.id ? "ওয়েলকাম সেটিংস লুকান" : "ওয়েলকাম সেটিংস"}
+                    </button>
+                  </div>
                   {expandedId === g.id && (
                     <div style={{ marginTop: 6, background: "#f9fafb", borderRadius: 6, padding: 8, fontSize: 11 }}>
                       {g.members.length === 0 && <p>কোনো মেম্বার নেই (সিঙ্ক করা লাগতে পারে)।</p>}
@@ -108,6 +173,7 @@ export default function GroupsList({ numbers, groups }: { numbers: WhatsappNumbe
                       ))}
                     </div>
                   )}
+                  {welcomeOpenId === g.id && <WelcomeSettingsForm group={g} onSaved={() => router.refresh()} />}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
                   <Link href={`/dashboard/groups/${g.id}/keywords`} style={{ fontSize: 13 }}>

@@ -69,6 +69,11 @@ export async function processWebhookEvent(body: EvolutionWebhookBody) {
     return;
   }
 
+  if (event === "group.participants.update") {
+    await handleGroupParticipantsUpdate(instanceName, data);
+    return;
+  }
+
   // অন্য ইভেন্ট এখনো হ্যান্ডল করা হচ্ছে না
   console.log(`[webhook worker] no handler for event=${event}, skipping`);
 }
@@ -211,6 +216,54 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
   }
 
   await handleAutoReply(supabase, number, phone, text, providerMessageId);
+}
+
+// নতুন মেম্বার গ্রুপে জয়েন করলে (Baileys এর action="add") ওয়েলকাম মেসেজ পাঠায়, যদি সেই
+// গ্রুপে welcome_enabled চালু থাকে। {{group_name}}/{{invite_link}} প্লেসহোল্ডার সাপোর্ট করে —
+// invite_link শুধু তখনই বসে যখন আগে থেকে ইনভাইট লিংক আনা হয়েছে (groups.invite_code সেট আছে)।
+// remove/promote/demote অ্যাকশনে কিছু হয় না, শুধু "add"।
+//
+// লক্ষণীয়: এই ইভেন্ট (GROUP_PARTICIPANTS_UPDATE) নতুন createInstance কল-এ webhook ইভেন্ট
+// লিস্টে যোগ করা হয়েছে, কিন্তু আগে থেকে কানেক্টেড নাম্বারে এটা পেতে হলে একবার webhook resync
+// (setWebhook) করা লাগবে — Groups পেজ থেকে করা যায়
+async function handleGroupParticipantsUpdate(instanceName: string, data: Record<string, unknown>) {
+  const action = data.action as string | undefined;
+  const groupJid = data.id as string | undefined;
+  const participants = (data.participants as string[] | undefined) ?? [];
+
+  if (action !== "add" || !groupJid || participants.length === 0) return;
+
+  const supabase = getSupabase();
+  const { data: number } = await supabase
+    .from("whatsapp_numbers")
+    .select("id, workspace_id")
+    .eq("instance_name", instanceName)
+    .maybeSingle();
+  if (!number) return;
+
+  const { data: group } = await supabase
+    .from("groups")
+    .select("id, name, invite_code, welcome_enabled, welcome_message")
+    .eq("whatsapp_number_id", number.id)
+    .eq("group_jid", groupJid)
+    .maybeSingle();
+
+  if (!group || !group.welcome_enabled || !group.welcome_message) return;
+
+  console.log(`[group-welcome] ${participants.length} new member(s) joined group=${groupJid}, sending welcome message`);
+
+  const welcomeText = group.welcome_message
+    .replace(/\{\{group_name\}\}/g, group.name || "")
+    .replace(/\{\{invite_link\}\}/g, group.invite_code ? `https://chat.whatsapp.com/${group.invite_code}` : "");
+
+  const jobData: GroupReplyJobData = {
+    workspaceId: number.workspace_id,
+    whatsappNumberId: number.id,
+    groupId: group.id,
+    groupJid,
+    replyText: welcomeText,
+  };
+  await getAutoReplyQueue().add("group-reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
 }
 
 // গ্রুপ মেসেজে শুধু কিওয়ার্ড-বেসড অটো-রিপ্লাই চেক হয় (AI/RAG চলে না, সেটা শুধু ১:১ চ্যাটের জন্য)।

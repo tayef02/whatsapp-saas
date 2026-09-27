@@ -25,6 +25,9 @@ export interface WhatsAppProvider {
   // গ্লোবাল webhook বদলানো ছাড়াই) — প্রোডাকশনে এটা বাধ্যতামূলক, কারণ একই সার্ভারে অন্য অ্যাপের
   // instance ও থাকতে পারে
   createInstance(instanceName: string, webhookUrl?: string): Promise<CreateInstanceResult>;
+  // ইতিমধ্যে কানেক্টেড থাকা instance এর webhook ইভেন্ট লিস্ট আপডেট করার জন্য (নতুন ইভেন্ট টাইপ
+  // যোগ হলে রিকানেক্ট ছাড়াই আপডেটেড লিস্ট পেতে)
+  setWebhook(instanceName: string, webhookUrl: string): Promise<void>;
   getStatus(instanceName: string): Promise<ConnectionStatus>;
   disconnect(instanceName: string): Promise<void>;
   sendMessage(instanceName: string, to: string, text: string): Promise<{ messageId: string }>;

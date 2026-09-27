@@ -99,3 +99,37 @@ export async function rotateInviteLink(groupId: string) {
     return { error: err instanceof Error ? err.message : "ইনভাইট লিংক রোটেট করা যায়নি" };
   }
 }
+
+export async function updateWelcomeSettings(groupId: string, enabled: boolean, message: string) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("groups")
+    .update({ welcome_enabled: enabled, welcome_message: message.trim() || null })
+    .eq("id", groupId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/groups");
+  return { error: null };
+}
+
+// নতুন GROUP_PARTICIPANTS_UPDATE ইভেন্ট আগে থেকে কানেক্টেড নাম্বারে পেতে হলে একবার webhook
+// রিসেট করা লাগে (QR আবার স্ক্যান করার দরকার নেই)
+export async function resyncWebhook(numberId: string) {
+  const supabase = await createClient();
+  const { data: number } = await supabase.from("whatsapp_numbers").select("id").eq("id", numberId).maybeSingle();
+  if (!number) return { error: "নাম্বার পাওয়া যায়নি" };
+
+  const providerInfo = await getProviderForNumber(numberId);
+  if (!providerInfo) return { error: "Evolution সার্ভার তথ্য পাওয়া যায়নি" };
+
+  const webhookUrl = process.env.APP_URL ? `${process.env.APP_URL}/api/webhooks/evolution` : undefined;
+  if (!webhookUrl) return { error: "APP_URL সেট করা নেই, webhook resync করা যাবে না" };
+
+  try {
+    await providerInfo.provider.setWebhook(providerInfo.instanceName, webhookUrl);
+    return { error: null };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Webhook resync করা যায়নি" };
+  }
+}
