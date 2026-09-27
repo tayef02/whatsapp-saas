@@ -30,6 +30,8 @@ import { processDownloadGroupMedia } from "./processors/process-group-media";
 import { processSendGroupAnnouncement } from "./processors/process-group-announcement-send";
 import { GROUP_ANNOUNCEMENT_SCHEDULER_QUEUE_NAME } from "./queues/group-announcement-queues";
 import { runGroupAnnouncementSchedulerTick } from "./processors/group-announcement-scheduler";
+import { GROUP_MEMBER_INACTIVITY_QUEUE_NAME } from "./queues/group-member-inactivity-queue";
+import { runGroupInactiveMemberFlagTick } from "./processors/group-member-inactivity";
 import { KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/knowledge-base-queue";
 import { processKnowledgeBaseDocument } from "./processors/process-knowledge-base";
 
@@ -112,6 +114,24 @@ const subscriptionWorker = new Worker(
 
 subscriptionWorker.on("failed", (job, err) => {
   console.error(`[subscription-maintenance] tick ব্যর্থ:`, err.message);
+});
+
+// দিনে একবার: দীর্ঘদিন চুপ থাকা গ্রুপ মেম্বারদের auto-flag (কখনো remove না)
+const groupMemberInactivityQueue = new Queue(GROUP_MEMBER_INACTIVITY_QUEUE_NAME, { connection });
+groupMemberInactivityQueue
+  .add("tick", {}, { repeat: { every: SUBSCRIPTION_MAINTENANCE_TICK_MS }, removeOnComplete: true })
+  .catch((err) => console.error("[group-member-inactivity] repeatable job রেজিস্টার করা যায়নি:", err.message));
+
+const groupMemberInactivityWorker = new Worker(
+  GROUP_MEMBER_INACTIVITY_QUEUE_NAME,
+  async () => {
+    await runGroupInactiveMemberFlagTick();
+  },
+  { connection }
+);
+
+groupMemberInactivityWorker.on("failed", (job, err) => {
+  console.error(`[group-member-inactivity] tick ব্যর্থ:`, err.message);
 });
 
 // keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job — একই queue তে ১:১ চ্যাটের "reply",

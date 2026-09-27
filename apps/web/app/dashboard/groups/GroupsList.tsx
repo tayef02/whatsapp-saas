@@ -12,9 +12,18 @@ import {
   updateGroupFilters,
   toggleAdminOnlyMode,
   updateMaxDailyScheduled,
+  unflagMember,
 } from "./actions";
 
-type Member = { phone: string; name: string | null; is_group_admin: boolean };
+type Member = {
+  id: string;
+  phone: string;
+  name: string | null;
+  is_group_admin: boolean;
+  is_flagged: boolean;
+  flag_reason: string | null;
+  last_activity_at: string | null;
+};
 type Group = {
   id: string;
   name: string | null;
@@ -218,6 +227,15 @@ export default function GroupsList({
     router.refresh();
   }
 
+  async function handleUnflag(memberId: string) {
+    setBusyId(memberId);
+    setError(null);
+    const res = await unflagMember(memberId);
+    setBusyId(null);
+    if (res.error) return setError(res.error);
+    router.refresh();
+  }
+
   return (
     <div>
       {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
@@ -249,6 +267,7 @@ export default function GroupsList({
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {groups.map((g) => {
           const adminCount = g.members.filter((m) => m.is_group_admin).length;
+          const flaggedCount = g.members.filter((m) => m.is_flagged).length;
           return (
             <div key={g.id} style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -261,6 +280,7 @@ export default function GroupsList({
                     {g.last_synced_at && ` — সর্বশেষ সিঙ্ক: ${new Date(g.last_synced_at).toLocaleString("bn-BD")}`}
                     {g.welcome_enabled && " — 👋 ওয়েলকাম চালু"}
                     {g.is_admin_only_mode && " — 🔒 Admin-only"}
+                    {flaggedCount > 0 && ` — 🚩 ${flaggedCount} জন flagged`}
                   </div>
                   {g.invite_code && (
                     <div style={{ marginTop: 6, fontSize: 12, wordBreak: "break-all", color: "#2563eb" }}>
@@ -291,8 +311,20 @@ export default function GroupsList({
                     <div style={{ marginTop: 6, background: "#f9fafb", borderRadius: 6, padding: 8, fontSize: 11 }}>
                       {g.members.length === 0 && <p>কোনো মেম্বার নেই (সিঙ্ক করা লাগতে পারে)।</p>}
                       {g.members.map((m) => (
-                        <div key={m.phone}>
-                          {m.name || m.phone} {m.is_group_admin && "👑"}
+                        <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0" }}>
+                          <span>
+                            {m.name || m.phone} {m.is_group_admin && "👑"}
+                            {m.is_flagged && <span style={{ color: "#b45309" }}> 🚩 {m.flag_reason}</span>}
+                          </span>
+                          {m.is_flagged && (
+                            <button
+                              disabled={busyId === m.id}
+                              onClick={() => handleUnflag(m.id)}
+                              style={{ width: "auto", flexShrink: 0, fontSize: 10, padding: "2px 6px" }}
+                            >
+                              flag সরান
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

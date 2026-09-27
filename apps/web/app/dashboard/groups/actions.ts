@@ -6,8 +6,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getProviderForNumber } from "@/lib/provider-for-number";
 
 // Evolution থেকে এই নাম্বারের সব গ্রুপ + মেম্বার/অ্যাডমিন লিস্ট টেনে আনে, groups/group_members
-// টেবিলে upsert করে। Evolution ই source of truth — তাই প্রতিটা গ্রুপের মেম্বার লিস্ট sync
-// করার সময় পুরোনোটা মুছে নতুনটা বসানো হয় (কেউ leave/join করলে যেন পুরনো ডাটা না থেকে যায়)
+// টেবিলে upsert করে। মেম্বার লিস্ট upsert হয় (delete+insert না) — কারণ last_activity_at/
+// is_flagged/flag_reason (inactive/spam auto-flag ফিচার) প্রতিটা re-sync এ হারিয়ে যাওয়া উচিত
+// না। যারা গ্রুপ ছেড়ে দিয়েছে (Evolution এর লিস্টে আর নেই) তাদের row আলাদাভাবে মুছে ফেলা হয়
 export async function syncGroups(numberId: string) {
   const supabase = await createClient();
 
@@ -47,9 +48,10 @@ export async function syncGroups(numberId: string) {
 
     if (error || !groupRow) continue;
 
-    await admin.from("group_members").delete().eq("group_id", groupRow.id);
-    if (g.participants.length > 0) {
-      await admin.from("group_members").insert(
+    const currentPhones = g.participants.map((p) => p.jid.split("@")[0].split(":")[0]);
+
+    if (currentPhones.length > 0) {
+      await admin.from("group_members").upsert(
         g.participants.map((p) => ({
           group_id: groupRow.id,
           workspace_id: number.workspace_id,
@@ -57,8 +59,17 @@ export async function syncGroups(numberId: string) {
           // সেটা থেকে যেত, worker এর অ্যাডমিন-চেক তখন বটের নিজের row খুঁজে পেত না
           phone: p.jid.split("@")[0].split(":")[0],
           is_group_admin: p.isAdmin,
-        }))
+        })),
+        { onConflict: "group_id,phone" }
       );
+    }
+
+    // যারা আর গ্রুপে নেই (leave করেছে) তাদের row মুছে ফেলা — বাকিদের last_activity_at/
+    // is_flagged upsert এ স্পর্শ হয়নি, তাই অক্ষত থাকে
+    const { data: existingMembers } = await admin.from("group_members").select("id, phone").eq("group_id", groupRow.id);
+    const staleIds = (existingMembers ?? []).filter((m) => !currentPhones.includes(m.phone)).map((m) => m.id);
+    if (staleIds.length > 0) {
+      await admin.from("group_members").delete().in("id", staleIds);
     }
   }
 
@@ -128,6 +139,17 @@ export async function updateMaxDailyScheduled(groupId: string, maxPerDay: number
   if (!Number.isFinite(maxPerDay) || maxPerDay < 0) return { error: "সঠিক সংখ্যা দিন" };
 
   const { error } = await supabase.from("groups").update({ max_daily_scheduled_messages: Math.round(maxPerDay) }).eq("id", groupId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/groups");
+  return { error: null };
+}
+
+// মেম্বার কখনো auto-remove হয় না — শুধু flag/unflag। remove করার সিদ্ধান্ত admin নিজে
+// WhatsApp এ গিয়ে ম্যানুয়ালি নেবে
+export async function unflagMember(memberId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("group_members").update({ is_flagged: false, flag_reason: null }).eq("id", memberId);
   if (error) return { error: error.message };
 
   revalidatePath("/dashboard/groups");

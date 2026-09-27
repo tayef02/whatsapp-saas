@@ -17,17 +17,36 @@ export default async function GroupsPage() {
     )
     .order("name", { ascending: true });
 
-  const { data: members } = await supabase.from("group_members").select("group_id, phone, name, is_group_admin");
+  const { data: members } = await supabase
+    .from("group_members")
+    .select("id, group_id, phone, name, is_group_admin, is_flagged, flag_reason, last_activity_at");
 
   const { data: filters } = await supabase
     .from("workspace_group_filters")
     .select("banned_words, banned_link_patterns")
     .maybeSingle();
 
-  const membersByGroup = new Map<string, { phone: string; name: string | null; is_group_admin: boolean }[]>();
+  type MemberRow = {
+    id: string;
+    phone: string;
+    name: string | null;
+    is_group_admin: boolean;
+    is_flagged: boolean;
+    flag_reason: string | null;
+    last_activity_at: string | null;
+  };
+  const membersByGroup = new Map<string, MemberRow[]>();
   for (const m of members ?? []) {
     const list = membersByGroup.get(m.group_id) ?? [];
-    list.push({ phone: m.phone, name: m.name, is_group_admin: m.is_group_admin });
+    list.push({
+      id: m.id,
+      phone: m.phone,
+      name: m.name,
+      is_group_admin: m.is_group_admin,
+      is_flagged: m.is_flagged,
+      flag_reason: m.flag_reason,
+      last_activity_at: m.last_activity_at,
+    });
     membersByGroup.set(m.group_id, list);
   }
 

@@ -353,6 +353,16 @@ async function logGroupMessage(
     .select("id")
     .maybeSingle();
 
+  // সেন্ডারের last_activity_at আপডেট — inactive-member auto-flag tick এটা দেখে ঠিক করে কে
+  // দীর্ঘদিন চুপ আছে। is_group_admin/is_flagged এখানে touch হয় না (শুধু যা দেওয়া হচ্ছে সেটাই
+  // আপডেট হয়, বাকি কলাম আগের মতোই থাকে)
+  await supabase
+    .from("group_members")
+    .upsert(
+      { group_id: groupId, workspace_id: workspaceId, phone: senderPhone, last_activity_at: new Date().toISOString() },
+      { onConflict: "group_id,phone" }
+    );
+
   return row?.id ?? null;
 }
 
@@ -443,6 +453,15 @@ async function handleGroupMessage(
     console.log(`[group-moderation] filter matched ("${matchedFilterText}") in group=${groupJid}, sender=${senderPhone}`);
     const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
     await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
+
+    // স্প্যাম/ব্যানড কন্টেন্ট পাঠানো মেম্বারকে ড্যাশবোর্ডে flag করা হয় (auto-remove না, শুধু
+    // দেখানো — admin ম্যানুয়ালি সিদ্ধান্ত নেবে)। logGroupMessage এর upsert না ছুঁয়ে আলাদা
+    // update — যাতে ইতিমধ্যে কোনো কারণে flagged থাকলে reason ওভাররাইট না হয়
+    await supabase
+      .from("group_members")
+      .update({ is_flagged: true, flag_reason: `স্প্যাম/ব্যানড কন্টেন্ট পাঠিয়েছে: "${matchedFilterText}"` })
+      .eq("group_id", group.id)
+      .eq("phone", senderPhone);
 
     // আগে group_members এ বটের নিজের phone দিয়ে খুঁজে "অ্যাডমিন কিনা" প্রি-চেক করা হতো, কিন্তু
     // WhatsApp এর LID প্রাইভেসি সিস্টেমের কারণে বটের নিজের participant row ও phone নাম্বারের
