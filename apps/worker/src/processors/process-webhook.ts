@@ -398,7 +398,7 @@ async function tryAiReply(
   try {
     const { data: settings } = await supabase
       .from("workspace_ai_settings")
-      .select("llm_provider, system_prompt, support_phone")
+      .select("llm_provider, system_prompt, support_phone, typical_delivery_time")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
 
@@ -442,8 +442,12 @@ async function tryAiReply(
     // এই কাস্টমারের আগের অর্ডার আছে কিনা — থাকলে সেই সত্যিকারের ডাটাবেস তথ্য context এ
     // যোগ হয়, যাতে "অর্ডারের কী অবস্থা?" জিজ্ঞেস করলে LLM অনুমান না করে সঠিক উত্তর দিতে পারে
     const orderContext = await buildOrderContext(supabase, workspaceId, phone);
-    if (orderContext) {
-      context = context ? `${orderContext}\n\n---\n\n${context}` : orderContext;
+    const deliveryTimeContext = settings.typical_delivery_time
+      ? `### দোকানের সাধারণ তথ্য:\nসাধারণ ডেলিভারি সময়: ${settings.typical_delivery_time}`
+      : "";
+    const shopInfoContext = [orderContext, deliveryTimeContext].filter(Boolean).join("\n\n---\n\n");
+    if (shopInfoContext) {
+      context = context ? `${shopInfoContext}\n\n---\n\n${context}` : shopInfoContext;
     }
 
     const promptWithMarker = `${settings.system_prompt ?? ""}
@@ -456,7 +460,12 @@ ${ORDER_BLOCK_START}{"product_name": "...", "quantity": "...", "delivery_name": 
 
 কাস্টমার যদি তার আগের অর্ডারের status/অবস্থা জিজ্ঞেস করে, উপরে "সাম্প্রতিক অর্ডার" শিরোনামে দেওয়া
 তথ্য (যদি থাকে) থেকে সরাসরি সঠিক উত্তর দাও — কখনো অনুমান কোরো না। সেই তথ্য না থাকলে সততার সাথে
-বলো যে তোমার কোনো অর্ডার খুঁজে পাওনি।`;
+বলো যে তোমার কোনো অর্ডার খুঁজে পাওনি।
+
+কাস্টমার ডেলিভারি সময়/"কবে পাবো" জিজ্ঞেস করলে, উপরে "দোকানের সাধারণ তথ্য" শিরোনামে দেওয়া
+ডেলিভারি সময় (যদি থাকে) আর কাস্টমারের অর্ডার status মিলিয়ে স্বাভাবিক, পেশাদার উত্তর দাও (যেমন:
+"আপনার অর্ডার #৪ বর্তমানে প্রক্রিয়াধীন, সাধারণত ৩-৫ কার্যদিবসের মধ্যে পৌঁছে যায়।")। "কোনো তথ্য নেই"
+জাতীয় রুক্ষ উত্তর শুধু তখনই দেবে যখন এই ডেলিভারি সময়ের তথ্যও না থাকে।`;
 
     const reply = await generateChatReply(provider, apiKey, promptWithMarker, context, history, question);
     const trimmed = reply.trim();

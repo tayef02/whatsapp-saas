@@ -16,6 +16,12 @@ export async function processAutoReply(data: AutoReplyJobData) {
     return;
   }
 
+  // মানুষ-এজেন্টের মতো অনুভূতি দেওয়ার জন্য রিপ্লাইয়ের ঠিক আগে "টাইপ করছে..." দেখানো হয়
+  // (১-২ সেকেন্ড র‍্যান্ডম ডিলে) — instant robotic রিপ্লাই এড়াতে
+  await providerInfo.provider.sendPresence(providerInfo.instanceName, data.phone, "composing");
+  const typingDelayMs = 1000 + Math.floor(Math.random() * 1000);
+  await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
+
   await providerInfo.provider.sendMessage(providerInfo.instanceName, data.phone, data.replyText);
   console.log(`[autoreply-worker] sendMessage succeeded, conversation=${data.conversationId}`);
 

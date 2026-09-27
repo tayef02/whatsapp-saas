@@ -8,6 +8,7 @@ type Settings = {
   llm_provider: string | null;
   system_prompt: string | null;
   support_phone: string | null;
+  typical_delivery_time: string | null;
   api_key_secret_id: string | null;
 } | null;
 
@@ -161,6 +162,18 @@ export default function AiChatbotSettings({
           network সমস্যা) এই নাম্বারসহ একটা safety-net মেসেজ যাবে, যাতে কাস্টমার কখনো একদম
           নিরুত্তর না থাকে
           <input type="text" name="supportPhone" defaultValue={settings?.support_phone ?? ""} placeholder="01XXXXXXXXX" style={{ width: "100%" }} />
+        </label>
+
+        <label style={{ display: "block", marginTop: 12 }}>
+          সাধারণ ডেলিভারি সময় (ঐচ্ছিক) — কাস্টমার "কবে পাবো?" জিজ্ঞেস করলে বট order status-এর
+          সাথে মিলিয়ে এই তথ্য দিয়ে উত্তর দেবে (খালি রাখলে "নির্দিষ্ট তথ্য নেই" বলবে)
+          <input
+            type="text"
+            name="typicalDeliveryTime"
+            defaultValue={settings?.typical_delivery_time ?? ""}
+            placeholder="যেমন: ৩-৫ কার্যদিবস"
+            style={{ width: "100%" }}
+          />
         </label>
 
         <button type="submit" disabled={busy} style={{ marginTop: 12 }}>

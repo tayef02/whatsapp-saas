@@ -111,6 +111,23 @@ export class EvolutionProvider implements WhatsAppProvider {
     return { messageId: data?.key?.id ?? "" };
   }
 
+  // ব্যর্থ হলেও এখানেই ধরে ফেলা হয় (throw করা হয় না) — টাইপিং ইন্ডিকেটর না দেখানো গেলেও
+  // আসল মেসেজ পাঠানো যেন কখনো আটকে না যায়
+  async sendPresence(instanceName: string, to: string, presence: "composing" | "paused"): Promise<void> {
+    try {
+      const res = await this.request(`/chat/sendPresence/${instanceName}`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ number: to, presence, delay: 1200 }),
+      });
+      if (!res.ok) {
+        console.log(`[evolution] sendPresence non-ok status ${res.status} (instance=${instanceName})`);
+      }
+    } catch (err) {
+      console.log(`[evolution] sendPresence failed, non-critical: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
   async sendMedia(
     instanceName: string,
     to: string,

@@ -24,4 +24,7 @@ export interface WhatsAppProvider {
     mimeType: string,
     caption: string
   ): Promise<{ messageId: string }>;
+  // রিপ্লাই পাঠানোর ঠিক আগে "টাইপ করছে..." দেখানোর জন্য — এটা শুধু কসমেটিক (মানুষ-এজেন্টের
+  // মতো অনুভূতি দেয়), ব্যর্থ হলেও মূল sendMessage আটকানো উচিত না
+  sendPresence(instanceName: string, to: string, presence: "composing" | "paused"): Promise<void>;
 }
