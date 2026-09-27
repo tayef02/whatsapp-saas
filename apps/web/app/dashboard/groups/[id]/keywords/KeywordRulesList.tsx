@@ -57,9 +57,16 @@ export default function KeywordRulesList({ groupId, rules }: { groupId: string; 
           ট্রিগার
           <select name="triggerType" value={triggerType} onChange={(e) => setTriggerType(e.target.value)} style={{ width: "100%" }}>
             <option value="keyword">কিওয়ার্ড</option>
-            <option value="mention">@Mention (bot-কে ট্যাগ করলে)</option>
+            <option value="mention">@Mention (bot-কে ট্যাগ করলে) — ⚠️ এখনো নির্ভরযোগ্য না</option>
           </select>
         </label>
+        {triggerType === "mention" && (
+          <p style={{ fontSize: 12, color: "#b45309", marginTop: 6 }}>
+            WhatsApp-এর নতুন LID প্রাইভেসি সিস্টেমের কারণে (contact সেভ করা নাম্বার মেনশন করলে টেক্সটে আসল ফোন
+            নাম্বারের বদলে একটা internal ID বসে) — Evolution API-এর এই ভার্সনে বট নিজের LID টা সঠিকভাবে শনাক্ত
+            করতে পারছে না, তাই @mention ট্রিগার কাজ নাও করতে পারে। আপাতত "কিওয়ার্ড" ট্রিগার ব্যবহার করাই নিরাপদ।
+          </p>
+        )}
 
         {triggerType === "keyword" && (
           <label style={{ display: "block", marginTop: 12 }}>
