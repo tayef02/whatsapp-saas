@@ -53,7 +53,9 @@ export async function syncGroups(numberId: string) {
         g.participants.map((p) => ({
           group_id: groupRow.id,
           workspace_id: number.workspace_id,
-          phone: p.jid.replace(/@.*/, ""),
+          // WhatsApp multi-device JID তে মাঝেমধ্যে ":deviceId" সাফিক্স থাকে — শুধু "@..." কাটলে
+          // সেটা থেকে যেত, worker এর অ্যাডমিন-চেক তখন বটের নিজের row খুঁজে পেত না
+          phone: p.jid.split("@")[0].split(":")[0],
           is_group_admin: p.isAdmin,
         }))
       );

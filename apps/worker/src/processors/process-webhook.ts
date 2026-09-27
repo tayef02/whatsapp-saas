@@ -33,8 +33,12 @@ function normalizeEvent(event: string | undefined): string {
   return (event ?? "").toLowerCase().replace(/_/g, ".");
 }
 
+// WhatsApp multi-device JID তে মাঝেমধ্যে ":deviceId" সাফিক্স থাকে (যেমন
+// "8801938187802:16@s.whatsapp.net", বিশেষ করে গ্রুপ participant/key.participant ফিল্ডে) —
+// আগে শুধু "@..." অংশ কাটা হতো, তাই bot নিজের গ্রুপ-অ্যাডমিন-চেকে নিজের group_members row
+// খুঁজে পাচ্ছিল না (":16" যোগ হয়ে থাকায় number.phone_number এর সাথে মিলছিল না)
 function phoneFromJid(jid: string | undefined): string | undefined {
-  return jid ? jid.replace(/@.*/, "") : undefined;
+  return jid ? jid.split("@")[0].split(":")[0] : undefined;
 }
 
 export async function processWebhookEvent(body: EvolutionWebhookBody) {
