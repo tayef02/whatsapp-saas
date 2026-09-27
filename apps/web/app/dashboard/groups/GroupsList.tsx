@@ -11,6 +11,7 @@ import {
   updateWelcomeSettings,
   updateGroupFilters,
   toggleAdminOnlyMode,
+  updateMaxDailyScheduled,
 } from "./actions";
 
 type Member = { phone: string; name: string | null; is_group_admin: boolean };
@@ -23,6 +24,7 @@ type Group = {
   welcome_enabled: boolean;
   welcome_message: string | null;
   is_admin_only_mode: boolean;
+  max_daily_scheduled_messages: number;
   last_synced_at: string | null;
   number_name: string | null;
   members: Member[];
@@ -61,6 +63,41 @@ function WelcomeSettingsForm({ group, onSaved }: { group: Group; onSaved: () => 
       <p style={{ color: "#999", marginTop: 4 }}>
         প্লেসহোল্ডার: <code>{"{{group_name}}"}</code>, <code>{"{{invite_link}}"}</code> (আগে "ইনভাইট লিংক আনুন" চাপলে বসবে)
       </p>
+      <button disabled={busy} onClick={handleSave} style={{ width: "auto", marginTop: 6 }}>
+        সেভ করুন
+      </button>
+    </div>
+  );
+}
+
+function MaxDailyScheduledForm({ group, onSaved }: { group: Group; onSaved: () => void }) {
+  const [value, setValue] = useState(group.max_daily_scheduled_messages);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setBusy(true);
+    setError(null);
+    const res = await updateMaxDailyScheduled(group.id, value);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    onSaved();
+  }
+
+  return (
+    <div style={{ marginTop: 6, background: "#f9fafb", borderRadius: 6, padding: 10, fontSize: 12 }}>
+      {error && <p style={{ color: "#dc2626", marginBottom: 6 }}>{error}</p>}
+      <label>
+        এই গ্রুপে দিনে সর্বোচ্চ কতগুলো শিডিউলড অ্যানাউন্সমেন্ট/পোল যাবে (স্প্যামের মতো না লাগার জন্য)
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={value}
+          onChange={(e) => setValue(Number(e.target.value))}
+          style={{ width: "100%", marginTop: 4 }}
+        />
+      </label>
       <button disabled={busy} onClick={handleSave} style={{ width: "auto", marginTop: 6 }}>
         সেভ করুন
       </button>
@@ -133,6 +170,7 @@ export default function GroupsList({
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [welcomeOpenId, setWelcomeOpenId] = useState<string | null>(null);
+  const [dailyLimitOpenId, setDailyLimitOpenId] = useState<string | null>(null);
 
   async function handleSync(numberId: string) {
     setBusyId(numberId);
@@ -242,6 +280,12 @@ export default function GroupsList({
                     >
                       {welcomeOpenId === g.id ? "ওয়েলকাম সেটিংস লুকান" : "ওয়েলকাম সেটিংস"}
                     </button>
+                    <button
+                      onClick={() => setDailyLimitOpenId(dailyLimitOpenId === g.id ? null : g.id)}
+                      style={{ width: "auto", background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 11, padding: 0 }}
+                    >
+                      {dailyLimitOpenId === g.id ? "দৈনিক লিমিট লুকান" : `দৈনিক শিডিউল লিমিট (${g.max_daily_scheduled_messages})`}
+                    </button>
                   </div>
                   {expandedId === g.id && (
                     <div style={{ marginTop: 6, background: "#f9fafb", borderRadius: 6, padding: 8, fontSize: 11 }}>
@@ -254,6 +298,7 @@ export default function GroupsList({
                     </div>
                   )}
                   {welcomeOpenId === g.id && <WelcomeSettingsForm group={g} onSaved={() => router.refresh()} />}
+                  {dailyLimitOpenId === g.id && <MaxDailyScheduledForm group={g} onSaved={() => router.refresh()} />}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
                   <Link href={`/dashboard/groups/${g.id}/keywords`} style={{ fontSize: 13 }}>

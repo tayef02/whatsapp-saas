@@ -54,7 +54,8 @@ export interface WhatsAppProvider {
   revokeGroupInviteCode(instanceName: string, groupJid: string): Promise<string>;
   // চালু করলে শুধু গ্রুপ অ্যাডমিনরাই মেসেজ পাঠাতে পারবে (WhatsApp এর "announcement" গ্রুপ মোড)
   setGroupAdminOnlyMode(instanceName: string, groupJid: string, adminOnly: boolean): Promise<void>;
-  // স্প্যাম/ব্যানড-ওয়ার্ড ফিল্টার ম্যাচ হলে (আর bot গ্রুপে অ্যাডমিন হলে) মেসেজ auto-delete করতে
+  // স্প্যাম/ব্যানড-ওয়ার্ড ফিল্টার ম্যাচ হলে মেসেজ auto-delete করতে — bot এর পারমিশন না থাকলে
+  // এই কলই এরর দেবে (আলাদা প্রি-চেক নেই, WhatsApp নিজেই পারমিশন এনফোর্স করে)
   deleteGroupMessage(instanceName: string, groupJid: string, key: GroupMessageKey): Promise<void>;
   // মিডিয়া মেসেজ (ছবি/ভিডিও/ডকুমেন্ট/অডিও) এর আসল ফাইল ডিক্রিপ্ট করা base64 হিসেবে আনতে —
   // raw message এর url ফিল্ড দিয়ে সরাসরি ডাউনলোড করলে এনক্রিপ্টেড ডেটা আসে, Evolution এর এই
@@ -63,4 +64,12 @@ export interface WhatsAppProvider {
     instanceName: string,
     messageId: string
   ): Promise<{ base64: string; mimetype: string; fileName: string } | null>;
+  // শিডিউলড অ্যানাউন্সমেন্টে পোল অপশন থাকলে — selectableCount>1 মানে multi-select পোল
+  sendPoll(
+    instanceName: string,
+    to: string,
+    question: string,
+    options: string[],
+    multiSelect: boolean
+  ): Promise<{ messageId: string }>;
 }

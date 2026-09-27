@@ -27,6 +27,9 @@ import { processAutoReply } from "./processors/process-autoreply";
 import { processGroupReply } from "./processors/process-group-reply";
 import { processDeleteGroupMessage } from "./processors/process-group-moderation";
 import { processDownloadGroupMedia } from "./processors/process-group-media";
+import { processSendGroupAnnouncement } from "./processors/process-group-announcement-send";
+import { GROUP_ANNOUNCEMENT_SCHEDULER_QUEUE_NAME } from "./queues/group-announcement-queues";
+import { runGroupAnnouncementSchedulerTick } from "./processors/group-announcement-scheduler";
 import { KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/knowledge-base-queue";
 import { processKnowledgeBaseDocument } from "./processors/process-knowledge-base";
 
@@ -112,8 +115,9 @@ subscriptionWorker.on("failed", (job, err) => {
 });
 
 // keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job — একই queue তে ১:১ চ্যাটের "reply",
-// গ্রুপ কিওয়ার্ডের "group-reply", আর স্প্যাম-ফিল্টারের "delete-group-message" — তিন ধরনের
-// job আসে, job.name দিয়ে আলাদা করা হয়
+// গ্রুপ কিওয়ার্ডের "group-reply", স্প্যাম-ফিল্টারের "delete-group-message", মিডিয়া
+// ডাউনলোডের "download-group-media", আর শিডিউলড অ্যানাউন্সমেন্টের "send-group-announcement" —
+// পাঁচ ধরনের job আসে, job.name দিয়ে আলাদা করা হয়
 const autoReplyWorker = new Worker(
   AUTOREPLY_QUEUE_NAME,
   async (job) => {
@@ -123,6 +127,8 @@ const autoReplyWorker = new Worker(
       await processDeleteGroupMessage(job.data);
     } else if (job.name === "download-group-media") {
       await processDownloadGroupMedia(job.data);
+    } else if (job.name === "send-group-announcement") {
+      await processSendGroupAnnouncement(job.data);
     } else {
       await processAutoReply(job.data);
     }
@@ -132,6 +138,24 @@ const autoReplyWorker = new Worker(
 
 autoReplyWorker.on("failed", (job, err) => {
   console.error(`[autoreply-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
+// প্রতি মিনিটে শিডিউলড অ্যানাউন্সমেন্ট/পোল চেক — campaign-scheduler এর একই প্যাটার্নে
+const groupAnnouncementSchedulerQueue = new Queue(GROUP_ANNOUNCEMENT_SCHEDULER_QUEUE_NAME, { connection });
+groupAnnouncementSchedulerQueue
+  .add("tick", {}, { repeat: { every: SCHEDULER_TICK_MS }, removeOnComplete: true })
+  .catch((err) => console.error("[group-announcement-scheduler] repeatable job রেজিস্টার করা যায়নি:", err.message));
+
+const groupAnnouncementSchedulerWorker = new Worker(
+  GROUP_ANNOUNCEMENT_SCHEDULER_QUEUE_NAME,
+  async () => {
+    await runGroupAnnouncementSchedulerTick();
+  },
+  { connection }
+);
+
+groupAnnouncementSchedulerWorker.on("failed", (job, err) => {
+  console.error(`[group-announcement-scheduler] tick ব্যর্থ:`, err.message);
 });
 
 // knowledge base ফাইল (PDF/XLSX/CSV/TXT) আপলোড হলে extract+chunk+embed করার job

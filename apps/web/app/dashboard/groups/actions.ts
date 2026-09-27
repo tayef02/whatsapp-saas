@@ -123,6 +123,17 @@ export async function toggleAdminOnlyMode(groupId: string, adminOnly: boolean) {
   return { error: null };
 }
 
+export async function updateMaxDailyScheduled(groupId: string, maxPerDay: number) {
+  const supabase = await createClient();
+  if (!Number.isFinite(maxPerDay) || maxPerDay < 0) return { error: "সঠিক সংখ্যা দিন" };
+
+  const { error } = await supabase.from("groups").update({ max_daily_scheduled_messages: Math.round(maxPerDay) }).eq("id", groupId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/groups");
+  return { error: null };
+}
+
 async function getWorkspaceId(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data } = await supabase.from("workspace_members").select("workspace_id").limit(1).maybeSingle();
   return data?.workspace_id as string | undefined;

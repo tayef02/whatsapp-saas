@@ -270,6 +270,28 @@ export class EvolutionProvider implements WhatsAppProvider {
     };
   }
 
+  // ওয়েব সার্চ করে যাচাই করা এন্ডপয়েন্ট (Evolution v2 এর নিজস্ব ডকুমেন্টেশন)
+  async sendPoll(instanceName: string, to: string, question: string, options: string[], multiSelect: boolean) {
+    const res = await this.request(`/message/sendPoll/${instanceName}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        number: to,
+        name: question,
+        selectableCount: multiSelect ? options.length : 1,
+        values: options,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Evolution sendPoll ব্যর্থ (${res.status}): ${body}`);
+    }
+
+    const data = (await res.json()) as any;
+    return { messageId: data?.key?.id ?? "" };
+  }
+
   // Evolution v2 এর ডকুমেন্টেড কনভেনশন অনুযায়ী এন্ডপয়েন্ট/পেলোড — এখনো VPS এ লাইভ যাচাই করা
   // হয়নি। "announcement" মোড চালু = শুধু অ্যাডমিন পোস্ট করতে পারবে (Baileys এর
   // groupSettingUpdate(jid, 'announcement'|'not_announcement') এর সমতুল্য)

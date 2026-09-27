@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import GroupsList from "./GroupsList";
 
@@ -12,7 +13,7 @@ export default async function GroupsPage() {
   const { data: groups } = await supabase
     .from("groups")
     .select(
-      "id, name, description, member_count, invite_code, welcome_enabled, welcome_message, is_admin_only_mode, last_synced_at, whatsapp_numbers(display_name)"
+      "id, name, description, member_count, invite_code, welcome_enabled, welcome_message, is_admin_only_mode, max_daily_scheduled_messages, last_synced_at, whatsapp_numbers(display_name)"
     )
     .order("name", { ascending: true });
 
@@ -41,6 +42,7 @@ export default async function GroupsPage() {
       welcome_enabled: g.welcome_enabled,
       welcome_message: g.welcome_message,
       is_admin_only_mode: g.is_admin_only_mode,
+      max_daily_scheduled_messages: g.max_daily_scheduled_messages,
       last_synced_at: g.last_synced_at,
       number_name: number?.display_name ?? null,
       members: membersByGroup.get(g.id) ?? [],
@@ -49,7 +51,12 @@ export default async function GroupsPage() {
 
   return (
     <div>
-      <h1>WhatsApp গ্রুপ</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>WhatsApp গ্রুপ</h1>
+        <Link href="/dashboard/groups/announcements" style={{ fontSize: 13 }}>
+          শিডিউলড অ্যানাউন্সমেন্ট/পোল →
+        </Link>
+      </div>
       <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
         Evolution থেকে গ্রুপের নাম/বর্ণনা/মেম্বার/অ্যাডমিন লিস্ট এখানে sync হবে। নিচে আপনার কানেক্টেড নাম্বার থেকে "সিঙ্ক করুন"
         চাপুন। নতুন মেম্বার জয়েন করলে ওয়েলকাম মেসেজ পাঠাতে চাইলে — এই নাম্বারটা যদি এই ফিচার আসার আগে থেকে কানেক্টেড থাকে,

@@ -10,8 +10,8 @@ export type GroupReplyJobData = {
 };
 
 // স্প্যাম/ব্যানড-ওয়ার্ড/লিংক ফিল্টার ম্যাচ হলে ("delete-group-message" নামে একই queue তে যায়) —
-// bot গ্রুপে অ্যাডমিন কিনা নিশ্চিত হয়েই শুধু এই job বসানো হয়, তাই worker এখানে permission
-// চেক করে না, সরাসরি delete কল করে
+// bot অ্যাডমিন কিনা প্রি-চেক করা হয় না (WhatsApp LID এর কারণে অনির্ভরযোগ্য), সরাসরি delete
+// কল করা হয় এবং WhatsApp/Evolution নিজেই পারমিশন না থাকলে এরর দেয়
 export type DeleteGroupMessageJobData = {
   workspaceId: string;
   whatsappNumberId: string;
@@ -33,4 +33,15 @@ export type DownloadGroupMediaJobData = {
   groupId: string;
   whatsappNumberId: string;
   messageId: string;
+};
+
+// শিডিউলড অ্যানাউন্সমেন্ট/পোলের একটা টার্গেট গ্রুপে পাঠানোর job ("send-group-announcement"
+// নামে একই queue তে যায়) — scheduler tick প্রতিটা টার্গেটের জন্য staggered delay দিয়ে বসায়
+export type SendGroupAnnouncementJobData = {
+  targetId: string;
+  whatsappNumberId: string;
+  groupJid: string;
+  messageText: string;
+  pollOptions: string[] | null;
+  pollMultiSelect: boolean;
 };
