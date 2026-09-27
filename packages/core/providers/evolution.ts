@@ -61,6 +61,7 @@ export class EvolutionProvider implements WhatsAppProvider {
         // webhook স্পর্শ না করেই শুধু এই instance এর ইভেন্ট আমাদের অ্যাপে আসবে
         ...(webhookUrl && {
           webhook: {
+            enabled: true,
             url: webhookUrl,
             byEvents: false,
             base64: true,
@@ -83,14 +84,16 @@ export class EvolutionProvider implements WhatsAppProvider {
   }
 
   // নতুন ইভেন্ট টাইপ (যেমন GROUP_PARTICIPANTS_UPDATE) যোগ হলে ইতিমধ্যে কানেক্টেড থাকা নাম্বারগুলো
-  // আবার QR স্ক্যান/রিকানেক্ট না করেই আপডেটেড ইভেন্ট লিস্ট পেতে এটা কল করা যায় — VPS এ লাইভ
-  // যাচাই করা হয়নি, তাই প্রথমবার টেস্ট করে দেখা জরুরি
+  // আবার QR স্ক্যান/রিকানেক্ট না করেই আপডেটেড ইভেন্ট লিস্ট পেতে এটা কল করা যায়। VPS এ লাইভ টেস্ট
+  // করে ধরা পড়েছে: এই এন্ডপয়েন্ট "enabled" ফিল্ড ছাড়া 400 এরর দেয় (createInstance-এর webhook
+  // অবজেক্টে এটা optional মনে হলেও এখানে required)
   async setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
     const res = await this.request(`/webhook/set/${instanceName}`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({
         webhook: {
+          enabled: true,
           url: webhookUrl,
           byEvents: false,
           base64: true,
