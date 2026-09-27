@@ -52,9 +52,15 @@ export async function generateChatReply(
   history: ChatTurn[],
   question: string
 ): Promise<string> {
+  const reasoningInstruction = `প্রশ্ন যদি জটিল, একাধিক অংশে বিভক্ত, বা ঘুরিয়ে করা হয় (যেমন দুইটা প্রোডাক্টের তুলনা, একসাথে
+একাধিক বিষয়ে জিজ্ঞাসা, বা পরোক্ষভাবে বলা কিছু), তাহলে তাড়াহুড়ো করে প্রথমে যা মাথায় আসে তা না বলে —
+আগে নিজে নিজে (কাস্টমারকে না দেখিয়ে, উত্তরে দেখাবে না) কথোপকথনের ইতিহাস আর নিচের তথ্য পুরোপুরি
+বিশ্লেষণ করো, প্রশ্নের প্রতিটা অংশ আলাদা করে বুঝে নাও, তারপর সবগুলো অংশের সঠিক ও সম্পূর্ণ উত্তর
+একসাথে দাও।`;
+
   const fullSystemPrompt = context
-    ? `${systemPrompt}\n\nনিচের তথ্যের ভিত্তিতে কাস্টমারের প্রশ্নের উত্তর দাও। তথ্যে না থাকলে অনুমান করে উত্তর দিও না।\n\n${context}`
-    : systemPrompt;
+    ? `${systemPrompt}\n\nনিচের তথ্যের ভিত্তিতে কাস্টমারের প্রশ্নের উত্তর দাও। তথ্যে না থাকলে অনুমান করে উত্তর দিও না।\n\n${reasoningInstruction}\n\n${context}`
+    : `${systemPrompt}\n\n${reasoningInstruction}`;
 
   if (provider === "openai") {
     const res = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
@@ -67,7 +73,8 @@ export async function generateChatReply(
           ...history.map((h) => ({ role: h.role, content: h.content })),
           { role: "user", content: question },
         ],
-        max_tokens: 500,
+        // জটিল/multi-part প্রশ্নে সম্পূর্ণ উত্তর যেন মাঝপথে কাটা না যায়
+        max_tokens: 700,
       }),
     });
     if (!res.ok) throw new Error(`OpenAI chat ব্যর্থ (${res.status}): ${await res.text()}`);

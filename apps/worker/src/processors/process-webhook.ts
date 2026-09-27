@@ -675,11 +675,14 @@ async function buildChunkContext(
 ): Promise<string> {
   const queryEmbedding = await generateEmbedding(provider, apiKey, question);
 
+  // ৪ থেকে ৮ এ বাড়ানো হয়েছে — multi-part প্রশ্নে (যেমন দুই প্রোডাক্টের তুলনা, বা প্রোডাক্ট+ডেলিভারি
+  // একসাথে) একটা মাত্র query embedding একাধিক উপ-বিষয়ে স্কিউড হতে পারে, বেশি chunk আনলে সব
+  // প্রাসঙ্গিক অংশ LLM এর কাছে পৌঁছানোর সম্ভাবনা বাড়ে
   const { data: matches } = await supabase.rpc("search_knowledge_base", {
     p_workspace_id: workspaceId,
     p_query_embedding: JSON.stringify(queryEmbedding),
     p_provider: provider,
-    p_match_count: 4,
+    p_match_count: 8,
   });
 
   console.log(`[autoreply] chunk retrieval (large KB): found ${matches?.length ?? 0} chunk(s)`);
