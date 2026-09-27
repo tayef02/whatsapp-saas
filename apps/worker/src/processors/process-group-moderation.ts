@@ -2,9 +2,10 @@ import { getProviderForNumber } from "../lib/provider-for-number";
 import { createNotification } from "../lib/notify";
 import type { DeleteGroupMessageJobData } from "@whatsapp-saas/core/groups/types";
 
-// এই job শুধু তখনই বসে যখন webhook handler আগে থেকেই নিশ্চিত হয়ে গেছে bot গ্রুপে অ্যাডমিন
-// (delete permission আছে) — তাই এখানে আলাদা permission চেক নেই। ব্যর্থ হলে (network/API
-// এরর) admin কে নোটিফাই করা হয়, যাতে ম্যানুয়ালি দেখে নিতে পারে
+// filter ম্যাচ হলেই এই job বসে, আগে থেকে "bot অ্যাডমিন কিনা" চেক করা হয় না (WhatsApp এর LID
+// প্রাইভেসি সিস্টেমের কারণে phone দিয়ে বটের নিজের group_members row নির্ভরযোগ্যভাবে খুঁজে
+// পাওয়া যায় না) — WhatsApp/Evolution নিজেই পারমিশন না থাকলে এরর দেয়, সেটা এখানে catch করে
+// admin কে নোটিফাই করা হয়
 export async function processDeleteGroupMessage(data: DeleteGroupMessageJobData) {
   const providerInfo = await getProviderForNumber(data.whatsappNumberId);
   if (!providerInfo) {

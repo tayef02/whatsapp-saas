@@ -444,22 +444,12 @@ async function handleGroupMessage(
     const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
     await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
 
-    // bot নিজে এই গ্রুপে অ্যাডমিন কিনা (sync করা group_members থেকে) — অ্যাডমিন হলেই শুধু
-    // delete permission থাকে, নাহলে চেষ্টা না করে সরাসরি admin কে নোটিফাই করা ভালো
-    const { data: botMember } = number.phone_number
-      ? await supabase
-          .from("group_members")
-          .select("is_group_admin")
-          .eq("group_id", group.id)
-          .eq("phone", number.phone_number)
-          .maybeSingle()
-      : { data: null };
-
-    console.log(
-      `[group-moderation] bot admin check: botPhone=${number.phone_number}, botMember=${JSON.stringify(botMember)}, messageId=${key.id}`
-    );
-
-    if (botMember?.is_group_admin && key.id) {
+    // আগে group_members এ বটের নিজের phone দিয়ে খুঁজে "অ্যাডমিন কিনা" প্রি-চেক করা হতো, কিন্তু
+    // WhatsApp এর LID প্রাইভেসি সিস্টেমের কারণে বটের নিজের participant row ও phone নাম্বারের
+    // বদলে LID দিয়ে সেভ হয় (লাইভ যাচাই করা হয়েছে) — তাই phone দিয়ে মেলানো অনির্ভরযোগ্য।
+    // এখন থেকে সরাসরি delete চেষ্টা করা হয় (key.id থাকলেই) — WhatsApp/Evolution নিজেই
+    // পারমিশন না থাকলে এরর দেবে, সেটা processDeleteGroupMessage এর catch ব্লক ধরে notify করে
+    if (key.id) {
       const deleteJobData: DeleteGroupMessageJobData = {
         workspaceId: group.workspace_id,
         whatsappNumberId: number.id,
@@ -470,15 +460,15 @@ async function handleGroupMessage(
         matchedText: matchedFilterText,
       };
       await getAutoReplyQueue().add("delete-group-message", deleteJobData, { attempts: 2, backoff: { type: "exponential", delay: 3000 } });
-      console.log(`[group-moderation] bot is admin, delete job queued (group=${groupJid})`);
+      console.log(`[group-moderation] delete job queued (group=${groupJid})`);
     } else {
       await createNotification(
         group.workspace_id,
         "group_message_flagged",
         "গ্রুপে স্প্যাম/ব্যানড কন্টেন্ট ধরা পড়েছে",
-        `"${matchedFilterText}" মিলে গেছে একটা মেসেজে — bot এই গ্রুপে অ্যাডমিন না থাকায় নিজে ডিলিট করতে পারেনি, ম্যানুয়ালি দেখুন। (কাস্টমার: ${senderPhone})`
+        `"${matchedFilterText}" মিলে গেছে একটা মেসেজে, কিন্তু মেসেজ আইডি না থাকায় ডিলিট করা যায়নি — ম্যানুয়ালি দেখুন। (কাস্টমার: ${senderPhone})`
       );
-      console.log(`[group-moderation] bot is not admin (or no message id), notified workspace instead (group=${groupJid})`);
+      console.log(`[group-moderation] no message id available, notified workspace instead (group=${groupJid})`);
     }
     return;
   }
