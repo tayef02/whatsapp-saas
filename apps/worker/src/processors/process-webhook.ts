@@ -37,7 +37,7 @@ export async function processWebhookEvent(body: EvolutionWebhookBody) {
   console.log(`[webhook worker] processing event=${event} (raw=${body.event}) instance=${instanceName}`);
 
   if (!instanceName) {
-    console.warn("[webhook] instance নাম ছাড়া ইভেন্ট এসেছে, স্কিপ করা হলো", body);
+    console.warn("[webhook] event has no instance name, skipping", body);
     return;
   }
 
@@ -62,7 +62,7 @@ export async function processWebhookEvent(body: EvolutionWebhookBody) {
   }
 
   // অন্য ইভেন্ট এখনো হ্যান্ডল করা হচ্ছে না
-  console.log(`[webhook worker] event=${event} এর জন্য কোনো হ্যান্ডলার নেই, স্কিপ করা হলো`);
+  console.log(`[webhook worker] no handler for event=${event}, skipping`);
 }
 
 async function handleQrCodeUpdated(instanceName: string, data: Record<string, unknown>) {
@@ -124,7 +124,7 @@ async function handleOneMessageStatusUpdate(item: Record<string, unknown>) {
     (item.keyId as string | undefined) ?? (item.key as { id?: string } | undefined)?.id ?? (item.messageId as string | undefined);
 
   if (!providerMessageId) {
-    console.log("[webhook worker] messages.update এ keyId পাওয়া যায়নি, স্কিপ", item);
+    console.log("[webhook worker] messages.update has no keyId, skipping", item);
     return;
   }
 
@@ -132,7 +132,7 @@ async function handleOneMessageStatusUpdate(item: Record<string, unknown>) {
   if (rawStatus === "DELIVERY_ACK") newStatus = "delivered";
   else if (rawStatus === "READ") newStatus = "read";
   else {
-    console.log(`[webhook worker] messages.update status=${rawStatus} (keyId=${providerMessageId}) — delivered/read না, স্কিপ`);
+    console.log(`[webhook worker] messages.update status=${rawStatus} (keyId=${providerMessageId}) is not delivered/read, skipping`);
     return;
   }
 
@@ -144,7 +144,7 @@ async function handleOneMessageStatusUpdate(item: Record<string, unknown>) {
     .maybeSingle();
 
   if (!message) {
-    console.log(`[webhook worker] provider_message_id=${providerMessageId} এর সাথে মিলে এমন কোনো message পাওয়া যায়নি`);
+    console.log(`[webhook worker] no message found matching provider_message_id=${providerMessageId}`);
     return;
   }
 
@@ -213,7 +213,7 @@ async function handleAutoReply(
     .maybeSingle();
 
   if (!config || !config.is_active) {
-    console.log(`[autoreply] নাম্বার ${number.id} এ chatbot config নেই/বন্ধ আছে, স্কিপ`);
+    console.log(`[autoreply] number=${number.id} has no chatbot config or is_active=false, skipping`);
     return;
   }
 
@@ -244,7 +244,7 @@ async function handleAutoReply(
     .maybeSingle();
 
   if (!conversation) {
-    console.log(`[autoreply] conversation upsert ব্যর্থ (number=${number.id}, contact=${contact.id})`);
+    console.log(`[autoreply] conversation upsert failed (number=${number.id}, contact=${contact.id})`);
     return;
   }
 
@@ -257,7 +257,7 @@ async function handleAutoReply(
   // এজেন্ট হ্যান্ডল করছে এমন কথোপকথনে bot চুপ থাকবে — এজেন্ট Inbox থেকে "আবার চালু করুন"
   // না চাপা পর্যন্ত পরের সব মেসেজেও চুপ থাকবে (ইচ্ছাকৃতভাবে sticky, ইনবাউন্ড মেসেজ তবুও সেভ হয়)
   if (conversation.status === "handed_off") {
-    console.log(`[autoreply] conversation=${conversation.id} handed_off — bot চুপ থাকছে`);
+    console.log(`[autoreply] conversation=${conversation.id} is handed_off, bot staying silent`);
     return;
   }
 
@@ -281,7 +281,7 @@ async function handleAutoReply(
       markHandedOff: false,
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-    console.log(`[autoreply] AI/RAG রিপ্লাই পাওয়া গেছে, reply job queue তে বসলো`);
+    console.log(`[autoreply] AI/RAG reply generated, reply job queued`);
     return;
   }
 
@@ -297,9 +297,9 @@ async function handleAutoReply(
       markHandedOff: true,
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-    console.log(`[autoreply] AI উত্তর দিতে পারেনি, fallback job queue তে বসলো, handed_off হবে`);
+    console.log(`[autoreply] AI could not answer, fallback job queued, will be handed_off`);
   } else {
-    console.log(`[autoreply] AI উত্তর দিতে পারেনি আর কোনো fallback নেই, সরাসরি handed_off করা হলো`);
+    console.log(`[autoreply] AI could not answer and no fallback configured, marking handed_off directly`);
     await supabase.from("conversations").update({ status: "handed_off" }).eq("id", conversation.id);
     await createNotification(
       number.workspace_id,
@@ -324,14 +324,17 @@ async function tryAiReply(
     .eq("workspace_id", workspaceId)
     .maybeSingle();
 
-  if (!settings?.llm_provider) return null; // AI সেটআপ করা নেই, চুপচাপ স্কিপ
+  if (!settings?.llm_provider) {
+    console.log(`[autoreply] workspace=${workspaceId} has no AI provider configured, skipping AI`);
+    return null;
+  }
 
   const provider = settings.llm_provider as LlmProvider;
 
   try {
     const { data: apiKey } = await supabase.rpc("get_workspace_api_key", { p_workspace_id: workspaceId });
     if (!apiKey) {
-      console.log(`[autoreply] workspace=${workspaceId} এ provider সেট আছে কিন্তু API key নেই, AI স্কিপ`);
+      console.log(`[autoreply] workspace=${workspaceId} has a provider set but no API key, skipping AI`);
       return null;
     }
 
@@ -346,7 +349,7 @@ async function tryAiReply(
 
     const best = matches?.[0];
     console.log(
-      `[autoreply] knowledge base সার্চ: ${matches?.length ?? 0}টা chunk পাওয়া গেছে, সেরা similarity=${best?.similarity ?? "N/A"}, threshold=${settings.confidence_threshold}`
+      `[autoreply] knowledge base search: found ${matches?.length ?? 0} chunk(s), best similarity=${best?.similarity ?? "N/A"}, threshold=${settings.confidence_threshold}`
     );
 
     if (!best || best.similarity < settings.confidence_threshold) {
@@ -357,7 +360,7 @@ async function tryAiReply(
     const reply = await generateChatReply(provider, apiKey, settings.system_prompt ?? "", context, question);
     return reply.trim() || null;
   } catch (err) {
-    console.error(`[autoreply] AI reply তৈরি করতে ব্যর্থ (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
+    console.error(`[autoreply] failed to generate AI reply (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
     return null; // AI ব্যর্থ হলে চুপচাপ fallback এ যাক, কাস্টমার যেন কখনো crash/no-response না দেখে
   }
 }

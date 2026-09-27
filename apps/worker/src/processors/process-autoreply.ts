@@ -6,18 +6,18 @@ import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
 // keyword rule/fallback ম্যাচ হলে webhook handler এই job বসায়। এখানে আসল sendMessage
 // কল হয় — সফল হলেই conversation_messages এ লেখা হয়, ব্যর্থ হলে BullMQ নিজের রিট্রাই করবে
 export async function processAutoReply(data: AutoReplyJobData) {
-  console.log(`[autoreply-worker] job শুরু: conversation=${data.conversationId} phone=${data.phone} senderType=${data.senderType ?? "bot"}`);
+  console.log(`[autoreply-worker] job started: conversation=${data.conversationId} phone=${data.phone} senderType=${data.senderType ?? "bot"}`);
 
   const supabase = getSupabase();
   const providerInfo = await getProviderForNumber(data.whatsappNumberId);
 
   if (!providerInfo) {
-    console.error(`[autoreply-worker] নাম্বার ${data.whatsappNumberId} এর provider পাওয়া যায়নি, স্কিপ`);
+    console.error(`[autoreply-worker] no provider found for number=${data.whatsappNumberId}, skipping`);
     return;
   }
 
   await providerInfo.provider.sendMessage(providerInfo.instanceName, data.phone, data.replyText);
-  console.log(`[autoreply-worker] sendMessage সফল, conversation=${data.conversationId}`);
+  console.log(`[autoreply-worker] sendMessage succeeded, conversation=${data.conversationId}`);
 
   await supabase.from("conversation_messages").insert({
     conversation_id: data.conversationId,
@@ -39,7 +39,7 @@ export async function processAutoReply(data: AutoReplyJobData) {
       data.workspaceId,
       "conversation_handed_off",
       "একটা কথোপকথনে এজেন্টের সাহায্য দরকার",
-      "কাস্টমারের মেসেজের সাথে কোনো auto-reply rule মেলেনি — Inbox এ গিয়ে দেখুন।"
+      "কাস্টমারের প্রশ্নের কোনো উত্তর AI খুঁজে পায়নি — Inbox এ গিয়ে দেখুন।"
     );
   }
 }

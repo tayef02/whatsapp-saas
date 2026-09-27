@@ -36,7 +36,15 @@ export default function AutoReplySettings({ numberName, config }: { numberName: 
 
       {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
 
-      <form action={handleSaveConfig} className="auth-card">
+      {!config.is_active && (
+        <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+          ⚠️ Auto-Reply এখন বন্ধ আছে — কাস্টমারের কোনো মেসেজেরই স্বয়ংক্রিয় উত্তর যাবে না।
+        </div>
+      )}
+
+      {/* key দিয়ে is_active বদলালে ফর্ম রিমাউন্ট হয় — নাহলে defaultChecked শুধু প্রথমবার
+          বসে, পরে router.refresh() এ নতুন config এলেও পুরনো checkbox অবস্থা থেকে যেত */}
+      <form key={String(config.is_active)} action={handleSaveConfig} className="auth-card">
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <input type="checkbox" name="isActive" defaultChecked={config.is_active} />
           Auto-Reply চালু রাখুন
