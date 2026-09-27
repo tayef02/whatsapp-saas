@@ -7,6 +7,7 @@ import { AUTOREPLY_QUEUE_NAME } from "../queues/autoreply-queue";
 import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
 import { createNotification } from "../lib/notify";
 import { generateEmbedding, generateChatReply, type LlmProvider } from "@whatsapp-saas/core/chatbot/llm";
+import { FULL_TEXT_MODE_MAX_WORDS, NO_ANSWER_MARKER } from "@whatsapp-saas/core/chatbot/constants";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -310,9 +311,14 @@ async function handleAutoReply(
   }
 }
 
-// workspace এ LLM provider+key সেট থাকলে knowledge base থেকে প্রাসঙ্গিক তথ্য খুঁজে (retrieval)
-// + system prompt দিয়ে উত্তর জেনারেট করে। কোনো ধাপে সমস্যা হলে (key নেই, confidence কম,
-// API এরর) null রিটার্ন করে — তখন caller fallback/handoff এ চলে যাবে, কখনো crash করবে না
+// একজন হিউম্যান এজেন্টের মতো — কম/মাঝারি সাইজের knowledge base হলে পুরো ডকুমেন্ট টেক্সট
+// সরাসরি LLM কে context হিসেবে দেওয়া হয় (chunk/similarity গেট ছাড়াই), যাতে LLM নিজেই
+// পুরো তথ্য "পড়ে" প্রশ্নের ধরন যাই হোক (নির্দিষ্ট আইটেম, পুরো লিস্ট, তুলনা, ঘুরিয়ে জিজ্ঞেস
+// করা) বুদ্ধি খাটিয়ে উত্তর দিতে পারে। তথ্য না থাকলে LLM কে NO_ANSWER_MARKER দিতে বলা হয় —
+// প্রাকৃতিক ভাষায় "জানি না" পার্স করার অনির্ভরযোগ্যতা এড়াতে। ডকুমেন্ট অনেক বড় হলে
+// (FULL_TEXT_MODE_MAX_WORDS এর বেশি) পুরনো chunk+embedding+confidence-threshold
+// retrieval পদ্ধতি ব্যাকআপ হিসেবে ব্যবহার হয়। কোনো ধাপে সমস্যা হলে (key নেই, এরর) null
+// রিটার্ন করে — caller তখন fallback/handoff এ চলে যাবে, কখনো crash করবে না
 async function tryAiReply(
   supabase: ReturnType<typeof getSupabase>,
   workspaceId: string,
@@ -338,29 +344,83 @@ async function tryAiReply(
       return null;
     }
 
-    const queryEmbedding = await generateEmbedding(provider, apiKey, question);
+    const { data: documents } = await supabase
+      .from("knowledge_base_documents")
+      .select("file_name, full_text, word_count")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "ready");
 
-    const { data: matches } = await supabase.rpc("search_knowledge_base", {
-      p_workspace_id: workspaceId,
-      p_query_embedding: JSON.stringify(queryEmbedding),
-      p_provider: provider,
-      p_match_count: 4,
-    });
+    const readyDocs = (documents ?? []).filter((d: { full_text: string | null }) => d.full_text);
+    const totalWords = readyDocs.reduce((sum: number, d: { word_count: number }) => sum + d.word_count, 0);
 
-    const best = matches?.[0];
     console.log(
-      `[autoreply] knowledge base search: found ${matches?.length ?? 0} chunk(s), best similarity=${best?.similarity ?? "N/A"}, threshold=${settings.confidence_threshold}`
+      `[autoreply] workspace=${workspaceId} has ${readyDocs.length} ready document(s), ${totalWords} total words (full-text mode limit: ${FULL_TEXT_MODE_MAX_WORDS})`
     );
 
-    if (!best || best.similarity < settings.confidence_threshold) {
-      return null; // যথেষ্ট প্রাসঙ্গিক তথ্য নেই, fallback এ যাক
+    if (readyDocs.length > 0 && totalWords <= FULL_TEXT_MODE_MAX_WORDS) {
+      return await tryFullTextReply(provider, apiKey, settings.system_prompt ?? "", readyDocs, question);
     }
 
-    const context = (matches ?? []).map((m: { content: string }) => m.content).join("\n\n---\n\n");
-    const reply = await generateChatReply(provider, apiKey, settings.system_prompt ?? "", context, question);
-    return reply.trim() || null;
+    if (readyDocs.length === 0) {
+      console.log(`[autoreply] workspace=${workspaceId} has no ready documents, skipping AI`);
+      return null;
+    }
+
+    return await tryChunkRetrievalReply(supabase, workspaceId, provider, apiKey, settings, question);
   } catch (err) {
     console.error(`[autoreply] failed to generate AI reply (workspace=${workspaceId}):`, err instanceof Error ? err.message : err);
     return null; // AI ব্যর্থ হলে চুপচাপ fallback এ যাক, কাস্টমার যেন কখনো crash/no-response না দেখে
   }
+}
+
+async function tryFullTextReply(
+  provider: LlmProvider,
+  apiKey: string,
+  systemPrompt: string,
+  documents: { file_name: string; full_text: string | null }[],
+  question: string
+): Promise<string | null> {
+  const context = documents.map((d) => `# ${d.file_name}\n${d.full_text}`).join("\n\n---\n\n");
+  const promptWithMarker = `${systemPrompt}\n\nনিচের তথ্যের মধ্যে প্রশ্নের উত্তর না থাকলে অন্য কিছু না লিখে ঠিক এই শব্দটাই লিখো: ${NO_ANSWER_MARKER}`;
+
+  const reply = await generateChatReply(provider, apiKey, promptWithMarker, context, question);
+  const trimmed = reply.trim();
+
+  console.log(`[autoreply] full-text mode reply (first 100 chars): "${trimmed.slice(0, 100)}"`);
+
+  if (!trimmed || trimmed.includes(NO_ANSWER_MARKER)) {
+    return null; // LLM নিজেই বলল তথ্য নেই, fallback এ যাক
+  }
+  return trimmed;
+}
+
+async function tryChunkRetrievalReply(
+  supabase: ReturnType<typeof getSupabase>,
+  workspaceId: string,
+  provider: LlmProvider,
+  apiKey: string,
+  settings: { system_prompt: string | null; confidence_threshold: number },
+  question: string
+): Promise<string | null> {
+  const queryEmbedding = await generateEmbedding(provider, apiKey, question);
+
+  const { data: matches } = await supabase.rpc("search_knowledge_base", {
+    p_workspace_id: workspaceId,
+    p_query_embedding: JSON.stringify(queryEmbedding),
+    p_provider: provider,
+    p_match_count: 4,
+  });
+
+  const best = matches?.[0];
+  console.log(
+    `[autoreply] chunk retrieval (large KB fallback): found ${matches?.length ?? 0} chunk(s), best similarity=${best?.similarity ?? "N/A"}, threshold=${settings.confidence_threshold}`
+  );
+
+  if (!best || best.similarity < settings.confidence_threshold) {
+    return null; // যথেষ্ট প্রাসঙ্গিক তথ্য নেই, fallback এ যাক
+  }
+
+  const context = (matches ?? []).map((m: { content: string }) => m.content).join("\n\n---\n\n");
+  const reply = await generateChatReply(provider, apiKey, settings.system_prompt ?? "", context, question);
+  return reply.trim() || null;
 }

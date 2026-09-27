@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import AiChatbotSettings from "./AiChatbotSettings";
+import { FULL_TEXT_MODE_MAX_WORDS } from "@whatsapp-saas/core/chatbot/constants";
 
 export default async function AiChatbotPage() {
   const supabase = await createClient();
@@ -11,8 +12,19 @@ export default async function AiChatbotPage() {
 
   const { data: documents } = await supabase
     .from("knowledge_base_documents")
-    .select("id, file_name, file_type, status, error_message, created_at")
+    .select("id, file_name, file_type, status, error_message, created_at, word_count")
     .order("created_at", { ascending: false });
 
-  return <AiChatbotSettings settings={settings ?? null} documents={documents ?? []} />;
+  const totalReadyWords = (documents ?? [])
+    .filter((d) => d.status === "ready")
+    .reduce((sum, d) => sum + (d.word_count ?? 0), 0);
+
+  return (
+    <AiChatbotSettings
+      settings={settings ?? null}
+      documents={documents ?? []}
+      totalReadyWords={totalReadyWords}
+      fullTextModeMaxWords={FULL_TEXT_MODE_MAX_WORDS}
+    />
+  );
 }

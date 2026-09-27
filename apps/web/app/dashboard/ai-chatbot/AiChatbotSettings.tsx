@@ -27,7 +27,17 @@ const statusLabel: Record<string, string> = {
   failed: "❌ ব্যর্থ",
 };
 
-export default function AiChatbotSettings({ settings, documents }: { settings: Settings; documents: Doc[] }) {
+export default function AiChatbotSettings({
+  settings,
+  documents,
+  totalReadyWords,
+  fullTextModeMaxWords,
+}: {
+  settings: Settings;
+  documents: Doc[];
+  totalReadyWords: number;
+  fullTextModeMaxWords: number;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,10 +103,18 @@ export default function AiChatbotSettings({ settings, documents }: { settings: S
   return (
     <div>
       <h1>AI Chatbot (Knowledge Base)</h1>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
-        আগে নাম্বার সেটিংসের keyword rule চেক হয় (দ্রুত, বিনামূল্যে)। না মিললে এখানকার ডকুমেন্ট থেকে
-        প্রাসঙ্গিক তথ্য খুঁজে AI দিয়ে উত্তর জেনারেট করা হয়। তাতেও ঠিক উত্তর না পেলে এজেন্টের কাছে চলে যাবে।
-        API key খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
+      <p style={{ color: "#666", fontSize: 13, marginBottom: 8 }}>
+        কাস্টমারের প্রতিটা মেসেজে AI আপনার আপলোড করা ডকুমেন্ট দেখে উত্তর দেয়। ডকুমেন্ট ছোট/মাঝারি
+        হলে ({fullTextModeMaxWords.toLocaleString("bn-BD")} শব্দের মধ্যে) পুরো টেক্সট সরাসরি AI-কে
+        দেওয়া হয় — একজন এজেন্টের মতো পুরো শীট পড়ে যেকোনো ধরনের প্রশ্নের উত্তর বুঝে দিতে পারে। এর
+        বেশি বড় হলে শুধু প্রাসঙ্গিক অংশ খুঁজে ব্যবহার করা হয়। কোনো উত্তর না পেলে এজেন্টের কাছে চলে
+        যাবে। API key খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
+      </p>
+      <p style={{ fontSize: 12, color: totalReadyWords > fullTextModeMaxWords ? "#b45309" : "#166534", marginBottom: 20 }}>
+        মোট {totalReadyWords.toLocaleString("bn-BD")} শব্দ (রেডি ডকুমেন্ট মিলিয়ে) —{" "}
+        {totalReadyWords > fullTextModeMaxWords
+          ? "খোঁজা-ভিত্তিক (chunk retrieval) মোডে চলছে"
+          : "পুরো-টেক্সট এজেন্ট মোডে চলছে"}
       </p>
 
       {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
@@ -135,7 +153,8 @@ export default function AiChatbotSettings({ settings, documents }: { settings: S
         </label>
 
         <label style={{ display: "block", marginTop: 12 }}>
-          Confidence Threshold ({settings?.confidence_threshold ?? 0.5}) — বেশি হলে কম ক্ষেত্রে AI উত্তর দেবে, কম হলে বেশি ক্ষেত্রে
+          Confidence Threshold ({settings?.confidence_threshold ?? 0.5}) — শুধু বড় knowledge base
+          (খোঁজা-ভিত্তিক মোড) এর জন্য প্রযোজ্য। বেশি হলে কম ক্ষেত্রে AI উত্তর দেবে, কম হলে বেশি ক্ষেত্রে
           (কিন্তু ভুল উত্তরের ঝুঁকি বাড়ে)
           <input
             type="number"

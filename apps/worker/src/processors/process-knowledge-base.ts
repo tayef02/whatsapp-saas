@@ -71,8 +71,12 @@ export async function processKnowledgeBaseDocument(data: KnowledgeBaseJobData) {
       if (insertError) throw new Error(`chunk সেভ করা যায়নি: ${insertError.message}`);
     }
 
-    await supabase.from("knowledge_base_documents").update({ status: "ready", error_message: null }).eq("id", doc.id);
-    console.log(`[knowledge-base] ${doc.file_name} প্রসেসিং সম্পন্ন`);
+    const wordCount = text.trim().split(/\s+/).length;
+    await supabase
+      .from("knowledge_base_documents")
+      .update({ status: "ready", error_message: null, full_text: text, word_count: wordCount })
+      .eq("id", doc.id);
+    console.log(`[knowledge-base] ${doc.file_name} প্রসেসিং সম্পন্ন, word_count=${wordCount}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : "অজানা এরর";
     console.error(`[knowledge-base] ${doc.file_name} ব্যর্থ: ${message}`);
