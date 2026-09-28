@@ -16,6 +16,7 @@ import {
 import { extractOrderBlock, type ParsedOrder } from "@whatsapp-saas/core/chatbot/order-block";
 import type { GroupReplyJobData, DeleteGroupMessageJobData, DownloadGroupMediaJobData } from "@whatsapp-saas/core/groups/types";
 import { extractStructuredOrder } from "@whatsapp-saas/core/groups/order-capture";
+import { normalizeBangladeshiPhone } from "@whatsapp-saas/core/utils/phone";
 
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
 let autoReplyQueue: Queue | null = null;
@@ -501,8 +502,13 @@ async function handleGroupMessage(
     const loggedRowId = await logGroupMessage(supabase, group.id, group.workspace_id, senderPhone, text, mediaType, key.id);
     await maybeQueueMediaDownload(loggedRowId, mediaType, group.id, group.workspace_id, number.id, key.id);
 
-    if (!structuredOrder.name || !structuredOrder.phone) {
-      // অসম্পূর্ণ ফরম্যাট — silent fail না করে raw_summary হিসেবে সেভ করা হয়, ডাটা হারায় না
+    // কাস্টমার মেসেজে নাম্বার যেকোনো ফরম্যাটে (01XXXXXXXXX, +8801XXXXXXXXX ইত্যাদি) টাইপ করতে
+    // পারে — Evolution/WhatsApp শুধু পুরো country-code সহ ফরম্যাট (8801XXXXXXXXX) মেনে নেয়,
+    // তাই কন্টাক্ট ইম্পোর্টের একই normalize ফাংশন এখানেও reuse করা হচ্ছে
+    const normalizedPhone = structuredOrder.phone ? normalizeBangladeshiPhone(structuredOrder.phone) : null;
+
+    if (!structuredOrder.name || !normalizedPhone) {
+      // অসম্পূর্ণ/ভুল ফরম্যাট — silent fail না করে raw_summary হিসেবে সেভ করা হয়, ডাটা হারায় না
       console.error(`[group-order-capture] malformed structured order in group=${groupJid}: "${text}"`);
       const { data: order } = await supabase
         .from("orders")
@@ -519,7 +525,7 @@ async function handleGroupMessage(
         group.workspace_id,
         "group_order_capture_failed",
         "গ্রুপে অর্ডার ফরম্যাট বুঝা যায়নি",
-        `"${text}" — নাম/নাম্বার পাওয়া যায়নি, raw_summary হিসেবে সেভ হয়েছে${order ? ` (#${order.order_number})` : ""}, ম্যানুয়ালি দেখুন।`
+        `"${text}" — নাম/সঠিক ফরম্যাটের নাম্বার পাওয়া যায়নি, raw_summary হিসেবে সেভ হয়েছে${order ? ` (#${order.order_number})` : ""}, ম্যানুয়ালি দেখুন।`
       );
       return;
     }
@@ -530,11 +536,11 @@ async function handleGroupMessage(
         workspace_id: group.workspace_id,
         group_id: group.id,
         whatsapp_number_id: number.id,
-        contact_phone: structuredOrder.phone,
+        contact_phone: normalizedPhone,
         product_name: structuredOrder.product,
         quantity: structuredOrder.quantity,
         delivery_name: structuredOrder.name,
-        delivery_phone: structuredOrder.phone,
+        delivery_phone: normalizedPhone,
         raw_summary: text,
       })
       .select("id, order_number")
@@ -554,7 +560,7 @@ async function handleGroupMessage(
       group.workspace_id,
       "new_order",
       `নতুন অর্ডার #${order.order_number} (গ্রুপ থেকে)`,
-      `${structuredOrder.product ? `${structuredOrder.product}${structuredOrder.quantity ? ` (${structuredOrder.quantity})` : ""} — ` : ""}কাস্টমার: ${structuredOrder.name} (${structuredOrder.phone})`
+      `${structuredOrder.product ? `${structuredOrder.product}${structuredOrder.quantity ? ` (${structuredOrder.quantity})` : ""} — ` : ""}কাস্টমার: ${structuredOrder.name} (${normalizedPhone})`
     );
 
     const confirmJobData: GroupReplyJobData = {
@@ -1007,7 +1013,9 @@ async function saveOrder(
       product_name: parsed?.product_name || null,
       quantity: parsed?.quantity || null,
       delivery_name: parsed?.delivery_name || null,
-      delivery_phone: parsed?.delivery_phone || null,
+      // LLM কাস্টমারের টাইপ করা নাম্বার যেকোনো ফরম্যাটেই JSON এ বসাতে পারে — normalize করা
+      // যায় তো করা হয়, না গেলে (হয়তো নাম্বার আসলেই না, অন্য কিছু) raw টেক্সটই রাখা হয়
+      delivery_phone: (parsed?.delivery_phone && normalizeBangladeshiPhone(parsed.delivery_phone)) || parsed?.delivery_phone || null,
       delivery_address: parsed?.delivery_address || null,
       raw_summary: rawBlock,
     })
