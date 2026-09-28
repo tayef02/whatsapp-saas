@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAutoReplyQueue } from "@/lib/queue/autoreply-queue";
-import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
+import type { AutoReplyJobData, DirectMessageJobData } from "@whatsapp-saas/core/chatbot/types";
 
 type OrderStatus = "pending" | "confirmed" | "shipped" | "cancelled";
 
@@ -47,9 +47,8 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, re
   let warning: string | null = null;
   if (status === "pending") {
     // কোনো মেসেজ পাঠানো হয় না
-  } else if (!order.conversation_id || !order.whatsapp_number_id) {
-    warning = "স্ট্যাটাস আপডেট হয়েছে, কিন্তু কাস্টমারকে মেসেজ পাঠানো যায়নি (কথোপকথন/নাম্বার খুঁজে পাওয়া যায়নি)।";
-  } else {
+  } else if (order.conversation_id && order.whatsapp_number_id) {
+    // ১:১ চ্যাট থেকে আসা অর্ডার — conversation_messages এ লগসহ পাঠানো হয়
     const jobData: AutoReplyJobData = {
       conversationId: order.conversation_id,
       workspaceId: order.workspace_id,
@@ -60,6 +59,18 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, re
       senderType: "bot",
     };
     await getAutoReplyQueue().add("reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+  } else if (order.whatsapp_number_id && order.contact_phone) {
+    // গ্রুপ থেকে regex দিয়ে ক্যাপচার করা অর্ডার — কখনো বটের সাথে ১:১ চ্যাট হয়নি, তাই কোনো
+    // conversation নেই। সরাসরি কাস্টমারের ফোন নাম্বারে পাঠানো হয় (group_id থাকলেও গ্রুপে না,
+    // কাস্টমারকে ব্যক্তিগতভাবে জানানোই বেশি প্রাসঙ্গিক)
+    const directJobData: DirectMessageJobData = {
+      whatsappNumberId: order.whatsapp_number_id,
+      phone: order.contact_phone,
+      replyText: statusMessage[status](order.order_number, order.product_name, reason),
+    };
+    await getAutoReplyQueue().add("direct-message", directJobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
+  } else {
+    warning = "স্ট্যাটাস আপডেট হয়েছে, কিন্তু কাস্টমারকে মেসেজ পাঠানো যায়নি (নাম্বার খুঁজে পাওয়া যায়নি)।";
   }
 
   revalidatePath("/dashboard/orders");

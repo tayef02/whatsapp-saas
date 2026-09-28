@@ -131,6 +131,38 @@ git pull
 supabase db push --linked
 ```
 
+(এখন পর্যন্ত `0015`-`0036` migration ম্যানুয়ালি SQL Editor এ কপি-পেস্ট করে চালানো হয়েছে — CLI flow
+সেটআপ থাকলে `supabase db push --linked` এই সবগুলোকেও "already applied" হিসেবে চিনবে যদি migration
+history table এ ট্র্যাক করা থাকে, নাহলে `supabase migration repair` দিয়ে সেগুলোও applied মার্ক করা
+লাগতে পারে)
+
+### সব migration এর তালিকা (0015 থেকে 0036) — কে কী করে
+
+| Migration | কী করে |
+|---|---|
+| 0015 | কিওয়ার্ড auto-reply টেবিল (পরে 0019 এ সরানো হয়েছে) |
+| 0016 | `contacts` টেবিলের source constraint ফিক্স |
+| 0017 | AI Chatbot RAG সিস্টেম — `workspace_ai_settings`, knowledge base ডকুমেন্ট/চাংক, embedding সার্চ, Vault |
+| 0018 | AI confidence threshold ডিফল্ট 0.75 → 0.5 |
+| 0019 | কিওয়ার্ড-রুল সিস্টেম সম্পূর্ণ সরানো (সব ইনকামিং মেসেজ সরাসরি AI/RAG এ) |
+| 0020 | ছোট/মাঝারি knowledge base এর জন্য full-text agent মোড |
+| 0021 | চ্যাটবট থেকে rigid rule বাদ, `chatbot_configs` টেবিল ড্রপ, `support_phone` কলাম |
+| 0022 | `orders` টেবিল (AI চ্যাটবট থেকে কনফার্ম হওয়া অর্ডার সেভ করতে) |
+| 0023 | `order_number`, `whatsapp_number_id`, `cancel_reason`, `order_status_history` টেবিল |
+| 0024 | `order_number` sequence এর GRANT ফিক্স + ডুপ্লিকেট ইনকামিং মেসেজ dedup কলাম |
+| 0025 | AI Chatbot সেটিংসে `typical_delivery_time` কলাম |
+| 0026 | Group Tools শুরু — `groups` + `group_members` টেবিল |
+| 0027 | গ্রুপ কিওয়ার্ড-ট্রিগার রুল টেবিল |
+| 0028 | গ্রুপ ট্রিগারে AI রিপ্লাই সাপোর্ট (`trigger_type`/`reply_mode`) + `group_messages` টেবিল |
+| 0029 | নতুন মেম্বার ওয়েলকাম মেসেজ কলাম |
+| 0030 | গ্রুপ মেসেজে মিডিয়া/স্ট্যাটাস ট্র্যাকিং কলাম |
+| 0031 | `workspace_group_filters` — ব্যানড-ওয়ার্ড/লিংক ফিল্টার |
+| 0032 | Admin-only পোস্ট মোড কলাম |
+| 0033 | `group-media` প্রাইভেট storage bucket |
+| 0034 | শিডিউলড অ্যানাউন্সমেন্ট/পোল টেবিল + per-group দৈনিক লিমিট |
+| 0035 | গ্রুপ মেম্বার inactive/স্প্যাম auto-flag কলাম |
+| 0036 | `orders` টেবিলে `group_id` (গ্রুপ থেকে ক্যাপচার করা অর্ডার ট্র্যাক করতে) |
+
 ---
 
 ## ধাপ ৬: VPS এর Evolution সার্ভার ডাটাবেসে যোগ করা
@@ -302,6 +334,58 @@ Supabase Dashboard → Database → Backups থেকে পুরনো ব্�
 git checkout main
 docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
 ```
+
+---
+
+## Evolution API এন্ডপয়েন্ট রেফারেন্স (`packages/core/providers/evolution.ts`)
+
+আমাদের অ্যাপ VPS এর বিদ্যমান Evolution API-কে নিচের এন্ডপয়েন্টগুলো দিয়ে কল করে:
+
+| এন্ডপয়েন্ট | কী কাজে |
+|---|---|
+| `POST /instance/create` | নতুন WhatsApp নাম্বার কানেক্ট করা |
+| `GET /instance/connectionState/:instance` | কানেকশন স্ট্যাটাস চেক |
+| `DELETE /instance/logout/:instance` | নাম্বার ডিসকানেক্ট |
+| `POST /message/sendText/:instance` | সাধারণ টেক্সট মেসেজ পাঠানো |
+| `POST /message/sendMedia/:instance` | ছবি/ডকুমেন্ট পাঠানো |
+| `POST /message/sendPoll/:instance` | পোল পাঠানো (শিডিউলড অ্যানাউন্সমেন্ট ফিচার) |
+| `POST /chat/sendPresence/:instance` | "টাইপ করছে..." দেখানো |
+| `POST /webhook/set/:instance` | webhook ইভেন্ট লিস্ট (আপডেট) সেট করা |
+| `GET /group/fetchAllGroups/:instance` | গ্রুপ লিস্ট + মেম্বার sync |
+| `GET /group/inviteCode/:instance` | গ্রুপ ইনভাইট লিংক আনা |
+| `POST /group/revokeInviteCode/:instance` | ইনভাইট লিংক রোটেট করা |
+| `POST /group/updateSetting/:instance` | Admin-only পোস্ট মোড টগল |
+| `DELETE /chat/deleteMessageForEveryone/:instance` | স্প্যাম/ব্যানড মেসেজ auto-delete |
+| `POST /chat/getBase64FromMediaMessage/:instance` | গ্রুপ মিডিয়া ফাইল ডাউনলোড (ডিক্রিপ্ট করা) |
+
+গ্রুপ-সংক্রান্ত এন্ডপয়েন্টগুলো (`fetchAllGroups` থেকে `getBase64FromMediaMessage` পর্যন্ত)
+Evolution v2 এর ডকুমেন্টেশন/ওয়েব সার্চ অনুযায়ী লেখা, VPS এর নির্দিষ্ট ভার্সনে পাথ/মেথড ভিন্ন হতে
+পারে — এরর এলে worker লগে Evolution এর আসল রেসপন্স বডি দেখা যায়, সেটা থেকেই ঠিক করা হয়েছে
+(যেমন `revokeInviteCode` আসলে PUT না, POST নেয়)।
+
+---
+
+## সমস্যা হলে কোন লগ দেখতে হয়
+
+```bash
+docker logs wa-worker --tail 100
+docker logs wa-web --tail 100
+```
+
+নির্দিষ্ট সমস্যা অনুযায়ী `grep` দিয়ে ফিল্টার করা:
+
+| সমস্যা | কমান্ড |
+|---|---|
+| ইনকামিং মেসেজ/ওয়েবহুক প্রসেস হচ্ছে কিনা | `docker logs wa-worker --tail 100 \| grep "webhook worker"` |
+| ১:১ AI চ্যাটবট রিপ্লাই | `docker logs wa-worker --tail 100 \| grep "autoreply"` |
+| গ্রুপ কিওয়ার্ড/AI ট্রিগার | `docker logs wa-worker --tail 100 \| grep "group-autoreply"` |
+| স্প্যাম ফিল্টার/মেসেজ ডিলিট | `docker logs wa-worker --tail 100 \| grep "group-moderation"` |
+| গ্রুপ মিডিয়া ডাউনলোড | `docker logs wa-worker --tail 100 \| grep "group-media"` |
+| শিডিউলড অ্যানাউন্সমেন্ট | `docker logs wa-worker --tail 100 \| grep "group-announcement"` |
+| ইনঅ্যাক্টিভ মেম্বার ফ্ল্যাগ | `docker logs wa-worker --tail 100 \| grep "group-member-inactivity"` |
+| গ্রুপ থেকে অর্ডার ক্যাপচার | `docker logs wa-worker --tail 100 \| grep "group-order-capture"` |
+| ডেলিভারি/read স্ট্যাটাস আপডেট | `docker logs wa-worker --tail 100 \| grep "messages.update"` |
+| ডাইরেক্ট মেসেজ (গ্রুপ-অর্ডারের কাস্টমারকে status আপডেট) | `docker logs wa-worker --tail 100 \| grep "direct-message"` |
 
 ---
 

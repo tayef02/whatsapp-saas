@@ -29,7 +29,7 @@
    - মেসেজ স্ট্যাটাস আপডেট ব্যাচে লেখা হবে (worker একটার পর একটা না লিখে বাল্ক আপডেট করবে)
    - ৯০ দিনের পুরনো লগ আর্কাইভ করার স্ক্রিপ্ট (cron/scheduled script)
 8. **messages টেবিল মাসভিত্তিক partition** (PostgreSQL native partitioning, `messages_YYYY_MM`), আর ক্যাম্পেইনের sent/delivered/read/failed কাউন্ট আলাদা `campaign_stats` summary টেবিলে রাখা হবে যাতে প্রতিবার count(*) করতে না হয় — worker ব্যাচে increment করবে।
-9. **RLS/GRANT বাধ্যতামূলক** — Supabase প্রজেক্টে "Automatically expose new tables" বন্ধ আর "automatic RLS" চালু আছে। তাই **প্রতিটা migration-এ প্রতিটা নতুন টেবিলের জন্য স্পষ্ট `GRANT` স্টেটমেন্ট আর RLS policy লিখতে হবে**, যাতে প্রতি workspace শুধু নিজের ডাটা দেখতে পায়। কোনো টেবিল RLS policy ছাড়া রেখে দেওয়া চলবে না।
+9. **RLS/GRANT বাধ্যতামূলক** — Supabase প্রজেক্টে "Automatically expose new tables" বন্ধ আর "automatic RLS" চালু আছে। তাই **প্রতিটা migration-এ প্রতিটা নতুন টেবিলের জন্য স্পষ্ট `GRANT` স্টেটমেন্ট আর RLS policy লিখতে হবে**, যাতে প্রতি workspace শুধু নিজের ডাটা দেখতে পায়। কোনো টেবিল RLS policy ছাড়া রেখে দেওয়া চলবে না। **`bigserial`/`serial` কলাম যোগ করলে সেই কলামের নিজস্ব sequence-এও আলাদা `GRANT USAGE, SELECT` লাগে** — টেবিলের GRANT সেটা কভার করে না (একবার এই ভুলে লাইভে `permission denied for sequence` এরর হয়েছিল, দেখো migration 0024)।
 10. **WhatsApp সেশন ডাটা** persistent volume-এ রাখা (Docker volume), সার্ভার রিস্টার্টে যেন সেশন না হারায়।
 11. Worker আর Evolution API আলাদা সার্ভারে ডিপ্লয় করা যায় এমনভাবে কনফিগারেবল (env ভিত্তিক host/port)।
 
@@ -41,6 +41,14 @@
 - STOP/বন্ধ লিখলে অটো opt-out (contact-এর `opted_out` ফ্ল্যাগ সেট, আর কোনো ক্যাম্পেইন মেসেজ যাবে না)
 - নাম্বার ডিসকানেক্ট/ব্যান হলে ইউজারকে সাথে সাথে ইন-অ্যাপ + ইমেইল নোটিফিকেশন
 
+## গুরুত্বপূর্ণ শেখা বিষয় (ভবিষ্যতে মনে রাখতে)
+- **WhatsApp LID প্রাইভেসি সিস্টেম** — group participant/mention/sender ফিল্ডে কখনো কখনো ফোন নাম্বারের বদলে একটা internal ID (LID, যেমন `128811135979553`) আসে — সেভ করা কন্টাক্ট নাম দিয়ে মেনশন করলে এটা হয়, এমনকি bot নিজের group_members row-ও LID দিয়ে সেভ হতে পারে। তাই কোনো লজিক phone নাম্বার ম্যাচিং-এর উপর নির্ভর করলে ব্যর্থ হতে পারে। সমাধান: provider-নিজস্ব পারমিশন এনফোর্সমেন্টের উপর নির্ভর করা (যেমন delete/action চেষ্টা করে এরর catch করা) phone-ম্যাচিং প্রি-চেকের চেয়ে বেশি নির্ভরযোগ্য। Workaround: কন্টাক্ট নাম না বেছে সরাসরি ফোন নাম্বার টাইপ করে মেনশন করলে LID এর বদলে আসল নাম্বার আসে।
+- **WhatsApp multi-device JID এ `:deviceId` সাফিক্স** — (যেমন `8801938187802:16@s.whatsapp.net`) — ফোন নাম্বার বের করার সময় শুধু `@domain` কাটলে এই `:deviceId` অংশ থেকে যায়, ম্যাচিং ব্যর্থ হয়। সঠিক পদ্ধতি: `jid.split("@")[0].split(":")[0]`।
+- **`bigserial`/`serial` কলামের sequence-এ আলাদা GRANT লাগে** — টেবিলের GRANT সেটা কভার করে না, নাহলে লাইভে `permission denied for sequence` এরর হয় (migration 0024 দেখো)।
+- **তারিখ/সময় সবসময় `Asia/Dhaka` স্পষ্ট করে দেখাতে হবে** — `toLocaleString("bn-BD")` timezone ছাড়া দিলে যে এনভায়রনমেন্টে কোড চলে (সার্ভার-সাইড রেন্ডারে VPS/UTC হতে পারে, "use client" কম্পোনেন্টও প্রথমবার সার্ভারে রেন্ডার হয়) সেটার timezone ব্যবহার করে, ভুল সময় দেখাতে পারে। শেয়ার্ড হেল্পার ব্যবহার করা: `apps/web/lib/format-date.ts` (`formatDhakaDateTime`/`formatDhakaDate`, `timeZone: "Asia/Dhaka"` স্পষ্ট করে দেওয়া)। `datetime-local` ইনপুট থেকে সময় নেওয়ার সময়ও ব্রাউজারেই (client-side, ফর্ম সাবমিট করার আগে) সঠিক UTC instant এ কনভার্ট করে সার্ভারে পাঠাতে হবে — সার্ভারে কনভার্ট করলে সার্ভারের timezone ধরে ভুল হয়ে যায়।
+- **Evolution-এর webhook ইভেন্ট গ্লোবাল env var দিয়ে সেট হয় না** — প্রতিটা instance-এর জন্য আলাদাভাবে API কলে (`createInstance`/`setWebhook`, `packages/core/providers/evolution.ts`-এর `WEBHOOK_EVENTS` লিস্ট) সাবস্ক্রাইব করতে হয়। নতুন ইভেন্ট টাইপ যোগ করলে আগে থেকে কানেক্টেড নাম্বারে আবার `setWebhook` কল করা লাগে (Groups পেজের "Webhook ইভেন্ট রিফ্রেশ করুন" বাটন)।
+- **গ্রুপ মেসেজে delivered/read status সাধারণত আসে না** — WhatsApp/Baileys-এর নিজস্ব সীমাবদ্ধতা (per-recipient জটিলতা, কোনো aggregate "group read" ইভেন্ট নেই), কোড বাগ না।
+
 ## রোডম্যাপ
 
 ### MVP (সম্পন্ন)
@@ -51,7 +59,7 @@
 5. ক্যাম্পেইন: টেক্সট + ছবি/PDF, অডিয়েন্স বাছাই, শিডিউল, র‍্যান্ডম ডিলে
 6. ডেলিভারি রিপোর্ট: sent/delivered/read/failed, failed retry
 7. প্ল্যান ও পেমেন্ট: মেসেজ লিমিট প্যাকেজ, bKash/Nagad (SSLCommerz পরে যোগ করা যায় এমন abstraction সহ)
-8. **AI Chatbot** (n8n AI Agent স্টাইল) — কোনো hardcoded keyword-rule নেই, workspace-এর system prompt-ই একমাত্র নিয়ন্ত্রক। Knowledge base (PDF/XLSX/CSV/TXT) ছোট হলে full-text agent মোড, বড় হলে chunk+embedding retrieval (fallback)। Multi-turn history (শেষ ১০ মেসেজ), order-context আর ডেলিভারি-সময় সেটিংস প্রতিটা কলে context হিসেবে যোগ হয়। LLM নিজেই বুঝলে না জানলে `needs_human` হ্যান্ডঅফ, প্রকৃত টেকনিক্যাল ব্যর্থতায় সাপোর্ট-নাম্বার সহ safety-net মেসেজ।
+8. **AI Chatbot** (n8n AI Agent স্টাইল) — কোনো hardcoded keyword-rule নেই, workspace-এর system prompt-ই একমাত্র নিয়ন্ত্রক। Knowledge base (PDF/XLSX/CSV/TXT) ছোট হলে full-text agent মোড (পুরো ডকুমেন্ট সরাসরি context), বড় হলে chunk+embedding retrieval (fallback, top-8)। Multi-turn history (শেষ ১০ মেসেজ), order-context আর ডেলিভারি-সময় সেটিংস প্রতিটা কলে context হিসেবে যোগ হয়। জটিল/multi-part প্রশ্নে ধাপে ধাপে চিন্তা করার নির্দেশনা প্রম্পটে আছে। রিপ্লাই পাঠানোর আগে ১-২ সেকেন্ড "টাইপ করছে..." presence (মানুষ-এজেন্টের মতো অনুভূতি)। LLM নিজেই বুঝলে না জানলে `needs_human` হ্যান্ডঅফ, প্রকৃত টেকনিক্যাল ব্যর্থতায় সাপোর্ট-নাম্বার সহ safety-net মেসেজ।
 9. **Orders** — চ্যাটবট কথোপকথনে অর্ডার কনফার্ম হলে LLM একটা মার্কার-ব্লক দেয়, worker সেটা পার্স করে `orders` টেবিলে সেভ করে (ছোট readable order ID সহ, কাস্টমারকে জানানো হয়)। Status history লগ থাকে, ড্যাশবোর্ড থেকে status বদলালে কাস্টমারকে automatic WhatsApp আপডেট যায় (cancel করলে কারণসহ)।
 
 ### ফেজ ২ — Group Tools (সম্পন্ন, ৯/৯ সাব-ফিচার)
