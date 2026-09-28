@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { addKeywordRule, toggleKeywordRule, deleteKeywordRule } from "./actions";
+import { formatDhakaDateTime } from "@/lib/format-date";
 
 type Rule = {
   id: string;
@@ -119,7 +120,7 @@ export default function KeywordRulesList({ groupId, rules }: { groupId: string; 
                 {r.reply_mode === "fixed" && <div style={{ color: "#666", marginTop: 4, whiteSpace: "pre-wrap" }}>{r.reply_text}</div>}
                 <div style={{ color: "#999", marginTop: 4, fontSize: 12 }}>
                   cooldown: {Math.round(r.cooldown_seconds / 60)} মিনিট
-                  {r.last_triggered_at && ` — সর্বশেষ ট্রিগার: ${new Date(r.last_triggered_at).toLocaleString("bn-BD")}`}
+                  {r.last_triggered_at && ` — সর্বশেষ ট্রিগার: ${formatDhakaDateTime(r.last_triggered_at)}`}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>

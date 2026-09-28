@@ -15,16 +15,16 @@ export default async function GroupAnnouncementsPage() {
 
   const { data: targets } = await supabase
     .from("group_scheduled_announcement_targets")
-    .select("id, announcement_id, group_id, status, error_message, groups(name)");
+    .select("id, announcement_id, group_id, status, error_message, sent_at, groups(name)");
 
   const targetsByAnnouncement = new Map<
     string,
-    { group_name: string | null; status: string; error_message: string | null }[]
+    { group_name: string | null; status: string; error_message: string | null; sent_at: string | null }[]
   >();
   for (const t of targets ?? []) {
     const group = Array.isArray(t.groups) ? t.groups[0] : t.groups;
     const list = targetsByAnnouncement.get(t.announcement_id) ?? [];
-    list.push({ group_name: group?.name ?? null, status: t.status, error_message: t.error_message });
+    list.push({ group_name: group?.name ?? null, status: t.status, error_message: t.error_message, sent_at: t.sent_at });
     targetsByAnnouncement.set(t.announcement_id, list);
   }
 

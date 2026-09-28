@@ -3,9 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createAnnouncement, cancelAnnouncement } from "./actions";
+import { formatDhakaDateTime } from "@/lib/format-date";
 
 type Group = { id: string; name: string | null };
-type Target = { group_name: string | null; status: string; error_message: string | null };
+type Target = { group_name: string | null; status: string; error_message: string | null; sent_at: string | null };
 type Announcement = {
   id: string;
   message_text: string;
@@ -41,6 +42,17 @@ export default function AnnouncementsList({ groups, announcements }: { groups: G
   async function handleCreate(formData: FormData) {
     setBusy(true);
     setError(null);
+
+    // <input type="datetime-local"> ব্রাউজারের local timezone অনুযায়ী একটা "naive" স্ট্রিং
+    // দেয় (যেমন "2026-09-28T02:21", কোনো timezone তথ্য ছাড়া)। এটা সার্ভার অ্যাকশনে (যেটা
+    // অন্য timezone এ, সাধারণত UTC, চলে) কাঁচা অবস্থায় পাঠালে সার্ভার ভুল timezone ধরে
+    // পার্স করে ফেলে। তাই এখানেই (ব্রাউজারে, যেখানে local timezone সঠিকভাবে জানা আছে)
+    // Date বানিয়ে সঠিক UTC instant এ কনভার্ট করে পাঠানো হচ্ছে
+    const rawScheduledAt = String(formData.get("scheduledAt") ?? "");
+    if (rawScheduledAt) {
+      formData.set("scheduledAt", new Date(rawScheduledAt).toISOString());
+    }
+
     const res = await createAnnouncement(formData);
     setBusy(false);
     if (res.error) return setError(res.error);
@@ -119,7 +131,7 @@ export default function AnnouncementsList({ groups, announcements }: { groups: G
                 <div style={{ whiteSpace: "pre-wrap" }}>{a.message_text}</div>
                 {a.poll_options && <div style={{ color: "#666", marginTop: 2 }}>অপশন: {a.poll_options.join(", ")}</div>}
                 <div style={{ color: "#999", marginTop: 4, fontSize: 12 }}>
-                  শিডিউল: {new Date(a.scheduled_at).toLocaleString("bn-BD")} — {statusLabel[a.status] ?? a.status}
+                  শিডিউল: {formatDhakaDateTime(a.scheduled_at)} — {statusLabel[a.status] ?? a.status}
                 </div>
                 <button
                   onClick={() => setExpandedId(expandedId === a.id ? null : a.id)}
@@ -132,6 +144,7 @@ export default function AnnouncementsList({ groups, announcements }: { groups: G
                     {a.targets.map((t, i) => (
                       <div key={i}>
                         {t.group_name || "(নাম নেই)"} — {targetStatusLabel[t.status] ?? t.status}
+                        {t.sent_at && ` (${formatDhakaDateTime(t.sent_at)})`}
                         {t.error_message && ` (${t.error_message})`}
                       </div>
                     ))}

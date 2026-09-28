@@ -14,6 +14,7 @@ import {
   updateMaxDailyScheduled,
   unflagMember,
 } from "./actions";
+import { formatDhakaDateTime } from "@/lib/format-date";
 
 type Member = {
   id: string;
@@ -277,7 +278,7 @@ export default function GroupsList({
                   {g.description && <div style={{ color: "#666", marginTop: 4 }}>{g.description}</div>}
                   <div style={{ color: "#999", marginTop: 4, fontSize: 12 }}>
                     {g.member_count} জন মেম্বার, {adminCount} জন অ্যাডমিন
-                    {g.last_synced_at && ` — সর্বশেষ সিঙ্ক: ${new Date(g.last_synced_at).toLocaleString("bn-BD")}`}
+                    {g.last_synced_at && ` — সর্বশেষ সিঙ্ক: ${formatDhakaDateTime(g.last_synced_at)}`}
                     {g.welcome_enabled && " — 👋 ওয়েলকাম চালু"}
                     {g.is_admin_only_mode && " — 🔒 Admin-only"}
                     {flaggedCount > 0 && ` — 🚩 ${flaggedCount} জন flagged`}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { submitPayment } from "./actions";
+import { formatDhakaDate } from "@/lib/format-date";
 
 type Plan = {
   id: string;
@@ -79,7 +80,7 @@ export default function BillingForm({ plans, currentSubscription, payments, bkas
           <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>
             স্ট্যাটাস: {currentSubscription.subscription_status === "active" ? "সক্রিয়" : currentSubscription.subscription_status === "trial" ? "ট্রায়াল" : "মেয়াদ শেষ"}
             {currentSubscription.subscription_expires_at &&
-              ` · মেয়াদ শেষ: ${new Date(currentSubscription.subscription_expires_at).toLocaleDateString("bn-BD")}`}
+              ` · মেয়াদ শেষ: ${formatDhakaDate(currentSubscription.subscription_expires_at)}`}
           </div>
           {currentSubscription.plans && (
             <div style={{ fontSize: 13, color: "#666" }}>

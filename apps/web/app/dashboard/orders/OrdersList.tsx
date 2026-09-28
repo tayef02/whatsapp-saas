@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { updateOrderStatus, getOrderHistory } from "./actions";
+import { formatDhakaDateTime } from "@/lib/format-date";
 
 type Order = {
   id: string;
@@ -99,7 +100,7 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
                   ⚠️ ডাটা পুরোপুরি পার্স করা যায়নি, আসল টেক্সট: {o.raw_summary}
                 </div>
               )}
-              <div style={{ color: "#999", marginTop: 4, fontSize: 11 }}>{new Date(o.created_at).toLocaleString("bn-BD")}</div>
+              <div style={{ color: "#999", marginTop: 4, fontSize: 11 }}>{formatDhakaDateTime(o.created_at)}</div>
               <button
                 onClick={() => toggleHistory(o.id)}
                 style={{ width: "auto", background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 11, padding: 0, marginTop: 6 }}
@@ -112,7 +113,7 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
                   {historyByOrder[o.id]?.length === 0 && <p>কোনো হিস্ট্রি নেই।</p>}
                   {historyByOrder[o.id]?.map((h, i) => (
                     <div key={i} style={{ marginBottom: 4 }}>
-                      {new Date(h.created_at).toLocaleString("bn-BD")} — {h.from_status ? `${statusLabel[h.from_status] ?? h.from_status} → ` : ""}
+                      {formatDhakaDateTime(h.created_at)} — {h.from_status ? `${statusLabel[h.from_status] ?? h.from_status} → ` : ""}
                       {statusLabel[h.to_status] ?? h.to_status}
                       {h.reason && ` (কারণ: ${h.reason})`}
                     </div>

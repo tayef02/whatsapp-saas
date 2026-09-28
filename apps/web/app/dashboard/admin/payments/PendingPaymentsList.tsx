@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { approvePayment, rejectPayment } from "./actions";
+import { formatDhakaDateTime } from "@/lib/format-date";
 
 type Payment = {
   id: string;
@@ -57,7 +58,7 @@ export default function PendingPaymentsList({ payments: initial }: { payments: P
           <div key={p.id} style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <strong>{singleName(p.workspaces)}</strong>
-              <span style={{ fontSize: 12, color: "#666" }}>{new Date(p.created_at).toLocaleString("bn-BD")}</span>
+              <span style={{ fontSize: 12, color: "#666" }}>{formatDhakaDateTime(p.created_at)}</span>
             </div>
             <div style={{ fontSize: 13, color: "#333" }}>
               প্ল্যান: {singleName(p.plans)} · ৳{p.amount_bdt} · {p.provider}

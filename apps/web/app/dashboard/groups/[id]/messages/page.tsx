@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { formatDhakaDateTime } from "@/lib/format-date";
 
 const PAGE_SIZE = 50;
 const GROUP_MEDIA_BUCKET = "group-media";
@@ -107,7 +108,7 @@ export default async function GroupMessagesPage({
           >
             <div style={{ color: "#666", fontSize: 11, marginBottom: 4 }}>
               {m.direction === "outbound" ? m.sender_name || "AI" : m.sender_name || m.sender_phone || "(অজানা)"} —{" "}
-              {new Date(m.created_at).toLocaleString("bn-BD")}
+              {formatDhakaDateTime(m.created_at)}
               {m.direction === "outbound" && statusLabel[m.status] && ` — ${statusLabel[m.status]}`}
             </div>
             {m.media_type && (
