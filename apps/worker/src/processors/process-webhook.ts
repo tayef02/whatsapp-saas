@@ -225,7 +225,7 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
   const supabase = getSupabase();
   const { data: number } = await supabase
     .from("whatsapp_numbers")
-    .select("id, workspace_id")
+    .select("id, workspace_id, bot_enabled")
     .eq("instance_name", instanceName)
     .maybeSingle();
 
@@ -236,18 +236,12 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
 
   if (isStop || isStart) {
     await supabase.from("contacts").update({ opted_out: isStop }).eq("workspace_id", number.workspace_id).eq("phone", phone);
-    return; // STOP/START নিজেই একটা কমান্ড — auto-reply এর দরকার নেই
+    return; // STOP/START নিজেই একটা কমান্ড — bot_enabled নির্বিশেষে সবসময় কাজ করবে
   }
 
-  // নাম্বার কার্ডে "বট অন/অফ" টগল — chatbot_configs.is_active। কোনো row না থাকলে
-  // (এখনো টগল করা হয়নি) ডিফল্ট চালু থাকে, কলামের নিজস্ব default true এর সাথে মিলিয়ে
-  const { data: chatbotConfig } = await supabase
-    .from("chatbot_configs")
-    .select("is_active")
-    .eq("whatsapp_number_id", number.id)
-    .maybeSingle();
-
-  if (chatbotConfig && !chatbotConfig.is_active) {
+  // নাম্বার কার্ডে "বট অন/অফ" টগল — whatsapp_numbers.bot_enabled (migration 0037)। এটা শুধু
+  // ১:১ AI চ্যাটবট রিপ্লাই বন্ধ করে; ক্যাম্পেইন/গ্রুপ ফিচার/অর্ডার-স্ট্যাটাস মেসেজ এই চেকের বাইরে।
+  if (!number.bot_enabled) {
     console.log(`[autoreply] bot is turned off for number=${number.id}, skipping`);
     return;
   }

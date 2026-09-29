@@ -10,7 +10,7 @@ export default async function NumbersPage() {
 
   const { data: numbers } = await supabase
     .from("whatsapp_numbers")
-    .select("id, display_name, phone_number, status, qr_code, daily_message_limit, connected_at, created_at")
+    .select("id, display_name, phone_number, status, qr_code, daily_message_limit, connected_at, created_at, bot_enabled")
     .order("created_at", { ascending: false });
 
   const numberIds = (numbers ?? []).map((n) => n.id);
@@ -30,16 +30,11 @@ export default async function NumbersPage() {
     }
   }
 
-  // বট অন/অফ — row না থাকলে ডিফল্ট চালু (chatbot_configs.is_active কলামের নিজস্ব default)
+  // বট অন/অফ — whatsapp_numbers.bot_enabled কলাম থেকেই সরাসরি (আগে আলাদা chatbot_configs
+  // টেবিলের জন্য দ্বিতীয় কোয়েরি লাগত, migration 0037 এর পর আর দরকার নেই)
   const botActiveByNumber: Record<string, boolean> = {};
-  if (numberIds.length > 0) {
-    const { data: configs } = await supabase
-      .from("chatbot_configs")
-      .select("whatsapp_number_id, is_active")
-      .in("whatsapp_number_id", numberIds);
-    for (const c of configs ?? []) {
-      botActiveByNumber[c.whatsapp_number_id] = c.is_active;
-    }
+  for (const n of numbers ?? []) {
+    botActiveByNumber[n.id] = n.bot_enabled;
   }
 
   return (

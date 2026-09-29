@@ -195,10 +195,11 @@ export async function deleteNumber(numberId: string) {
   return { error: null };
 }
 
-// নাম্বার কার্ডে "বট অন/অফ" টগল — chatbot_configs.is_active আপডেট করে (row না থাকলে বানায়)।
-// worker এর handleIncomingMessage এখন এই ফ্ল্যাগ চেক করে (process-webhook.ts) auto-reply
-// পাঠানোর আগে।
-export async function toggleBot(numberId: string, isActive: boolean) {
+// নাম্বার কার্ডে "বট অন/অফ" টগল — whatsapp_numbers.bot_enabled কলাম আপডেট করে (migration 0037)।
+// আগে chatbot_configs নামের আলাদা টেবিলে লিখত, কিন্তু সেই টেবিল migration 0021 এ ড্রপ হয়ে
+// গিয়েছিল — ফলে টগলটা প্রোডাকশনে আসলে কাজই করছিল না। worker এর handleIncomingMessage এখন
+// সরাসরি এই কলাম চেক করে (process-webhook.ts)।
+export async function toggleBot(numberId: string, botEnabled: boolean) {
   const supabase = await createClient();
 
   const {
@@ -208,25 +209,19 @@ export async function toggleBot(numberId: string, isActive: boolean) {
     return { error: "লগইন করা নেই" };
   }
 
-  const { data: number } = await supabase
-    .from("whatsapp_numbers")
-    .select("id, workspace_id")
-    .eq("id", numberId)
-    .maybeSingle();
+  // এই সিলেক্ট RLS (numbers_select_member) এর মধ্য দিয়েই যায় — নাম্বারটা এই ইউজারের
+  // workspace এর না হলে এখানেই "পাওয়া যায়নি" ফেরত যাবে, আপডেট পর্যন্ত যাবে না
+  const { data: number } = await supabase.from("whatsapp_numbers").select("id").eq("id", numberId).maybeSingle();
 
   if (!number) {
     return { error: "নাম্বার পাওয়া যায়নি" };
   }
 
-  const { error } = await supabase
-    .from("chatbot_configs")
-    .upsert(
-      { whatsapp_number_id: numberId, workspace_id: number.workspace_id, is_active: isActive },
-      { onConflict: "whatsapp_number_id" }
-    );
+  const { error } = await supabase.from("whatsapp_numbers").update({ bot_enabled: botEnabled }).eq("id", numberId);
 
   if (error) {
-    return { error: error.message };
+    console.error(`[toggleBot] number=${numberId} bot_enabled আপডেট ব্যর্থ: ${error.message}`);
+    return { error: "বট টগল সেভ করা যায়নি, একটু পর আবার চেষ্টা করুন" };
   }
 
   return { error: null };

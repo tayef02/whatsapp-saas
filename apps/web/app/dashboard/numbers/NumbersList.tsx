@@ -151,10 +151,10 @@ function NumberCard({
               active ? "border-primary-light bg-primary-light text-primary" : "border-border bg-gray-50 text-text-muted"
             }`}
           >
-            <span className="flex items-center gap-1.5">
-              <Bot className="h-4 w-4" /> এআই চ্যাটবট
+            <span className="flex items-center gap-1.5 font-medium">
+              <Bot className="h-4 w-4" /> {active ? "বট চালু" : "বট বন্ধ"}
             </span>
-            <span className="font-medium">{active ? "চালু" : "বন্ধ"}</span>
+            <span className="text-xs text-text-muted">{active ? "এআই চ্যাটবট রিপ্লাই দিচ্ছে" : "ক্লিক করে চালু করুন"}</span>
           </button>
         </>
       )}
