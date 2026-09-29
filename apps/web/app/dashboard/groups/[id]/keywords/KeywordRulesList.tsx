@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { AlertTriangle, Bot, FileText, MessageSquareText, Trash2 } from "lucide-react";
+import { Card, Input, Select, Textarea, Button, Badge, EmptyState, useToast } from "@/components/ui";
 import { addKeywordRule, toggleKeywordRule, deleteKeywordRule } from "./actions";
 import { formatDhakaDateTime } from "@/lib/format-date";
 
@@ -18,6 +20,7 @@ type Rule = {
 
 export default function KeywordRulesList({ groupId, rules }: { groupId: string; rules: Rule[] }) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [triggerType, setTriggerType] = useState("keyword");
@@ -29,6 +32,7 @@ export default function KeywordRulesList({ groupId, rules }: { groupId: string; 
     const res = await addKeywordRule(groupId, formData);
     setBusy(false);
     if (res.error) return setError(res.error);
+    showToast("success", "রুল যোগ হয়েছে");
     router.refresh();
   }
 
@@ -48,93 +52,90 @@ export default function KeywordRulesList({ groupId, rules }: { groupId: string; 
   }
 
   return (
-    <div>
-      {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
+    <div className="flex flex-col gap-4">
+      {error && <p className="rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
 
-      <form action={handleAdd} className="auth-card" style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 8 }}>নতুন ট্রিগার রুল</h2>
+      <Card className="max-w-xl">
+        <p className="mb-3 text-sm font-semibold text-text">নতুন ট্রিগার রুল</p>
 
-        <label>
-          ট্রিগার
-          <select name="triggerType" value={triggerType} onChange={(e) => setTriggerType(e.target.value)} style={{ width: "100%" }}>
+        <form action={handleAdd} className="flex flex-col gap-4">
+          <Select name="triggerType" label="ট্রিগার" value={triggerType} onChange={(e) => setTriggerType(e.target.value)}>
             <option value="keyword">কিওয়ার্ড</option>
             <option value="mention">@Mention (bot-কে ট্যাগ করলে)</option>
-          </select>
-        </label>
-        {triggerType === "mention" && (
-          <p style={{ fontSize: 12, color: "#b45309", marginTop: 6 }}>
-            ⚠️ সেভ করা কন্টাক্ট নাম সিলেক্ট করে মেনশন করলে (যেমন "@Tayef") WhatsApp-এর নতুন LID প্রাইভেসি সিস্টেমের
-            কারণে টেক্সটে আসল ফোন নাম্বারের বদলে একটা internal ID বসে যায়, তখন bot চিনতে পারে না। এড়াতে —{" "}
-            <strong>কন্টাক্ট নাম সিলেক্ট না করে সরাসরি ফোন নাম্বার টাইপ করে মেনশন করুন</strong> (যেমন "@৮৮০১৯৩৮১৮৭৮০২"),
-            এভাবে ঠিকভাবে কাজ করে।
-          </p>
-        )}
+          </Select>
 
-        {triggerType === "keyword" && (
-          <label style={{ display: "block", marginTop: 12 }}>
-            কিওয়ার্ড
-            <input type="text" name="keyword" placeholder="যেমন: দাম" style={{ width: "100%" }} />
-          </label>
-        )}
+          {triggerType === "mention" && (
+            <p className="flex items-start gap-1.5 rounded-lg bg-warning-light px-3 py-2 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              সেভ করা কন্টাক্ট নাম সিলেক্ট করে মেনশন করলে WhatsApp-এর LID প্রাইভেসি সিস্টেমের কারণে বট চিনতে পারে না। এড়াতে —
+              কন্টাক্ট নাম সিলেক্ট না করে সরাসরি ফোন নাম্বার টাইপ করে মেনশন করুন (যেমন "@৮৮০১৯৩৮১৮৭৮০২")।
+            </p>
+          )}
 
-        <label style={{ display: "block", marginTop: 12 }}>
-          রিপ্লাই মোড
-          <select name="replyMode" value={replyMode} onChange={(e) => setReplyMode(e.target.value)} style={{ width: "100%" }}>
+          {triggerType === "keyword" && <Input name="keyword" label="কিওয়ার্ড" placeholder="যেমন: দাম" />}
+
+          <Select name="replyMode" label="রিপ্লাই মোড" value={replyMode} onChange={(e) => setReplyMode(e.target.value)}>
             <option value="fixed">ফিক্সড টেক্সট</option>
             <option value="ai">AI দিয়ে উত্তর</option>
-          </select>
-        </label>
+          </Select>
 
-        {replyMode === "fixed" && (
-          <label style={{ display: "block", marginTop: 12 }}>
-            রিপ্লাই টেক্সট
-            <textarea name="replyText" rows={3} placeholder="যেমন: আমাদের প্রাইস লিস্ট দেখতে..." style={{ width: "100%" }} />
-          </label>
-        )}
-        {replyMode === "ai" && (
-          <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-            AI মোডে workspace-এর AI Chatbot সেটিংস (system prompt, knowledge base) থেকে উত্তর জেনারেট হবে, এখানে আলাদা
-            টেক্সট লেখা লাগবে না।
-          </p>
-        )}
+          {replyMode === "fixed" && <Textarea name="replyText" label="রিপ্লাই টেক্সট" rows={3} placeholder="যেমন: আমাদের প্রাইস লিস্ট দেখতে..." />}
+          {replyMode === "ai" && (
+            <p className="text-xs text-text-muted">AI মোডে workspace-এর AI Chatbot সেটিংস (system prompt, knowledge base) থেকে উত্তর জেনারেট হবে।</p>
+          )}
 
-        <label style={{ display: "block", marginTop: 12 }}>
-          Cooldown (মিনিট) — {replyMode === "ai" ? "কত ঘন ঘন AI call হতে পারবে" : "একই রিপ্লাই কত ঘন ঘন যেতে পারবে"}
-          <input type="number" name="cooldownMinutes" defaultValue={5} min={0} step={1} style={{ width: "100%" }} />
-        </label>
+          <Input
+            type="number"
+            name="cooldownMinutes"
+            label={`Cooldown (মিনিট) — ${replyMode === "ai" ? "কত ঘন ঘন AI call হতে পারবে" : "একই রিপ্লাই কত ঘন ঘন যেতে পারবে"}`}
+            defaultValue={5}
+            min={0}
+            step={1}
+          />
 
-        <button type="submit" disabled={busy} style={{ marginTop: 12 }}>
-          যোগ করুন
-        </button>
-      </form>
+          <Button type="submit" disabled={busy} className="self-start">
+            যোগ করুন
+          </Button>
+        </form>
+      </Card>
 
-      <h2 style={{ fontSize: 16, marginBottom: 8 }}>বিদ্যমান রুল</h2>
-      {rules.length === 0 && <p style={{ color: "#666" }}>এখনো কোনো রুল নেই।</p>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {rules.map((r) => (
-          <div key={r.id} style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-              <div style={{ fontSize: 13 }}>
-                <strong>{r.trigger_type === "mention" ? "@Mention" : r.keyword}</strong>{" "}
-                <span style={{ color: "#666" }}>{r.reply_mode === "ai" ? "🤖 AI" : "📝 ফিক্সড"}</span>
-                {r.reply_mode === "fixed" && <div style={{ color: "#666", marginTop: 4, whiteSpace: "pre-wrap" }}>{r.reply_text}</div>}
-                <div style={{ color: "#999", marginTop: 4, fontSize: 12 }}>
-                  cooldown: {Math.round(r.cooldown_seconds / 60)} মিনিট
-                  {r.last_triggered_at && ` — সর্বশেষ ট্রিগার: ${formatDhakaDateTime(r.last_triggered_at)}`}
+      <div>
+        <p className="mb-3 text-sm font-semibold text-text">বিদ্যমান রুল</p>
+        {rules.length === 0 ? (
+          <EmptyState icon={<MessageSquareText className="h-10 w-10" />} title="এখনো কোনো রুল নেই" description="উপরের ফর্ম দিয়ে প্রথম ট্রিগার রুল বানান।" />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {rules.map((r) => (
+              <Card key={r.id} className={!r.is_active ? "opacity-60" : ""}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium text-text">{r.trigger_type === "mention" ? "@Mention" : r.keyword}</span>
+                      <Badge variant={r.reply_mode === "ai" ? "info" : "neutral"}>
+                        {r.reply_mode === "ai" ? <Bot className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
+                        {r.reply_mode === "ai" ? "AI" : "ফিক্সড"}
+                      </Badge>
+                      {!r.is_active && <Badge variant="warning">বন্ধ আছে</Badge>}
+                    </div>
+                    {r.reply_mode === "fixed" && <p className="mt-1 text-sm whitespace-pre-wrap text-text-muted">{r.reply_text}</p>}
+                    <p className="mt-1 text-xs text-text-muted">
+                      cooldown: {Math.round(r.cooldown_seconds / 60)} মিনিট
+                      {r.last_triggered_at && ` — সর্বশেষ ট্রিগার: ${formatDhakaDateTime(r.last_triggered_at)}`}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <Button variant="secondary" disabled={busy} onClick={() => handleToggle(r.id, !r.is_active)}>
+                      {r.is_active ? "বন্ধ করুন" : "চালু করুন"}
+                    </Button>
+                    <Button variant="danger" disabled={busy} onClick={() => handleDelete(r.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                <button disabled={busy} onClick={() => handleToggle(r.id, !r.is_active)} style={{ width: "auto" }}>
-                  {r.is_active ? "বন্ধ করুন" : "চালু করুন"}
-                </button>
-                <button disabled={busy} onClick={() => handleDelete(r.id)} style={{ width: "auto", color: "#dc2626" }}>
-                  মুছুন
-                </button>
-              </div>
-            </div>
-            {!r.is_active && <div style={{ marginTop: 6, fontSize: 11, color: "#b45309" }}>⏸️ বন্ধ আছে</div>}
+              </Card>
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

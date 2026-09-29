@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import AnnouncementsList from "./AnnouncementsList";
 
@@ -34,16 +35,17 @@ export default async function GroupAnnouncementsPage() {
   }));
 
   return (
-    <div>
-      <p style={{ marginBottom: 8 }}>
-        <Link href="/dashboard/groups">← গ্রুপ লিস্টে ফিরুন</Link>
-      </p>
-      <h1>শিডিউলড অ্যানাউন্সমেন্ট/পোল</h1>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
-        নির্দিষ্ট সময়ে এক বা একাধিক গ্রুপে টেক্সট বা পোল পাঠান। একাধিক গ্রুপ বাছাই করলে সবগুলোতে একসাথে না, ধীরে ধীরে
-        (১-৩ মিনিট র‍্যান্ডম গ্যাপে) পাঠানো হবে — স্প্যামের মতো না লাগার জন্য। প্রতি গ্রুপে দিনে সর্বোচ্চ কতগুলো
-        শিডিউলড মেসেজ যাবে তার সীমা Groups পেজে প্রতিটা গ্রুপের নিজস্ব সেটিং (ডিফল্ট ৩টা/দিন)।
-      </p>
+    <div className="flex flex-col gap-4">
+      <div>
+        <Link href="/dashboard/groups" className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary">
+          <ArrowLeft className="h-3.5 w-3.5" /> গ্রুপ লিস্টে ফিরুন
+        </Link>
+        <h1 className="mt-1 text-lg font-semibold text-text">শিডিউলড অ্যানাউন্সমেন্ট/পোল</h1>
+        <p className="mt-1 text-[13px] text-text-muted">
+          নির্দিষ্ট সময়ে এক বা একাধিক গ্রুপে টেক্সট বা পোল পাঠান। একাধিক গ্রুপ বাছাই করলে সবগুলোতে একসাথে না, ধীরে ধীরে
+          (১-৩ মিনিট র‍্যান্ডম গ্যাপে) পাঠানো হবে — স্প্যামের মতো না লাগার জন্য।
+        </p>
+      </div>
       <AnnouncementsList groups={groups ?? []} announcements={announcementsWithTargets} />
     </div>
   );

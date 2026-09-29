@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { CalendarClock, UsersRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { EmptyState } from "@/components/ui";
 import GroupsList from "./GroupsList";
 
 export default async function GroupsPage() {
@@ -12,81 +14,60 @@ export default async function GroupsPage() {
 
   const { data: groups } = await supabase
     .from("groups")
-    .select(
-      "id, name, description, member_count, invite_code, welcome_enabled, welcome_message, is_admin_only_mode, max_daily_scheduled_messages, last_synced_at, whatsapp_numbers(display_name)"
-    )
+    .select("id, name, description, member_count, is_admin_only_mode, welcome_enabled, last_synced_at, whatsapp_numbers(display_name)")
     .order("name", { ascending: true });
 
-  const { data: members } = await supabase
-    .from("group_members")
-    .select("id, group_id, phone, name, is_group_admin, is_flagged, flag_reason, last_activity_at");
+  const { data: members } = await supabase.from("group_members").select("group_id, is_flagged");
 
-  const { data: filters } = await supabase
-    .from("workspace_group_filters")
-    .select("banned_words, banned_link_patterns")
-    .maybeSingle();
+  const { data: filters } = await supabase.from("workspace_group_filters").select("banned_words, banned_link_patterns").maybeSingle();
+  const spamFilterActive = Boolean((filters?.banned_words?.length ?? 0) > 0 || (filters?.banned_link_patterns?.length ?? 0) > 0);
 
-  type MemberRow = {
-    id: string;
-    phone: string;
-    name: string | null;
-    is_group_admin: boolean;
-    is_flagged: boolean;
-    flag_reason: string | null;
-    last_activity_at: string | null;
-  };
-  const membersByGroup = new Map<string, MemberRow[]>();
+  const flaggedCountByGroup = new Map<string, number>();
   for (const m of members ?? []) {
-    const list = membersByGroup.get(m.group_id) ?? [];
-    list.push({
-      id: m.id,
-      phone: m.phone,
-      name: m.name,
-      is_group_admin: m.is_group_admin,
-      is_flagged: m.is_flagged,
-      flag_reason: m.flag_reason,
-      last_activity_at: m.last_activity_at,
-    });
-    membersByGroup.set(m.group_id, list);
+    if (m.is_flagged) flaggedCountByGroup.set(m.group_id, (flaggedCountByGroup.get(m.group_id) ?? 0) + 1);
   }
 
-  const groupsWithMembers = (groups ?? []).map((g) => {
+  const groupCards = (groups ?? []).map((g) => {
     const number = Array.isArray(g.whatsapp_numbers) ? g.whatsapp_numbers[0] : g.whatsapp_numbers;
     return {
       id: g.id,
       name: g.name,
       description: g.description,
       member_count: g.member_count,
-      invite_code: g.invite_code,
-      welcome_enabled: g.welcome_enabled,
-      welcome_message: g.welcome_message,
       is_admin_only_mode: g.is_admin_only_mode,
-      max_daily_scheduled_messages: g.max_daily_scheduled_messages,
+      welcome_enabled: g.welcome_enabled,
       last_synced_at: g.last_synced_at,
       number_name: number?.display_name ?? null,
-      members: membersByGroup.get(g.id) ?? [],
+      flagged_count: flaggedCountByGroup.get(g.id) ?? 0,
     };
   });
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>WhatsApp গ্রুপ</h1>
-        <Link href="/dashboard/groups/announcements" style={{ fontSize: 13 }}>
-          শিডিউলড অ্যানাউন্সমেন্ট/পোল →
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-lg font-semibold text-text">WhatsApp গ্রুপ</h1>
+          <p className="mt-1 text-[13px] text-text-muted">
+            Evolution থেকে গ্রুপের নাম/বর্ণনা/মেম্বার/অ্যাডমিন লিস্ট নিচে "সিঙ্ক করুন" চাপলে sync হবে।
+          </p>
+        </div>
+        <Link
+          href="/dashboard/groups/announcements"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-text hover:bg-gray-50"
+        >
+          <CalendarClock className="h-4 w-4" /> শিডিউলড অ্যানাউন্সমেন্ট/পোল
         </Link>
       </div>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
-        Evolution থেকে গ্রুপের নাম/বর্ণনা/মেম্বার/অ্যাডমিন লিস্ট এখানে sync হবে। নিচে আপনার কানেক্টেড নাম্বার থেকে "সিঙ্ক করুন"
-        চাপুন। নতুন মেম্বার জয়েন করলে ওয়েলকাম মেসেজ পাঠাতে চাইলে — এই নাম্বারটা যদি এই ফিচার আসার আগে থেকে কানেক্টেড থাকে,
-        একবার "Webhook ইভেন্ট রিফ্রেশ করুন" চাপতে হবে (নতুন করে QR স্ক্যান করা লাগবে না)।
-      </p>
-      <GroupsList
-        numbers={numbers ?? []}
-        groups={groupsWithMembers}
-        initialBannedWords={filters?.banned_words ?? []}
-        initialBannedLinkPatterns={filters?.banned_link_patterns ?? []}
-      />
+
+      {(!groups || groups.length === 0) ? (
+        <EmptyState
+          icon={<UsersRound className="h-10 w-10" />}
+          title="এখনো কোনো গ্রুপ sync হয়নি"
+          description='নিচে আপনার কানেক্টেড নাম্বার থেকে "সিঙ্ক করুন" চাপুন।'
+        />
+      ) : null}
+
+      <GroupsList numbers={numbers ?? []} groups={groupCards} spamFilterActive={spamFilterActive} />
     </div>
   );
 }
