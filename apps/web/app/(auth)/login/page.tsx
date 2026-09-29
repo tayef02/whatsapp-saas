@@ -3,12 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { MessageCircle, Eye, EyeOff } from "lucide-react";
+import { Card, Input, Button } from "@/components/ui";
 import { login } from "../actions";
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
@@ -25,22 +28,55 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-card">
-      <h1>লগইন করুন</h1>
-      {error && <div className="error">{error}</div>}
-      <form action={handleSubmit}>
-        <label htmlFor="email">ইমেইল</label>
-        <input id="email" name="email" type="email" required />
+    <div className="flex min-h-screen items-center justify-center bg-app-bg px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-2">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-light text-primary">
+            <MessageCircle className="h-6 w-6" />
+          </div>
+          <span className="text-lg font-bold text-primary">WhatsApp SaaS</span>
+        </div>
 
-        <label htmlFor="password">পাসওয়ার্ড</label>
-        <input id="password" name="password" type="password" required />
+        <Card>
+          <h1 className="mb-4 text-base font-semibold text-text">লগইন করুন</h1>
+          {error && <p className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
 
-        <button type="submit" disabled={loading}>
-          {loading ? "লগইন হচ্ছে..." : "লগইন"}
-        </button>
-      </form>
-      <div className="switch">
-        অ্যাকাউন্ট নেই? <Link href="/signup">সাইনআপ করুন</Link>
+          <form action={handleSubmit} className="flex flex-col gap-4">
+            <Input id="email" name="email" type="email" label="ইমেইল" required />
+
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-text">পাসওয়ার্ড</span>
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  className="w-full rounded-lg border border-border px-3 py-2 pr-10 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute top-1/2 right-3 -translate-y-1/2 text-text-muted hover:text-text"
+                  aria-label={showPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখান"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </label>
+
+            <Button type="submit" loading={loading} className="w-full">
+              {loading ? "লগইন হচ্ছে..." : "লগইন"}
+            </Button>
+          </form>
+
+          <p className="mt-4 text-center text-sm text-text-muted">
+            অ্যাকাউন্ট নেই?{" "}
+            <Link href="/signup" className="font-medium text-primary hover:underline">
+              সাইনআপ করুন
+            </Link>
+          </p>
+        </Card>
       </div>
     </div>
   );

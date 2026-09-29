@@ -1,69 +1,59 @@
 "use client";
 
 import { useState } from "react";
+import { Clock } from "lucide-react";
+import { Card, Select, Button, useToast } from "@/components/ui";
 import { updateQuietHours } from "./actions";
 
 export default function QuietHoursForm({ startHour, endHour }: { startHour: number; endHour: number }) {
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
-    setError(null);
-    setSaved(false);
     const result = await updateQuietHours(formData);
     setLoading(false);
 
     if (result.error) {
-      setError(result.error);
+      showToast("error", result.error);
       return;
     }
-    setSaved(true);
+    showToast("success", "সেভ হয়েছে");
   }
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   return (
-    <div className="auth-card" style={{ margin: 0 }}>
-      <h1>পাঠানোর সময়সীমা</h1>
-      <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
-        এই সময়ের মধ্যে কোনো ক্যাম্পেইন মেসেজ পাঠানো হবে না (Asia/Dhaka সময় অনুযায়ী)।
-      </p>
-      {error && <div className="error">{error}</div>}
-      {saved && <p style={{ color: "#166534", fontSize: 13 }}>সেভ হয়েছে</p>}
+    <Card className="max-w-md">
+      <div className="mb-1 flex items-center gap-2">
+        <Clock className="h-4 w-4 text-text-muted" />
+        <p className="text-sm font-semibold text-text">পাঠানোর সময়সীমা</p>
+      </div>
+      <p className="mb-4 text-xs text-text-muted">এই সময়ের মধ্যে কোনো ক্যাম্পেইন মেসেজ পাঠানো হবে না (Asia/Dhaka সময় অনুযায়ী)।</p>
 
-      <form action={handleSubmit}>
-        <label htmlFor="quietStart">বন্ধ শুরু হবে</label>
-        <select id="quietStart" name="quietStart" defaultValue={startHour} style={selectStyle}>
-          {hours.map((h) => (
-            <option key={h} value={h}>
-              {h}:00
-            </option>
-          ))}
-        </select>
+      <form action={handleSubmit} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Select name="quietStart" label="বন্ধ শুরু হবে" defaultValue={startHour}>
+            {hours.map((h) => (
+              <option key={h} value={h}>
+                {h}:00
+              </option>
+            ))}
+          </Select>
 
-        <label htmlFor="quietEnd">আবার শুরু হবে</label>
-        <select id="quietEnd" name="quietEnd" defaultValue={endHour} style={selectStyle}>
-          {hours.map((h) => (
-            <option key={h} value={h}>
-              {h}:00
-            </option>
-          ))}
-        </select>
+          <Select name="quietEnd" label="আবার শুরু হবে" defaultValue={endHour}>
+            {hours.map((h) => (
+              <option key={h} value={h}>
+                {h}:00
+              </option>
+            ))}
+          </Select>
+        </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "সেভ হচ্ছে..." : "সেভ করুন"}
-        </button>
+        <Button type="submit" loading={loading} className="self-start">
+          সেভ করুন
+        </Button>
       </form>
-    </div>
+    </Card>
   );
 }
-
-const selectStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 10,
-  borderRadius: 8,
-  border: "1px solid #ddd",
-  marginBottom: 16,
-};

@@ -33,7 +33,7 @@ export default function ConversationList({ conversations, unreadIds }: { convers
 
   return (
     <Card className="flex h-full flex-col overflow-hidden p-0">
-      <div className="flex shrink-0 gap-1 border-b border-border p-2">
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border p-2">
         <FilterTab label="সব" active={filter === "all"} onClick={() => setFilter("all")} />
         <FilterTab label={`উত্তর বাকি (${unreadCount})`} active={filter === "unread"} onClick={() => setFilter("unread")} />
         <FilterTab label={`এজেন্ট (${needsHumanCount})`} active={filter === "needs_human"} onClick={() => setFilter("needs_human")} />
@@ -84,7 +84,7 @@ function FilterTab({ label, active, onClick }: { label: string; active: boolean;
   return (
     <button
       onClick={onClick}
-      className={`flex-1 truncate rounded-lg px-1.5 py-1.5 text-center text-xs font-medium whitespace-nowrap transition-colors ${
+      className={`shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-medium whitespace-nowrap transition-colors ${
         active ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
       }`}
     >

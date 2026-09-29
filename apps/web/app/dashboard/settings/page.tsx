@@ -15,9 +15,12 @@ export default async function SettingsPage() {
     | undefined;
 
   return (
-    <QuietHoursForm
-      startHour={workspace?.quiet_hours_start_hour ?? 22}
-      endHour={workspace?.quiet_hours_end_hour ?? 9}
-    />
+    <div className="flex flex-col gap-4">
+      <h1 className="text-lg font-semibold text-text">সেটিংস</h1>
+      <QuietHoursForm
+        startHour={workspace?.quiet_hours_start_hour ?? 22}
+        endHour={workspace?.quiet_hours_end_hour ?? 9}
+      />
+    </div>
   );
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle2, XCircle, ShieldCheck } from "lucide-react";
+import { Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Button, EmptyState } from "@/components/ui";
 import { approvePayment, rejectPayment } from "./actions";
 import { formatDhakaDateTime } from "@/lib/format-date";
 
@@ -24,64 +26,75 @@ export default function PendingPaymentsList({ payments: initial }: { payments: P
   const [payments, setPayments] = useState(initial);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  async function handleApprove(id: string) {
-    setBusyId(id);
-    const result = await approvePayment(id);
+  async function handleApprove(p: Payment) {
+    if (!confirm(`"${singleName(p.workspaces)}" এর ৳${p.amount_bdt} পেমেন্ট অনুমোদন করবেন? প্ল্যান সাথে সাথে চালু হয়ে যাবে।`)) return;
+    setBusyId(p.id);
+    const result = await approvePayment(p.id);
     setBusyId(null);
     if (result.error) {
       alert(result.error);
       return;
     }
-    setPayments((p) => p.filter((x) => x.id !== id));
+    setPayments((prev) => prev.filter((x) => x.id !== p.id));
   }
 
-  async function handleReject(id: string) {
-    const reason = prompt("বাতিলের কারণ (ঐচ্ছিক):") ?? "";
-    setBusyId(id);
-    const result = await rejectPayment(id, reason);
+  async function handleReject(p: Payment) {
+    const reason = prompt("বাতিলের কারণ (ঐচ্ছিক):");
+    if (reason === null) return; // ইউজার prompt বাতিল করেছে
+    setBusyId(p.id);
+    const result = await rejectPayment(p.id, reason);
     setBusyId(null);
     if (result.error) {
       alert(result.error);
       return;
     }
-    setPayments((p) => p.filter((x) => x.id !== id));
+    setPayments((prev) => prev.filter((x) => x.id !== p.id));
   }
 
   return (
-    <div>
-      <h1>পেন্ডিং পেমেন্ট ({payments.length})</h1>
+    <div className="flex flex-col gap-4">
+      <h1 className="text-lg font-semibold text-text">পেন্ডিং পেমেন্ট ({payments.length})</h1>
 
-      {payments.length === 0 && <p>কোনো পেন্ডিং পেমেন্ট নেই।</p>}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {payments.map((p) => (
-          <div key={p.id} style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <strong>{singleName(p.workspaces)}</strong>
-              <span style={{ fontSize: 12, color: "#666" }}>{formatDhakaDateTime(p.created_at)}</span>
-            </div>
-            <div style={{ fontSize: 13, color: "#333" }}>
-              প্ল্যান: {singleName(p.plans)} · ৳{p.amount_bdt} · {p.provider}
-              <br />
-              পাঠানো নাম্বার: {p.sender_phone}
-              <br />
-              Transaction ID: <strong>{p.transaction_id}</strong>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button disabled={busyId === p.id} onClick={() => handleApprove(p.id)}>
-                Approve
-              </button>
-              <button
-                disabled={busyId === p.id}
-                onClick={() => handleReject(p.id)}
-                style={{ background: "white", color: "#dc2626", border: "1px solid #dc2626" }}
-              >
-                Reject
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      {payments.length === 0 ? (
+        <EmptyState icon={<ShieldCheck className="h-10 w-10" />} title="কোনো পেন্ডিং পেমেন্ট নেই" description="নতুন পেমেন্ট জমা পড়লে এখানে দেখা যাবে।" />
+      ) : (
+        <Table>
+          <TableHead>
+            <TableRow className="hover:bg-transparent">
+              <TableHeaderCell>ইউজার</TableHeaderCell>
+              <TableHeaderCell>প্ল্যান</TableHeaderCell>
+              <TableHeaderCell>পরিমাণ</TableHeaderCell>
+              <TableHeaderCell>Transaction ID</TableHeaderCell>
+              <TableHeaderCell>তারিখ</TableHeaderCell>
+              <TableHeaderCell>অ্যাকশন</TableHeaderCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {payments.map((p) => (
+              <TableRow key={p.id}>
+                <TableCell className="font-medium text-text">{singleName(p.workspaces)}</TableCell>
+                <TableCell>{singleName(p.plans)}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  ৳{p.amount_bdt} <span className="text-text-muted capitalize">({p.provider})</span>
+                  <div className="text-xs text-text-muted">পাঠানো নাম্বার: {p.sender_phone}</div>
+                </TableCell>
+                <TableCell className="text-text-muted">{p.transaction_id}</TableCell>
+                <TableCell className="whitespace-nowrap text-text-muted">{formatDhakaDateTime(p.created_at)}</TableCell>
+                <TableCell>
+                  <div className="flex gap-1.5">
+                    <Button disabled={busyId === p.id} onClick={() => handleApprove(p)}>
+                      <CheckCircle2 className="h-3.5 w-3.5" /> অনুমোদন
+                    </Button>
+                    <Button variant="danger" disabled={busyId === p.id} onClick={() => handleReject(p)}>
+                      <XCircle className="h-3.5 w-3.5" /> বাতিল
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }

@@ -171,9 +171,12 @@ function NumberCard({
           </Button>
         )}
         {(number.status === "offline" || number.status === "banned") && (
-          <Button variant="danger" className="flex-1" onClick={onDelete}>
-            <Trash2 className="h-4 w-4" /> মুছে ফেলুন
-          </Button>
+          <button
+            onClick={onDelete}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-danger-light px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-red-100"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> মুছে ফেলুন
+          </button>
         )}
       </div>
     </Card>
