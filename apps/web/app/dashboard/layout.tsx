@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "../(auth)/actions";
-import NotificationBanner from "./NotificationBanner";
+import DashboardShell from "./DashboardShell";
 
 export default async function DashboardLayout({
   children,
@@ -35,27 +35,20 @@ export default async function DashboardLayout({
     .order("created_at", { ascending: false })
     .limit(5);
 
+  // sidebar এ "অ্যাডমিন" গ্রুপ দেখানো উচিত কিনা জানতে — dashboard/page.tsx এ আগে থেকেই এই
+  // একই RPC কল আছে, এখানে নতুন করে যোগ করা হলো যাতে Sidebar এও দেখানো যায়
+  const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
+
+  const workspaceName = (membership.workspaces as unknown as { name: string })?.name ?? "";
+
   return (
-    <div>
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "12px 24px",
-          background: "white",
-          borderBottom: "1px solid #eee",
-        }}
-      >
-        <strong>{(membership.workspaces as unknown as { name: string })?.name}</strong>
-        <form action={logout}>
-          <button type="submit" style={{ background: "none", border: "none", cursor: "pointer", color: "#666" }}>
-            লগআউট
-          </button>
-        </form>
-      </header>
-      <NotificationBanner notifications={notifications ?? []} />
-      <main style={{ padding: 24 }}>{children}</main>
-    </div>
+    <DashboardShell
+      workspaceName={workspaceName}
+      isSuperAdmin={Boolean(isSuperAdmin)}
+      notifications={notifications ?? []}
+      logoutAction={logout}
+    >
+      {children}
+    </DashboardShell>
   );
 }

@@ -1,18 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  /* Primary — WhatsApp সবুজ ঘরানার */
+  --color-primary: #16a34a;
+  --color-primary-hover: #15803d;
+  --color-primary-light: #dcfce7;
+
+  /* Background / Card */
+  --color-app-bg: #f8fafc;
+  --color-card: #ffffff;
+  --color-border: #e5e7eb;
+
+  /* টেক্সট */
+  --color-text: #111827;
+  --color-text-muted: #6b7280;
+
+  /* Status রঙ */
+  --color-success: #16a34a;
+  --color-success-light: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-light: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-light: #fee2e2;
+  --color-info: #2563eb;
+  --color-info-light: #dbeafe;
+
+  /* ফন্ট — root layout এ next/font দিয়ে এই ভ্যারিয়েবলগুলো সেট হয় */
+  --font-sans: var(--font-inter), var(--font-noto-bengali), sans-serif;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
-  background: #f7f7f8;
-  color: #1a1a1a;
+  font-family: var(--font-sans);
+  background: var(--color-app-bg);
+  color: var(--color-text);
 }
 
-input, button {
+input,
+button,
+select,
+textarea {
   font: inherit;
 }
 
+/* auth পেজ (login/signup) এখনো এই ক্লাস ব্যবহার করে — নতুন UI কম্পোনেন্ট না আসা পর্যন্ত রাখা হলো */
 .auth-card {
   max-width: 360px;
   margin: 80px auto;
@@ -45,7 +80,7 @@ input, button {
 .auth-card button {
   width: 100%;
   padding: 10px 12px;
-  background: #16a34a;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 8px;
@@ -54,7 +89,7 @@ input, button {
 }
 
 .auth-card .error {
-  color: #dc2626;
+  color: var(--color-danger);
   font-size: 13px;
   margin-bottom: 12px;
 }
