@@ -42,11 +42,12 @@ const statusLabel: Record<string, string> = {
   cancelled: "বাতিল",
 };
 
-const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
-  pending: "warning",
-  confirmed: "info",
-  shipped: "success",
-  cancelled: "danger",
+// ব্যাজ সরিয়ে এখন শুধু ড্রপডাউন — রং দিয়েই স্ট্যাটাস বোঝা যাবে (Badge এর variant ক্লাসের সাথে মিলিয়ে)
+const statusSelectClass: Record<string, string> = {
+  pending: "bg-warning-light text-warning",
+  confirmed: "bg-info-light text-info",
+  shipped: "bg-success-light text-success",
+  cancelled: "bg-danger-light text-danger",
 };
 
 export default function OrdersList({ orders }: { orders: Order[] }) {
@@ -174,12 +175,11 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Badge variant={statusVariant[o.status] ?? "neutral"}>{statusLabel[o.status] ?? o.status}</Badge>
                       <select
                         value={o.status}
                         disabled={busyId === o.id}
                         onChange={(e) => handleStatusChange(o, e.target.value)}
-                        className="rounded-lg border border-border bg-white px-1.5 py-1 text-xs text-text outline-none focus:border-primary"
+                        className={`rounded-lg border-0 px-2 py-1 text-xs font-medium outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 ${statusSelectClass[o.status] ?? "bg-gray-100 text-text-muted"}`}
                         aria-label="স্ট্যাটাস বদলান"
                       >
                         {Object.entries(statusLabel).map(([value, label]) => (

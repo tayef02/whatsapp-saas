@@ -47,6 +47,28 @@ textarea {
   font: inherit;
 }
 
+/* মাউস ক্লিকে ব্রাউজারের ডিফল্ট (কালো) ফোকাস আউটলাইন দেখানো হবে না — শুধু কিবোর্ড দিয়ে
+   Tab করলে (focus-visible) সবুজ আউটলাইন দেখাবে। প্রতিটা কম্পোনেন্টে আলাদা করে লেখার বদলে
+   এখানে একবারে পুরো অ্যাপে প্রযোজ্য। */
+a,
+button,
+input,
+select,
+textarea,
+[tabindex] {
+  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 /* auth পেজ (login/signup) এখনো এই ক্লাস ব্যবহার করে — নতুন UI কম্পোনেন্ট না আসা পর্যন্ত রাখা হলো */
 .auth-card {
   max-width: 360px;

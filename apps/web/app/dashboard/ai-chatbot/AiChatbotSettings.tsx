@@ -111,14 +111,16 @@ export default function AiChatbotSettings({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex max-w-[850px] flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold text-text">এআই চ্যাটবট</h1>
-        <p className="mt-1 text-xs text-text-muted">
-          এই সেটিংস প্রতিটা কানেক্টেড নাম্বারে সবসময় চালু থাকে (আলাদা করে নাম্বার-ভিত্তিক অন/অফ নেই)। কোনো hardcoded
-          rule নেই — System Prompt-ই একমাত্র নিয়ন্ত্রক: বট কীভাবে কথা বলবে, কী জানলে কী উত্তর দেবে, না জানলে কীভাবে
-          ভদ্রভাবে বলবে, কীভাবে অর্ডার নেবে — সবকিছু এখানেই লিখে দিন, যেমন একজন এজেন্টকে ব্রিফ করছেন। API key খরচ
-          আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
+        <p className="mt-1 text-[13px] text-text-muted">
+          কোনো hardcoded rule নেই — System Prompt-ই একমাত্র নিয়ন্ত্রক: বট কী জানলে কী উত্তর দেবে, না জানলে কীভাবে
+          ভদ্রভাবে বলবে, কীভাবে অর্ডার নেবে, সবকিছু এখানেই লিখে দিন। নাম্বার পেজ থেকে প্রতিটা নাম্বারে আলাদাভাবে বট
+          অন/অফ করা যায়।
+        </p>
+        <p className="mt-1 text-[13px] text-text-muted">
+          API key খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
         </p>
         <p className={`mt-2 text-xs ${totalReadyWords > fullTextModeMaxWords ? "text-warning" : "text-success"}`}>
           মোট {totalReadyWords.toLocaleString("bn-BD")} শব্দ (রেডি ডকুমেন্ট মিলিয়ে) —{" "}
@@ -164,7 +166,8 @@ export default function AiChatbotSettings({
             name="systemPrompt"
             label="System Prompt (বট কীভাবে কথা বলবে, কী টোনে, কী সীমার মধ্যে থেকে উত্তর দেবে)"
             defaultValue={settings?.system_prompt ?? ""}
-            rows={6}
+            rows={8}
+            className="min-h-[200px]"
             placeholder="যেমন: তুমি একটা কাপড়ের দোকানের সহকারী। বাংলায় ভদ্রভাবে সংক্ষিপ্ত উত্তর দাও। দাম নিয়ে অনিশ্চিত হলে সরাসরি বলে দাও যে নিশ্চিত না।"
           />
 
@@ -180,7 +183,7 @@ export default function AiChatbotSettings({
               name="typicalDeliveryTime"
               label="সাধারণ ডেলিভারি সময় (ঐচ্ছিক)"
               defaultValue={settings?.typical_delivery_time ?? ""}
-              placeholder="যেমন: ৩-৫ কার্যদিবস"
+              placeholder="যেমন: ৩-৫ কর্মদিবস"
               helperText='কাস্টমার "কবে পাবো?" জিজ্ঞেস করলে এই তথ্য দিয়ে উত্তর দেবে'
             />
           </div>
@@ -216,9 +219,10 @@ export default function AiChatbotSettings({
                       <button
                         disabled={busy}
                         onClick={() => toggleChunks(d.id)}
+                        title="AI যেভাবে ডকুমেন্টটা ছোট ছোট অংশে ভেঙে পড়ে সেটা দেখুন"
                         className="flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-gray-50"
                       >
-                        চাংক {expandedDocId === d.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        ডকুমেন্টের অংশ দেখুন {expandedDocId === d.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                       </button>
                     )}
                     {d.status === "failed" && (
@@ -248,7 +252,7 @@ export default function AiChatbotSettings({
                     {chunksByDoc[d.id]?.length === 0 && <p className="text-xs text-text-muted">কোনো chunk নেই।</p>}
                     {chunksByDoc[d.id]?.map((c, i) => (
                       <div key={c.id} className="rounded-lg bg-app-bg p-2 text-xs">
-                        <p className="mb-1 text-text-muted">chunk {i + 1}</p>
+                        <p className="mb-1 text-text-muted">অংশ {i + 1}</p>
                         <p className="whitespace-pre-wrap text-text">{c.content}</p>
                       </div>
                     ))}
