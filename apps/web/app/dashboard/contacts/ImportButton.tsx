@@ -3,19 +3,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, CheckCircle2, SkipForward, AlertTriangle } from "lucide-react";
-import { Card, Input, Button } from "@/components/ui";
-import { startImport } from "./actions";
+import { Modal, Button, Input } from "@/components/ui";
+import { startImport } from "./import/actions";
 
-export default function ImportContactsPage() {
+export default function ImportButton() {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ added: number; duplicate: number; invalid: number } | null>(null);
 
+  function handleClose() {
+    setOpen(false);
+    setError(null);
+    setResult(null);
+  }
+
   async function handleSubmit(formData: FormData) {
     setLoading(true);
     setError(null);
-    setResult(null);
 
     const res = await startImport(formData);
     setLoading(false);
@@ -26,20 +32,20 @@ export default function ImportContactsPage() {
     }
     if (res.done) {
       setResult({ added: res.added, duplicate: res.duplicate, invalid: res.invalid });
+      router.refresh();
       return;
     }
+    setOpen(false);
     router.push(`/dashboard/contacts/import/${res.importJobId}`);
   }
 
   return (
-    <div className="mx-auto max-w-md">
-      <Card>
-        <div className="mb-4 flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-light text-primary">
-            <Upload className="h-5 w-5" />
-          </div>
-          <h1 className="text-base font-semibold text-text">কন্টাক্ট ইমপোর্ট করুন</h1>
-        </div>
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        <Upload className="h-4 w-4" /> ইমপোর্ট
+      </Button>
+
+      <Modal open={open} onClose={handleClose} title="কন্টাক্ট ইমপোর্ট করুন">
         <p className="mb-4 text-xs text-text-muted">
           CSV বা Excel ফাইল দিন। প্রথম সারি হেডার (phone/mobile/নাম্বার, name/নাম) হতে হবে। নাম্বার যেকোনো ফরম্যাটে
           (01XXX, +8801XXX ইত্যাদি) দিলে চলবে।
@@ -60,8 +66,8 @@ export default function ImportContactsPage() {
                 <AlertTriangle className="h-4 w-4" /> {result.invalid} টা নাম্বার ইনভ্যালিড (বাদ গেছে)
               </span>
             </div>
-            <Button onClick={() => router.push("/dashboard/contacts")} className="w-full">
-              কন্টাক্ট লিস্টে যান
+            <Button onClick={handleClose} className="w-full">
+              ঠিক আছে
             </Button>
           </div>
         ) : (
@@ -84,7 +90,7 @@ export default function ImportContactsPage() {
             </Button>
           </form>
         )}
-      </Card>
-    </div>
+      </Modal>
+    </>
   );
 }

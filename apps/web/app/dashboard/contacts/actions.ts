@@ -98,3 +98,54 @@ export async function reactivateContact(id: string) {
   revalidatePath("/dashboard/contacts");
   return { error: null };
 }
+
+// টেবিলে একাধিক কন্টাক্ট সিলেক্ট করে বাল্ক ট্যাগ যোগ/মুছা — tags কলাম text[] বলে প্রতিটা রো এর
+// বর্তমান tags এনে JS তে merge/remove করে আলাদাভাবে আপডেট করা হচ্ছে (নতুন কোনো SQL ফাংশন লাগেনি)
+export async function bulkAddTag(contactIds: string[], tag: string) {
+  const cleanTag = tag.trim();
+  if (!cleanTag) return { error: "ট্যাগ লিখুন" };
+  if (contactIds.length === 0) return { error: "কোনো কন্টাক্ট বাছাই করা হয়নি" };
+
+  const supabase = await createClient();
+  const { data: rows, error: fetchError } = await supabase.from("contacts").select("id, tags").in("id", contactIds);
+  if (fetchError) return { error: fetchError.message };
+
+  const results = await Promise.all(
+    (rows ?? []).map((r) => {
+      if (r.tags.includes(cleanTag)) return Promise.resolve({ error: null });
+      return supabase
+        .from("contacts")
+        .update({ tags: [...r.tags, cleanTag] })
+        .eq("id", r.id);
+    })
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) return { error: (failed.error as { message: string }).message };
+
+  revalidatePath("/dashboard/contacts");
+  return { error: null };
+}
+
+export async function bulkRemoveTag(contactIds: string[], tag: string) {
+  const cleanTag = tag.trim();
+  if (!cleanTag) return { error: "ট্যাগ লিখুন" };
+  if (contactIds.length === 0) return { error: "কোনো কন্টাক্ট বাছাই করা হয়নি" };
+
+  const supabase = await createClient();
+  const { data: rows, error: fetchError } = await supabase.from("contacts").select("id, tags").in("id", contactIds);
+  if (fetchError) return { error: fetchError.message };
+
+  const results = await Promise.all(
+    (rows ?? []).map((r) =>
+      supabase
+        .from("contacts")
+        .update({ tags: r.tags.filter((t: string) => t !== cleanTag) })
+        .eq("id", r.id)
+    )
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) return { error: (failed.error as { message: string }).message };
+
+  revalidatePath("/dashboard/contacts");
+  return { error: null };
+}

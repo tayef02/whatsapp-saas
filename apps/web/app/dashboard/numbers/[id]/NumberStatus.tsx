@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
+import { Card, Badge } from "@/components/ui";
 
 type NumberData = {
   id: string;
@@ -16,6 +18,13 @@ const statusLabel: Record<string, string> = {
   online: "অনলাইন — কানেক্ট হয়ে গেছে",
   offline: "অফলাইন",
   banned: "এই নাম্বার ব্যান হয়েছে",
+};
+
+const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
+  connecting: "info",
+  online: "success",
+  offline: "neutral",
+  banned: "danger",
 };
 
 // প্রতি ৩ সেকেন্ডে স্ট্যাটাস চেক করে — QR কোড রিফ্রেশ হলে বা কানেক্ট হয়ে গেলে অটো আপডেট হবে
@@ -37,24 +46,38 @@ export default function NumberStatus({ initial }: { initial: NumberData }) {
   }, [data.status, data.id]);
 
   return (
-    <div className="auth-card" style={{ margin: "0 auto", textAlign: "center" }}>
-      <h1>{data.display_name}</h1>
-      <p>{statusLabel[data.status] ?? data.status}</p>
+    <div className="mx-auto max-w-md">
+      <Card className="flex flex-col items-center gap-3 text-center">
+        <p className="text-base font-semibold text-text">{data.display_name}</p>
+        <Badge variant={statusVariant[data.status] ?? "neutral"}>{statusLabel[data.status] ?? data.status}</Badge>
 
-      {data.status === "connecting" && data.qr_code && (
-        <img src={data.qr_code} alt="QR কোড" style={{ width: 260, height: 260, margin: "16px auto" }} />
-      )}
+        {data.status === "connecting" && data.qr_code && (
+          <img src={data.qr_code} alt="QR কোড" className="h-64 w-64 rounded-lg border border-border" />
+        )}
 
-      {data.status === "connecting" && !data.qr_code && <p style={{ color: "#666" }}>QR কোড তৈরি হচ্ছে...</p>}
+        {data.status === "connecting" && !data.qr_code && <p className="py-10 text-sm text-text-muted">QR কোড তৈরি হচ্ছে...</p>}
 
-      {data.status === "online" && <p style={{ color: "#166534" }}>{data.phone_number}</p>}
+        {data.status === "connecting" && data.qr_code && (
+          <p className="text-xs text-text-muted">WhatsApp থেকে "লিঙ্কড ডিভাইস" দিয়ে এই কোড স্ক্যান করুন</p>
+        )}
 
-      {data.status === "online" && (
-        <p style={{ marginTop: 16, fontSize: 13, color: "#666" }}>
-          AI Chatbot এই নাম্বারে সবসময় চালু আছে —{" "}
-          <Link href="/dashboard/ai-chatbot">সেটিংস (system prompt, knowledge base) এখানে</Link>
-        </p>
-      )}
+        {data.status === "online" && (
+          <>
+            <p className="flex items-center gap-1.5 text-sm font-medium text-success">
+              <CheckCircle2 className="h-4 w-4" /> {data.phone_number}
+            </p>
+            <p className="text-xs text-text-muted">
+              AI Chatbot এই নাম্বারে সবসময় চালু আছে —{" "}
+              <Link href="/dashboard/ai-chatbot" className="text-primary hover:underline">
+                সেটিংস (system prompt, knowledge base) এখানে
+              </Link>
+            </p>
+            <Link href="/dashboard/numbers" className="mt-2 text-sm font-medium text-primary hover:underline">
+              সব নাম্বার দেখুন →
+            </Link>
+          </>
+        )}
+      </Card>
     </div>
   );
 }

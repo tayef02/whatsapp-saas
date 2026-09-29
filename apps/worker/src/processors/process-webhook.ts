@@ -239,6 +239,19 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
     return; // STOP/START নিজেই একটা কমান্ড — auto-reply এর দরকার নেই
   }
 
+  // নাম্বার কার্ডে "বট অন/অফ" টগল — chatbot_configs.is_active। কোনো row না থাকলে
+  // (এখনো টগল করা হয়নি) ডিফল্ট চালু থাকে, কলামের নিজস্ব default true এর সাথে মিলিয়ে
+  const { data: chatbotConfig } = await supabase
+    .from("chatbot_configs")
+    .select("is_active")
+    .eq("whatsapp_number_id", number.id)
+    .maybeSingle();
+
+  if (chatbotConfig && !chatbotConfig.is_active) {
+    console.log(`[autoreply] bot is turned off for number=${number.id}, skipping`);
+    return;
+  }
+
   await handleAutoReply(supabase, number, phone, text, providerMessageId);
 }
 

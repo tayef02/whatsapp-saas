@@ -1,5 +1,9 @@
 import Link from "next/link";
+import { Plus, Search, Users, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { EmptyState } from "@/components/ui";
+import ContactsTable from "./ContactsTable";
+import ImportButton from "./ImportButton";
 
 const PAGE_SIZE = 50;
 
@@ -18,9 +22,7 @@ export default async function ContactsPage({
   const page = Math.max(1, Number(pageParam) || 1);
   const supabase = await createClient();
 
-  let query = supabase
-    .from("contacts")
-    .select("id, phone, name, tags, opted_out, created_at", { count: "exact" });
+  let query = supabase.from("contacts").select("id, phone, name, tags, opted_out, created_at", { count: "exact" });
 
   if (q) {
     const safe = sanitizeSearch(q);
@@ -35,76 +37,87 @@ export default async function ContactsPage({
     .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const hasFilters = Boolean(q || tag);
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h1>কন্টাক্ট ({count ?? 0})</h1>
-        <div style={{ display: "flex", gap: 8 }}>
-          <a href="/api/contacts/export" style={linkButtonStyle}>
-            CSV এক্সপোর্ট
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold text-text">কন্টাক্ট ({count ?? 0})</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/api/contacts/export"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-text hover:bg-gray-50"
+          >
+            <Download className="h-4 w-4" /> CSV এক্সপোর্ট
           </a>
-          <Link href="/dashboard/contacts/import" style={linkButtonStyle}>
-            ইম্পোর্ট
-          </Link>
-          <Link href="/dashboard/contacts/new" style={{ ...linkButtonStyle, background: "#16a34a", color: "white" }}>
-            + যোগ করুন
+          <ImportButton />
+          <Link
+            href="/dashboard/contacts/new"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+          >
+            <Plus className="h-4 w-4" /> নতুন কন্টাক্ট
           </Link>
         </div>
       </div>
 
-      <form style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <input name="q" defaultValue={q ?? ""} placeholder="নাম বা নাম্বার দিয়ে খুঁজুন" style={inputStyle} />
-        <input name="tag" defaultValue={tag ?? ""} placeholder="ট্যাগ দিয়ে ফিল্টার" style={inputStyle} />
-        <button type="submit" style={linkButtonStyle}>
+      <form className="flex flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-text-muted" />
+          <input
+            name="q"
+            defaultValue={q ?? ""}
+            placeholder="নাম বা নাম্বার দিয়ে খুঁজুন"
+            className="w-full rounded-lg border border-border py-2 pr-3 pl-9 text-sm text-text outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <input
+          name="tag"
+          defaultValue={tag ?? ""}
+          placeholder="ট্যাগ দিয়ে ফিল্টার"
+          className="w-40 rounded-lg border border-border px-3 py-2 text-sm text-text outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
+        />
+        <button
+          type="submit"
+          className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-text hover:bg-gray-50"
+        >
           খুঁজুন
         </button>
       </form>
 
-      {(!contacts || contacts.length === 0) && <p>কোনো কন্টাক্ট পাওয়া যায়নি।</p>}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {contacts?.map((c) => (
-          <Link
-            key={c.id}
-            href={`/dashboard/contacts/${c.id}`}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: 14,
-              background: "white",
-              borderRadius: 8,
-              border: "1px solid #eee",
-              textDecoration: "none",
-              color: "inherit",
-            }}
-          >
-            <div>
-              <strong>{c.name || "(নাম নেই)"}</strong>
-              <div style={{ fontSize: 13, color: "#666" }}>
-                {c.phone} {c.tags?.length > 0 && `· ${c.tags.join(", ")}`}
-              </div>
+      {(!contacts || contacts.length === 0) && !hasFilters && (
+        <EmptyState
+          icon={<Users className="h-10 w-10" />}
+          title="এখনো কোনো কন্টাক্ট নেই"
+          description="ম্যানুয়ালি একজন যোগ করুন অথবা CSV/Excel ফাইল থেকে ইমপোর্ট করুন।"
+          action={
+            <div className="flex justify-center gap-2">
+              <ImportButton />
+              <Link
+                href="/dashboard/contacts/new"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+              >
+                <Plus className="h-4 w-4" /> নতুন কন্টাক্ট
+              </Link>
             </div>
-            {c.opted_out && (
-              <span style={{ alignSelf: "center", fontSize: 12, color: "#dc2626" }}>opt-out</span>
-            )}
-          </Link>
-        ))}
-      </div>
+          }
+        />
+      )}
+
+      {(!contacts || contacts.length === 0) && hasFilters && (
+        <EmptyState icon={<Search className="h-10 w-10" />} title="কোনো কন্টাক্ট পাওয়া যায়নি" description="সার্চ/ফিল্টার বদলে আবার চেষ্টা করুন।" />
+      )}
+
+      {contacts && contacts.length > 0 && <ContactsTable contacts={contacts} />}
 
       {totalPages > 1 && (
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <div className="flex flex-wrap gap-1.5">
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
             <Link
               key={p}
               href={`/dashboard/contacts?page=${p}${q ? `&q=${q}` : ""}${tag ? `&tag=${tag}` : ""}`}
-              style={{
-                padding: "4px 10px",
-                borderRadius: 6,
-                background: p === page ? "#16a34a" : "#eee",
-                color: p === page ? "white" : "inherit",
-                textDecoration: "none",
-              }}
+              className={`rounded-lg px-3 py-1.5 text-sm ${
+                p === page ? "bg-primary text-white" : "bg-gray-100 text-text hover:bg-gray-200"
+              }`}
             >
               {p}
             </Link>
@@ -114,19 +127,3 @@ export default async function ContactsPage({
     </div>
   );
 }
-
-const linkButtonStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  borderRadius: 8,
-  background: "#eee",
-  textDecoration: "none",
-  color: "inherit",
-  border: "none",
-  cursor: "pointer",
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  borderRadius: 8,
-  border: "1px solid #ddd",
-};

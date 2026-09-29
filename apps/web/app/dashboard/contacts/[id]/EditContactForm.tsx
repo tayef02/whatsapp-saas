@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle } from "lucide-react";
+import { Card, Input, Button } from "@/components/ui";
 import { updateContact, deleteContact, reactivateContact } from "../actions";
 import CustomFieldsEditor from "../CustomFieldsEditor";
 
@@ -18,6 +20,7 @@ export default function EditContactForm({ contact }: { contact: Contact }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [optedOut, setOptedOut] = useState(contact.opted_out);
 
   async function handleSubmit(formData: FormData) {
@@ -35,6 +38,7 @@ export default function EditContactForm({ contact }: { contact: Contact }) {
 
   async function handleDelete() {
     if (!confirm("এই কন্টাক্ট ডিলিট করবেন?")) return;
+    setDeleting(true);
     await deleteContact(contact.id);
     router.push("/dashboard/contacts");
   }
@@ -47,37 +51,38 @@ export default function EditContactForm({ contact }: { contact: Contact }) {
   }
 
   return (
-    <div className="auth-card" style={{ margin: "0 auto" }}>
-      <h1>{contact.phone}</h1>
-      {optedOut && (
-        <div style={{ background: "#fee2e2", padding: 12, borderRadius: 8, marginBottom: 12 }}>
-          <p style={{ color: "#dc2626", fontSize: 13, marginBottom: 8 }}>
-            এই কন্টাক্ট opt-out করেছে, ক্যাম্পেইন মেসেজ যাবে না
-          </p>
-          <button type="button" onClick={handleReactivate} disabled={loading} style={{ fontSize: 13 }}>
-            আবার চালু করুন
-          </button>
-        </div>
-      )}
-      {error && <div className="error">{error}</div>}
+    <div className="mx-auto max-w-md">
+      <Card>
+        <h1 className="mb-4 text-base font-semibold text-text">{contact.phone}</h1>
 
-      <form action={handleSubmit}>
-        <label htmlFor="name">নাম</label>
-        <input id="name" name="name" type="text" defaultValue={contact.name ?? ""} />
+        {optedOut && (
+          <div className="mb-4 flex flex-col gap-2 rounded-lg bg-danger-light p-3">
+            <p className="flex items-center gap-1.5 text-sm text-danger">
+              <AlertTriangle className="h-4 w-4" /> এই কন্টাক্ট opt-out করেছে, ক্যাম্পেইন মেসেজ যাবে না
+            </p>
+            <Button variant="secondary" onClick={handleReactivate} disabled={loading} className="self-start">
+              আবার চালু করুন
+            </Button>
+          </div>
+        )}
 
-        <label htmlFor="tags">ট্যাগ (কমা দিয়ে আলাদা করুন)</label>
-        <input id="tags" name="tags" type="text" defaultValue={contact.tags.join(", ")} />
+        {error && <p className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
 
-        <CustomFieldsEditor initial={contact.custom_fields ?? {}} />
+        <form action={handleSubmit} className="flex flex-col gap-4">
+          <Input id="name" name="name" type="text" label="নাম" defaultValue={contact.name ?? ""} />
+          <Input id="tags" name="tags" type="text" label="ট্যাগ (কমা দিয়ে আলাদা করুন)" defaultValue={contact.tags.join(", ")} />
 
-        <button type="submit" disabled={loading}>
-          {loading ? "সেভ হচ্ছে..." : "সেভ করুন"}
-        </button>
-      </form>
+          <CustomFieldsEditor initial={contact.custom_fields ?? {}} />
 
-      <button onClick={handleDelete} style={{ marginTop: 16, background: "white", color: "#dc2626", border: "1px solid #dc2626" }}>
-        ডিলিট করুন
-      </button>
+          <Button type="submit" loading={loading} className="w-full">
+            {loading ? "সেভ হচ্ছে..." : "সেভ করুন"}
+          </Button>
+        </form>
+
+        <Button variant="danger" onClick={handleDelete} loading={deleting} className="mt-3 w-full">
+          ডিলিট করুন
+        </Button>
+      </Card>
     </div>
   );
 }

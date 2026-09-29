@@ -44,6 +44,22 @@ export async function createNumber(formData: FormData) {
     }
   }
 
+  // dedup-check: creation এর সময় আসল ফোন নাম্বার এখনো জানা যায় না (QR স্ক্যান করার পরই Evolution
+  // থেকে আসে), তাই ফোন নাম্বার দিয়ে ডুপ্লিকেট চেক সম্ভব না। এর বদলে একই নামে ইতিমধ্যে
+  // কানেক্টেড/কানেক্ট-হচ্ছে এমন নাম্বার আছে কিনা দেখা হচ্ছে — বারবার ক্লিকে একই নামে একাধিক
+  // "connecting" সারি তৈরি হওয়া (ডুপ্লিকেট রো সমস্যার মূল কারণ) এটা ঠেকায়
+  const { data: existingNumber } = await supabase
+    .from("whatsapp_numbers")
+    .select("id")
+    .eq("workspace_id", membership.workspace_id)
+    .in("status", ["connecting", "online"])
+    .ilike("display_name", displayName)
+    .maybeSingle();
+
+  if (existingNumber) {
+    return { error: `"${displayName}" নামে একটা নাম্বার আগে থেকেই আছে বা কানেক্ট হচ্ছে — সেটাই ব্যবহার করুন, অথবা নতুন নাম্বারের জন্য অন্য নাম দিন` };
+  }
+
   const admin = createAdminClient();
 
   // pick_least_loaded_server() একটা single row (SETOF না) রিটার্ন করে,
@@ -94,4 +110,124 @@ export async function createNumber(formData: FormData) {
   }
 
   return { error: null, id: number.id as string };
+}
+
+// "ডিসকানেক্ট" বাটন — Evolution এ logout কল করে, তারপর স্ট্যাটাস offline করে দেয়
+// (connection.update webhook একটু পরে একই আপডেট আবার পাঠাবে, সমস্যা নেই — idempotent)
+export async function disconnectNumber(numberId: string) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "লগইন করা নেই" };
+  }
+
+  const { data: number } = await supabase
+    .from("whatsapp_numbers")
+    .select("id, instance_name, evolution_server_id")
+    .eq("id", numberId)
+    .maybeSingle();
+
+  if (!number) {
+    return { error: "নাম্বার পাওয়া যায়নি" };
+  }
+
+  const admin = createAdminClient();
+  const { data: server } = await admin
+    .from("evolution_servers")
+    .select("api_url, api_key")
+    .eq("id", number.evolution_server_id)
+    .maybeSingle();
+
+  if (!server) {
+    return { error: "সার্ভার তথ্য পাওয়া যায়নি" };
+  }
+
+  const provider = new EvolutionProvider({ apiUrl: server.api_url, apiKey: server.api_key });
+
+  try {
+    await provider.disconnect(number.instance_name);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "ডিসকানেক্ট করা যায়নি" };
+  }
+
+  await admin.from("whatsapp_numbers").update({ status: "offline" }).eq("id", numberId);
+
+  return { error: null };
+}
+
+// অফলাইন/ব্যান হওয়া নাম্বার মুছে ফেলা — কানেক্টেড (online) নাম্বার ভুলে মুছে যাওয়া ঠেকাতে
+// সার্ভার-সাইডেও গার্ড আছে (UI বাটন এমনিতেই শুধু অফলাইন কার্ডে দেখাবে)
+export async function deleteNumber(numberId: string) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "লগইন করা নেই" };
+  }
+
+  const { data: number } = await supabase
+    .from("whatsapp_numbers")
+    .select("id, status")
+    .eq("id", numberId)
+    .maybeSingle();
+
+  if (!number) {
+    return { error: "নাম্বার পাওয়া যায়নি" };
+  }
+  if (number.status === "online") {
+    return { error: "কানেক্টেড নাম্বার মুছে ফেলা যাবে না — আগে ডিসকানেক্ট করুন" };
+  }
+
+  const { error } = await supabase.from("whatsapp_numbers").delete().eq("id", numberId);
+
+  if (error) {
+    if (error.code === "23503") {
+      return { error: "এই নাম্বারে ক্যাম্পেইন হিস্ট্রি আছে বলে মুছা যাচ্ছে না" };
+    }
+    return { error: error.message };
+  }
+
+  return { error: null };
+}
+
+// নাম্বার কার্ডে "বট অন/অফ" টগল — chatbot_configs.is_active আপডেট করে (row না থাকলে বানায়)।
+// worker এর handleIncomingMessage এখন এই ফ্ল্যাগ চেক করে (process-webhook.ts) auto-reply
+// পাঠানোর আগে।
+export async function toggleBot(numberId: string, isActive: boolean) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "লগইন করা নেই" };
+  }
+
+  const { data: number } = await supabase
+    .from("whatsapp_numbers")
+    .select("id, workspace_id")
+    .eq("id", numberId)
+    .maybeSingle();
+
+  if (!number) {
+    return { error: "নাম্বার পাওয়া যায়নি" };
+  }
+
+  const { error } = await supabase
+    .from("chatbot_configs")
+    .upsert(
+      { whatsapp_number_id: numberId, workspace_id: number.workspace_id, is_active: isActive },
+      { onConflict: "whatsapp_number_id" }
+    );
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null };
 }
