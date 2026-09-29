@@ -125,7 +125,12 @@ export default async function DashboardHome() {
   const dailyLimit = workspace?.daily_message_limit ?? 0;
   const monthlyLimit = workspace?.plans?.monthly_message_limit ?? 0;
   const usedThisCycle = workspace?.messages_used_this_cycle ?? 0;
-  const monthlyUsagePct = monthlyLimit > 0 ? Math.min(100, Math.round((usedThisCycle / monthlyLimit) * 100)) : 0;
+  // rawPct রাউন্ড করার আগেই রাখা হচ্ছে — নাহলে 46/30000 এর মতো ছোট ব্যবহার Math.round এ 0% দেখাত,
+  // যেটা "কিছুই ব্যবহার হয়নি" মনে হতে পারত
+  const rawUsagePct = monthlyLimit > 0 ? (usedThisCycle / monthlyLimit) * 100 : 0;
+  const monthlyUsagePct = Math.min(100, Math.round(rawUsagePct));
+  const usagePctLabel = usedThisCycle > 0 && rawUsagePct < 1 ? "<১%" : `${monthlyUsagePct}%`;
+  const usageBarWidthPct = usedThisCycle > 0 ? Math.max(rawUsagePct, 1) : 0;
 
   const hasNoNumbers = (totalNumbersCount ?? 0) === 0;
 
@@ -176,8 +181,9 @@ export default async function DashboardHome() {
           <WeeklyMessageChart data={chartData} />
         </Card>
 
-        {/* প্ল্যান ব্যবহার */}
-        <Card>
+        {/* প্ল্যান ব্যবহার — self-start যাতে পাশের (লম্বা) চার্ট কার্ডের উচ্চতায় স্ট্রেচ না হয়ে
+            নিজের কন্টেন্ট অনুযায়ী উচ্চতা নেয় */}
+        <Card className="self-start">
           <p className="mb-3 text-sm font-semibold text-text">প্ল্যান ব্যবহার</p>
           {workspace?.plans ? (
             <>
@@ -190,10 +196,10 @@ export default async function DashboardHome() {
               <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
                 <div
                   className={`h-full rounded-full ${monthlyUsagePct >= 90 ? "bg-danger" : monthlyUsagePct >= 70 ? "bg-warning" : "bg-primary"}`}
-                  style={{ width: `${monthlyUsagePct}%` }}
+                  style={{ width: `${usageBarWidthPct}%` }}
                 />
               </div>
-              <p className="mt-2 text-xs text-text-muted">{monthlyUsagePct}% ব্যবহার হয়েছে এই সাইকেলে</p>
+              <p className="mt-2 text-xs text-text-muted">{usagePctLabel} ব্যবহার হয়েছে এই সাইকেলে</p>
               <Link href="/dashboard/billing" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
                 প্ল্যান দেখুন <ArrowRight className="h-3 w-3" />
               </Link>
@@ -220,13 +226,13 @@ export default async function DashboardHome() {
         <div className="flex flex-col divide-y divide-border">
           {lastCampaign && (
             <Link href={`/dashboard/campaigns/${lastCampaign.id}`} className="flex items-center justify-between gap-3 py-3 first:pt-0">
-              <div className="flex items-center gap-2.5 text-sm text-text">
+              <div className="flex min-w-0 items-center gap-2.5 text-sm text-text">
                 <Megaphone className="h-4 w-4 shrink-0 text-text-muted" />
-                <span>
+                <span className="truncate">
                   সর্বশেষ ক্যাম্পেইন: <strong className="font-medium">{lastCampaign.name}</strong>
                 </span>
               </div>
-              <Badge variant={campaignStatusVariant[lastCampaign.status] ?? "neutral"}>
+              <Badge variant={campaignStatusVariant[lastCampaign.status] ?? "neutral"} className="shrink-0">
                 {campaignStatusLabel[lastCampaign.status] ?? lastCampaign.status}
               </Badge>
             </Link>
@@ -236,29 +242,31 @@ export default async function DashboardHome() {
             const contact = Array.isArray(c.contacts) ? c.contacts[0] : c.contacts;
             return (
               <Link key={c.id} href={`/dashboard/inbox/${c.id}`} className="flex items-center justify-between gap-3 py-3 first:pt-0">
-                <div className="flex items-center gap-2.5 text-sm text-text">
+                <div className="flex min-w-0 items-center gap-2.5 text-sm text-text">
                   {c.status === "handed_off" ? (
                     <MessageCircleWarning className="h-4 w-4 shrink-0 text-danger" />
                   ) : (
                     <Users className="h-4 w-4 shrink-0 text-text-muted" />
                   )}
-                  <span>
+                  <span className="truncate">
                     {c.status === "handed_off" ? "এজেন্ট দরকার: " : "ইনবক্স: "}
                     <strong className="font-medium">{contact?.name || contact?.phone || "(অজানা)"}</strong>
                   </span>
                 </div>
-                <span className="text-xs text-text-muted">{formatDhakaDateTime(c.last_message_at)}</span>
+                <span className="shrink-0 text-xs whitespace-nowrap text-text-muted">{formatDhakaDateTime(c.last_message_at)}</span>
               </Link>
             );
           })}
 
           {(pendingOrderCount ?? 0) > 0 && (
             <Link href="/dashboard/orders" className="flex items-center justify-between gap-3 py-3 first:pt-0">
-              <div className="flex items-center gap-2.5 text-sm text-text">
+              <div className="flex min-w-0 items-center gap-2.5 text-sm text-text">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-text-muted" />
-                <span>নতুন অর্ডার অপেক্ষমান</span>
+                <span className="truncate">নতুন অর্ডার অপেক্ষমান</span>
               </div>
-              <Badge variant="warning">{pendingOrderCount}টা</Badge>
+              <Badge variant="warning" className="shrink-0">
+                {pendingOrderCount}টা
+              </Badge>
             </Link>
           )}
 
@@ -283,7 +291,7 @@ function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: s
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-light text-primary">{icon}</div>
       <div className="min-w-0">
         <p className="text-xs text-text-muted">{label}</p>
-        <p className="text-xl font-semibold text-text">{value}</p>
+        <p className="text-2xl font-semibold text-text">{value}</p>
         {sub && <p className="text-xs text-text-muted">{sub}</p>}
       </div>
     </Card>
@@ -310,11 +318,11 @@ function WeeklyMessageChart({ data }: { data: DayCount[] }) {
   }
 
   const max = Math.max(1, ...data.flatMap((d) => [d.sent, d.delivered, d.failed]));
-  const chartHeight = 120;
-  const barWidth = 10;
-  const barGap = 3;
+  const chartHeight = 200;
+  const barWidth = 6;
+  const barGap = 2;
   const groupWidth = CHART_SERIES.length * barWidth + (CHART_SERIES.length - 1) * barGap;
-  const groupGap = 22;
+  const groupGap = 16;
   const totalWidth = data.length * groupWidth + (data.length - 1) * groupGap;
 
   return (
@@ -327,7 +335,11 @@ function WeeklyMessageChart({ data }: { data: DayCount[] }) {
           </div>
         ))}
       </div>
-      <svg viewBox={`0 0 ${totalWidth} ${chartHeight + 22}`} className="h-auto w-full">
+
+      {/* দিনের নাম SVG এর ভেতরে না রেখে সাধারণ HTML টেক্সট হিসেবে নিচে বসানো হয়েছে — SVG এর
+          viewBox স্কেলিং এ ভেতরের <text> চওড়া কার্ডে অনেক বড় দেখাচ্ছিল (11-12px না, actual render
+          অনেক বেশি হয়ে যাচ্ছিল), HTML টেক্সট viewport যাই হোক ফন্ট সাইজ ঠিক রাখে */}
+      <svg viewBox={`0 0 ${totalWidth} ${chartHeight}`} preserveAspectRatio="none" className="h-[200px] w-full">
         {data.map((d, i) => {
           const groupX = i * (groupWidth + groupGap);
           return (
@@ -338,18 +350,22 @@ function WeeklyMessageChart({ data }: { data: DayCount[] }) {
                 const x = groupX + si * (barWidth + barGap);
                 const y = chartHeight - barHeight;
                 return (
-                  <rect key={s.key} x={x} y={y} width={barWidth} height={barHeight} rx={3} fill={s.color}>
+                  <rect key={s.key} x={x} y={y} width={barWidth} height={barHeight} rx={2} fill={s.color}>
                     <title>{`${d.label}: ${s.label} ${value}`}</title>
                   </rect>
                 );
               })}
-              <text x={groupX + groupWidth / 2} y={chartHeight + 16} textAnchor="middle" fontSize="9" fill="var(--color-text-muted)">
-                {d.label}
-              </text>
             </g>
           );
         })}
       </svg>
+      <div className="mt-1.5 flex">
+        {data.map((d, i) => (
+          <span key={i} className="flex-1 text-center text-[11px] text-text-muted">
+            {d.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

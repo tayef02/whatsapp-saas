@@ -56,7 +56,7 @@ export default function Sidebar({
                       key={item.href}
                       href={item.href}
                       onClick={onClose}
-                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 ${
                         active ? "bg-primary-light text-primary" : "text-text hover:bg-gray-100"
                       }`}
                     >
