@@ -10,3 +10,19 @@ export function formatDhakaDateTime(iso: string): string {
 export function formatDhakaDate(iso: string): string {
   return new Date(iso).toLocaleDateString("bn-BD", { timeZone: "Asia/Dhaka" });
 }
+
+const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
+
+// "আজ" বা "গত N দিন" এর সীমানা বের করতে — সার্ভার যে timezone এই চলুক (VPS সাধারণত UTC),
+// এই ফাংশন সবসময় Dhaka দিনের শুরু/শেষ ঠিকভাবে বের করে দেয়। daysAgo=0 মানে আজ, daysAgo=6 মানে ৭ দিন আগে।
+// worker এর SQL ফাংশনেও একই কনভেনশন ব্যবহার হয় (migration 0010: date_trunc('day', now() at time zone 'Asia/Dhaka'))
+export function getDhakaDayBoundariesUtc(daysAgo: number): { startIso: string; endIso: string } {
+  const now = new Date();
+  const dhakaNow = new Date(now.getTime() + DHAKA_OFFSET_MS);
+  const y = dhakaNow.getUTCFullYear();
+  const m = dhakaNow.getUTCMonth();
+  const d = dhakaNow.getUTCDate() - daysAgo;
+  const startIso = new Date(Date.UTC(y, m, d, 0, 0, 0) - DHAKA_OFFSET_MS).toISOString();
+  const endIso = new Date(Date.UTC(y, m, d + 1, 0, 0, 0) - DHAKA_OFFSET_MS).toISOString();
+  return { startIso, endIso };
+}

@@ -2,82 +2,25 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Smartphone,
-  Users,
-  FileText,
-  Megaphone,
-  Bot,
-  Inbox,
-  UsersRound,
-  CalendarClock,
-  ShoppingCart,
-  CreditCard,
-  Settings,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-
-type NavItem = { href: string; label: string; icon: React.ElementType };
-type NavGroup = { title: string; items: NavItem[] };
-
-const navGroups: NavGroup[] = [
-  { title: "ওভারভিউ", items: [{ href: "/dashboard", label: "ড্যাশবোর্ড", icon: LayoutDashboard }] },
-  {
-    title: "মেসেজিং",
-    items: [
-      { href: "/dashboard/numbers", label: "নাম্বার", icon: Smartphone },
-      { href: "/dashboard/contacts", label: "কন্টাক্ট", icon: Users },
-      { href: "/dashboard/templates", label: "টেমপ্লেট", icon: FileText },
-      { href: "/dashboard/campaigns", label: "ক্যাম্পেইন", icon: Megaphone },
-    ],
-  },
-  {
-    title: "চ্যাটবট",
-    items: [
-      { href: "/dashboard/ai-chatbot", label: "AI Chatbot", icon: Bot },
-      { href: "/dashboard/inbox", label: "Inbox", icon: Inbox },
-    ],
-  },
-  {
-    title: "গ্রুপ",
-    items: [
-      { href: "/dashboard/groups", label: "গ্রুপ", icon: UsersRound },
-      { href: "/dashboard/groups/announcements", label: "অ্যানাউন্সমেন্ট", icon: CalendarClock },
-    ],
-  },
-  { title: "বিক্রি", items: [{ href: "/dashboard/orders", label: "অর্ডার", icon: ShoppingCart }] },
-  {
-    title: "অ্যাকাউন্ট",
-    items: [
-      { href: "/dashboard/billing", label: "প্ল্যান ও বিলিং", icon: CreditCard },
-      { href: "/dashboard/settings", label: "সেটিংস", icon: Settings },
-    ],
-  },
-];
+import { X } from "lucide-react";
+import { navGroups, adminNavGroup, isNavItemActive, type NavGroup } from "./nav-config";
 
 // isSuperAdmin=true হলে শুধু তখনই "অ্যাডমিন" গ্রুপ দেখানো হয় (dashboard/layout.tsx এর
 // existing is_super_admin RPC কল থেকে পাস হয়ে আসে — নতুন কোনো লজিক না)
 export default function Sidebar({
+  workspaceName,
   isSuperAdmin,
   mobileOpen,
   onClose,
 }: {
+  workspaceName: string;
   isSuperAdmin: boolean;
   mobileOpen: boolean;
   onClose: () => void;
 }) {
   const pathname = usePathname();
 
-  const groups: NavGroup[] = isSuperAdmin
-    ? [...navGroups, { title: "অ্যাডমিন", items: [{ href: "/dashboard/admin/payments", label: "পেমেন্ট রিভিউ", icon: ShieldCheck }] }]
-    : navGroups;
-
-  function isActive(href: string) {
-    if (href === "/dashboard") return pathname === "/dashboard";
-    return pathname === href || pathname.startsWith(href + "/");
-  }
+  const groups: NavGroup[] = isSuperAdmin ? [...navGroups, adminNavGroup] : navGroups;
 
   return (
     <>
@@ -89,9 +32,13 @@ export default function Sidebar({
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <span className="text-lg font-bold text-primary">WhatsApp SaaS</span>
-          <button onClick={onClose} className="rounded-full p-1 text-text-muted hover:bg-gray-100 md:hidden" aria-label="মেনু বন্ধ করুন">
+        {/* h-16 — টপবারের সাথে উচ্চতা মিলিয়ে রাখা হয়েছে (DashboardShell.tsx এর header ও h-16) */}
+        <div className="flex h-16 items-center justify-between border-b border-border px-5">
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-base font-bold text-primary">WhatsApp SaaS</p>
+            <p className="truncate text-xs text-text-muted">{workspaceName}</p>
+          </div>
+          <button onClick={onClose} className="shrink-0 rounded-full p-1 text-text-muted hover:bg-gray-100 md:hidden" aria-label="মেনু বন্ধ করুন">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -99,17 +46,17 @@ export default function Sidebar({
         <nav className="px-3 py-4">
           {groups.map((group) => (
             <div key={group.title} className="mb-5">
-              <p className="mb-1.5 px-3 text-xs font-semibold tracking-wide text-text-muted uppercase">{group.title}</p>
+              <p className="mb-1.5 px-3 text-[11px] font-semibold tracking-wide text-text-muted uppercase">{group.title}</p>
               <div className="flex flex-col gap-0.5">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const active = isActive(item.href);
+                  const active = isNavItemActive(pathname, item.href);
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
                       onClick={onClose}
-                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
                         active ? "bg-primary-light text-primary" : "text-text hover:bg-gray-100"
                       }`}
                     >

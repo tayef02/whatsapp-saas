@@ -39,11 +39,16 @@ export default async function DashboardLayout({
   // একই RPC কল আছে, এখানে নতুন করে যোগ করা হলো যাতে Sidebar এও দেখানো যায়
   const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
 
+  // টপবারে অ্যাভাটারের পাশে দেখানোর জন্য — profile না থাকলে (edge case) ইমেইল দিয়ে fallback
+  const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+
   const workspaceName = (membership.workspaces as unknown as { name: string })?.name ?? "";
+  const userName = profile?.full_name || user.email || "";
 
   return (
     <DashboardShell
       workspaceName={workspaceName}
+      userName={userName}
       isSuperAdmin={Boolean(isSuperAdmin)}
       notifications={notifications ?? []}
       logoutAction={logout}
