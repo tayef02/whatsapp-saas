@@ -18,12 +18,13 @@ export default async function OrdersPage() {
   });
 
   return (
-    <div>
-      <h1>Orders</h1>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 20 }}>
-        AI চ্যাটবট কথোপকথনে, অথবা গ্রুপে "ORDER: নাম, নাম্বার, প্রোডাক্ট" ফরম্যাটে মেসেজ এলে এখানে অটোমেটিক লিস্ট হবে।
-        স্ট্যাটাস বদলাতে ডানপাশের ড্রপডাউন ব্যবহার করুন।
-      </p>
+    <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="text-lg font-semibold text-text">অর্ডার</h1>
+        <p className="mt-1 text-xs text-text-muted">
+          AI চ্যাটবট কথোপকথনে, অথবা গ্রুপে "ORDER: নাম, নাম্বার, প্রোডাক্ট" ফরম্যাটে মেসেজ এলে এখানে অটোমেটিক লিস্ট হবে।
+        </p>
+      </div>
       <OrdersList orders={ordersWithGroupName} />
     </div>
   );

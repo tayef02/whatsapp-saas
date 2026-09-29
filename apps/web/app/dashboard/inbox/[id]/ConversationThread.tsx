@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ArrowLeft, Send } from "lucide-react";
+import { Card, Badge, Button } from "@/components/ui";
 import { sendAgentReply, setConversationStatus } from "./actions";
 
 type Message = {
@@ -18,14 +21,17 @@ const senderLabel: Record<string, string> = {
   agent: "আপনি",
 };
 
-const bubbleStyle = (direction: string): React.CSSProperties => ({
-  alignSelf: direction === "inbound" ? "flex-start" : "flex-end",
-  background: direction === "inbound" ? "white" : "#dcfce7",
-  border: "1px solid #eee",
-  borderRadius: 10,
-  padding: "8px 12px",
-  maxWidth: "70%",
-});
+const statusLabel: Record<string, string> = {
+  active: "চলমান",
+  handed_off: "এজেন্ট দরকার",
+  resolved: "সমাধান হয়েছে",
+};
+
+const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
+  active: "info",
+  handed_off: "danger",
+  resolved: "success",
+};
 
 export default function ConversationThread({
   conversationId,
@@ -63,44 +69,64 @@ export default function ConversationThread({
   }
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div>
-          <h1 style={{ marginBottom: 0 }}>{contactLabel}</h1>
-          <p style={{ color: "#666", fontSize: 13 }}>{numberLabel}</p>
+    <Card className="flex h-full flex-col overflow-hidden p-0">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Link href="/dashboard/inbox" className="shrink-0 rounded-lg p-1 text-text-muted hover:bg-gray-100 md:hidden" aria-label="তালিকায় ফিরুন">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-text">{contactLabel}</p>
+            <p className="truncate text-xs text-text-muted">{numberLabel}</p>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {status === "handed_off" && (
-            <button disabled={busy} onClick={() => handleStatus("active")} style={{ width: "auto" }}>
-              Auto-Reply আবার চালু করুন
-            </button>
-          )}
-          {status !== "resolved" && (
-            <button disabled={busy} onClick={() => handleStatus("resolved")} style={{ width: "auto" }}>
-              সমাধান হয়েছে
-            </button>
-          )}
-        </div>
+        <Badge variant={statusVariant[status] ?? "neutral"} className="shrink-0">
+          {statusLabel[status] ?? status}
+        </Badge>
       </div>
 
-      {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
+      <div className="flex shrink-0 flex-wrap gap-2 border-b border-border p-3">
+        {status === "handed_off" && (
+          <Button variant="secondary" disabled={busy} onClick={() => handleStatus("active")}>
+            Auto-Reply আবার চালু করুন
+          </Button>
+        )}
+        {status !== "resolved" && (
+          <Button variant="secondary" disabled={busy} onClick={() => handleStatus("resolved")}>
+            সমাধান হয়েছে
+          </Button>
+        )}
+      </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+      {error && <p className="shrink-0 bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
+
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3">
         {messages.map((m) => (
-          <div key={m.id} style={bubbleStyle(m.direction)}>
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>{senderLabel[m.sender_type] ?? m.sender_type}</div>
-            <div style={{ fontSize: 14 }}>{m.content}</div>
+          <div
+            key={m.id}
+            className={`max-w-[75%] rounded-xl px-3 py-2 ${
+              m.direction === "inbound" ? "self-start border border-border bg-card" : "self-end bg-[#dcf8c6]"
+            }`}
+          >
+            <p className="mb-0.5 text-[11px] text-text-muted">{senderLabel[m.sender_type] ?? m.sender_type}</p>
+            <p className="text-sm break-words whitespace-pre-wrap text-text">{m.content}</p>
           </div>
         ))}
-        {messages.length === 0 && <p style={{ color: "#666" }}>এখনো কোনো মেসেজ নেই।</p>}
+        {messages.length === 0 && <p className="text-sm text-text-muted">এখনো কোনো মেসেজ নেই।</p>}
       </div>
 
-      <form action={handleSend} style={{ display: "flex", gap: 8 }}>
-        <input type="text" name="text" placeholder="রিপ্লাই লিখুন..." required style={{ flex: 1 }} />
-        <button type="submit" disabled={busy} style={{ width: "auto", flex: "0 0 auto" }}>
-          পাঠান
-        </button>
+      <form action={handleSend} className="flex shrink-0 gap-2 border-t border-border p-3">
+        <input
+          type="text"
+          name="text"
+          placeholder="রিপ্লাই লিখুন..."
+          required
+          className="flex-1 rounded-lg border border-border px-3 py-2 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+        />
+        <Button type="submit" disabled={busy}>
+          <Send className="h-4 w-4" />
+        </Button>
       </form>
-    </div>
+    </Card>
   );
 }

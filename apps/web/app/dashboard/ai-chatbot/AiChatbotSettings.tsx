@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { FileText, Upload, Trash2, RotateCcw, ChevronDown, ChevronUp, KeyRound } from "lucide-react";
+import { Card, Input, Select, Textarea, Button, Badge, EmptyState } from "@/components/ui";
 import { saveAiSettings, setApiKey, uploadDocument, reprocessDocument, deleteDocument, getDocumentChunks } from "./actions";
 
 type Settings = {
@@ -24,8 +26,15 @@ type Doc = {
 const statusLabel: Record<string, string> = {
   pending: "অপেক্ষায়",
   processing: "প্রসেস হচ্ছে...",
-  ready: "✅ রেডি",
-  failed: "❌ ব্যর্থ",
+  ready: "রেডি",
+  failed: "ব্যর্থ",
+};
+
+const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
+  pending: "neutral",
+  processing: "info",
+  ready: "success",
+  failed: "danger",
 };
 
 export default function AiChatbotSettings({
@@ -102,139 +111,170 @@ export default function AiChatbotSettings({
   }
 
   return (
-    <div>
-      <h1>AI Chatbot (Knowledge Base)</h1>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 8 }}>
-        এই সেটিংস প্রতিটা কানেক্টেড নাম্বারে সবসময় চালু থাকে (আলাদা করে নাম্বার-ভিত্তিক অন/অফ নেই)।
-        কোনো hardcoded rule নেই — System Prompt-ই একমাত্র নিয়ন্ত্রক: বট কীভাবে কথা বলবে, কী জানলে
-        কী উত্তর দেবে, না জানলে কীভাবে ভদ্রভাবে বলবে, কীভাবে অর্ডার নেবে — সবকিছু এখানেই লিখে দিন,
-        যেমন একজন এজেন্টকে ব্রিফ করছেন। ডকুমেন্ট ছোট/মাঝারি হলে (
-        {fullTextModeMaxWords.toLocaleString("bn-BD")} শব্দের মধ্যে) পুরো টেক্সট সরাসরি AI-কে দেওয়া
-        হয় যাতে যেকোনো ধরনের প্রশ্নের উত্তর বুঝে দিতে পারে; বেশি বড় হলে প্রাসঙ্গিক অংশ খুঁজে ব্যবহার
-        হয়। AI যখন নিজেই বলবে জানে না, সেটাই কাস্টমারকে পাঠানো হবে (আলাদা fixed বার্তা নেই) —
-        শুধু প্রকৃত টেকনিক্যাল সমস্যায় নিচের সাপোর্ট নাম্বার সহ একটা জেনেরিক মেসেজ যাবে। API key
-        খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
-      </p>
-      <p style={{ fontSize: 12, color: totalReadyWords > fullTextModeMaxWords ? "#b45309" : "#166534", marginBottom: 20 }}>
-        মোট {totalReadyWords.toLocaleString("bn-BD")} শব্দ (রেডি ডকুমেন্ট মিলিয়ে) —{" "}
-        {totalReadyWords > fullTextModeMaxWords
-          ? "খোঁজা-ভিত্তিক (chunk retrieval) মোডে চলছে"
-          : "পুরো-টেক্সট এজেন্ট মোডে চলছে"}
-      </p>
-
-      {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
-
-      <div className="auth-card" style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 8 }}>API Key</h2>
-        <p style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
-          {settings?.api_key_secret_id ? "✅ একটা key সেট করা আছে (নিরাপত্তার জন্য দেখানো হয় না)।" : "এখনো কোনো key সেট করা নেই।"}
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-lg font-semibold text-text">এআই চ্যাটবট</h1>
+        <p className="mt-1 text-xs text-text-muted">
+          এই সেটিংস প্রতিটা কানেক্টেড নাম্বারে সবসময় চালু থাকে (আলাদা করে নাম্বার-ভিত্তিক অন/অফ নেই)। কোনো hardcoded
+          rule নেই — System Prompt-ই একমাত্র নিয়ন্ত্রক: বট কীভাবে কথা বলবে, কী জানলে কী উত্তর দেবে, না জানলে কীভাবে
+          ভদ্রভাবে বলবে, কীভাবে অর্ডার নেবে — সবকিছু এখানেই লিখে দিন, যেমন একজন এজেন্টকে ব্রিফ করছেন। API key খরচ
+          আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
         </p>
-        <form action={handleSetApiKey} style={{ display: "flex", gap: 8 }}>
-          <input ref={apiKeyInputRef} type="password" name="apiKey" placeholder="sk-... বা AIza..." style={{ flex: 1 }} />
-          <button type="submit" disabled={busy} style={{ width: "auto", flex: "0 0 auto" }}>
-            {settings?.api_key_secret_id ? "বদলান" : "সেভ করুন"}
-          </button>
-        </form>
+        <p className={`mt-2 text-xs ${totalReadyWords > fullTextModeMaxWords ? "text-warning" : "text-success"}`}>
+          মোট {totalReadyWords.toLocaleString("bn-BD")} শব্দ (রেডি ডকুমেন্ট মিলিয়ে) —{" "}
+          {totalReadyWords > fullTextModeMaxWords ? "খোঁজা-ভিত্তিক (chunk retrieval) মোডে চলছে" : "পুরো-টেক্সট এজেন্ট মোডে চলছে"}
+        </p>
       </div>
 
-      <form action={handleSaveSettings} className="auth-card" style={{ marginBottom: 24 }}>
-        <label>
-          LLM Provider
-          <select name="llmProvider" defaultValue={settings?.llm_provider ?? "openai"} style={{ width: "100%" }}>
+      {error && <p className="rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
+
+      {/* API Key */}
+      <Card>
+        <div className="mb-3 flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-text-muted" />
+          <p className="text-sm font-semibold text-text">API Key</p>
+        </div>
+        <p className="mb-3 text-xs text-text-muted">
+          {settings?.api_key_secret_id ? "একটা key সেট করা আছে (নিরাপত্তার জন্য দেখানো হয় না)।" : "এখনো কোনো key সেট করা নেই।"}
+        </p>
+        <form action={handleSetApiKey} className="flex flex-col gap-2 sm:flex-row">
+          <input
+            ref={apiKeyInputRef}
+            type="password"
+            name="apiKey"
+            placeholder="sk-... বা AIza..."
+            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+          <Button type="submit" disabled={busy}>
+            {settings?.api_key_secret_id ? "বদলান" : "সেভ করুন"}
+          </Button>
+        </form>
+      </Card>
+
+      {/* ইনস্ট্রাকশন / সিস্টেম প্রম্পট */}
+      <Card>
+        <p className="mb-3 text-sm font-semibold text-text">ইনস্ট্রাকশন / সিস্টেম প্রম্পট</p>
+        <form action={handleSaveSettings} className="flex flex-col gap-4">
+          <Select name="llmProvider" label="LLM Provider" defaultValue={settings?.llm_provider ?? "openai"}>
             <option value="openai">OpenAI</option>
             <option value="gemini">Gemini</option>
-          </select>
-        </label>
+          </Select>
 
-        <label style={{ display: "block", marginTop: 12 }}>
-          System Prompt (বট কীভাবে কথা বলবে, কী টোনে, কী সীমার মধ্যে থেকে উত্তর দেবে)
-          <textarea
+          <Textarea
             name="systemPrompt"
+            label="System Prompt (বট কীভাবে কথা বলবে, কী টোনে, কী সীমার মধ্যে থেকে উত্তর দেবে)"
             defaultValue={settings?.system_prompt ?? ""}
-            rows={4}
+            rows={6}
             placeholder="যেমন: তুমি একটা কাপড়ের দোকানের সহকারী। বাংলায় ভদ্রভাবে সংক্ষিপ্ত উত্তর দাও। দাম নিয়ে অনিশ্চিত হলে সরাসরি বলে দাও যে নিশ্চিত না।"
-            style={{ width: "100%" }}
           />
-        </label>
 
-        <label style={{ display: "block", marginTop: 12 }}>
-          সাপোর্ট নাম্বার (ঐচ্ছিক) — AI-এর প্রকৃত টেকনিক্যাল সমস্যা হলে (key ভুল, quota শেষ,
-          network সমস্যা) এই নাম্বারসহ একটা safety-net মেসেজ যাবে, যাতে কাস্টমার কখনো একদম
-          নিরুত্তর না থাকে
-          <input type="text" name="supportPhone" defaultValue={settings?.support_phone ?? ""} placeholder="01XXXXXXXXX" style={{ width: "100%" }} />
-        </label>
-
-        <label style={{ display: "block", marginTop: 12 }}>
-          সাধারণ ডেলিভারি সময় (ঐচ্ছিক) — কাস্টমার "কবে পাবো?" জিজ্ঞেস করলে বট order status-এর
-          সাথে মিলিয়ে এই তথ্য দিয়ে উত্তর দেবে (খালি রাখলে "নির্দিষ্ট তথ্য নেই" বলবে)
-          <input
-            type="text"
-            name="typicalDeliveryTime"
-            defaultValue={settings?.typical_delivery_time ?? ""}
-            placeholder="যেমন: ৩-৫ কার্যদিবস"
-            style={{ width: "100%" }}
-          />
-        </label>
-
-        <button type="submit" disabled={busy} style={{ marginTop: 12 }}>
-          সেভ করুন
-        </button>
-      </form>
-
-      <h2 style={{ fontSize: 16, marginBottom: 8 }}>Knowledge Base ডকুমেন্ট</h2>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-        {documents.length === 0 && <p style={{ color: "#666" }}>এখনো কোনো ফাইল আপলোড হয়নি।</p>}
-        {documents.map((d) => (
-          <div key={d.id} style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <div style={{ fontSize: 13 }}>
-                <strong>{d.file_name}</strong> <span style={{ color: "#666" }}>({d.file_type.toUpperCase()})</span>
-                <div style={{ color: d.status === "failed" ? "#dc2626" : "#666", marginTop: 2 }}>
-                  {statusLabel[d.status] ?? d.status}
-                  {d.error_message && ` — ${d.error_message}`}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                {d.status === "ready" && (
-                  <button disabled={busy} onClick={() => toggleChunks(d.id)} style={{ width: "auto", flex: "0 0 auto" }}>
-                    {expandedDocId === d.id ? "চাংক লুকান" : "চাংক দেখুন"}
-                  </button>
-                )}
-                {d.status === "failed" && (
-                  <button disabled={busy} onClick={() => handleReprocess(d.id)} style={{ width: "auto", flex: "0 0 auto" }}>
-                    আবার চেষ্টা করুন
-                  </button>
-                )}
-                <button disabled={busy} onClick={() => handleDelete(d.id)} style={{ width: "auto", flex: "0 0 auto", color: "#dc2626" }}>
-                  মুছুন
-                </button>
-              </div>
-            </div>
-            {expandedDocId === d.id && (
-              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                {!chunksByDoc[d.id] && <p style={{ fontSize: 12, color: "#666" }}>লোড হচ্ছে...</p>}
-                {chunksByDoc[d.id]?.length === 0 && <p style={{ fontSize: 12, color: "#666" }}>কোনো chunk নেই।</p>}
-                {chunksByDoc[d.id]?.map((c, i) => (
-                  <div key={c.id} style={{ background: "#f9fafb", borderRadius: 6, padding: 8, fontSize: 12 }}>
-                    <div style={{ color: "#999", marginBottom: 2 }}>chunk {i + 1}</div>
-                    <div style={{ whiteSpace: "pre-wrap" }}>{c.content}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              name="supportPhone"
+              label="সাপোর্ট নাম্বার (ঐচ্ছিক)"
+              defaultValue={settings?.support_phone ?? ""}
+              placeholder="01XXXXXXXXX"
+              helperText="AI-এর প্রকৃত টেকনিক্যাল সমস্যা হলে (key ভুল, quota শেষ) এই নাম্বারসহ একটা safety-net মেসেজ যাবে"
+            />
+            <Input
+              name="typicalDeliveryTime"
+              label="সাধারণ ডেলিভারি সময় (ঐচ্ছিক)"
+              defaultValue={settings?.typical_delivery_time ?? ""}
+              placeholder="যেমন: ৩-৫ কার্যদিবস"
+              helperText='কাস্টমার "কবে পাবো?" জিজ্ঞেস করলে এই তথ্য দিয়ে উত্তর দেবে'
+            />
           </div>
-        ))}
-      </div>
 
-      <form action={handleUpload} className="auth-card">
-        <label>
-          নতুন ফাইল আপলোড (PDF, XLSX, CSV, TXT — সর্বোচ্চ 10MB)
-          <input type="file" name="file" accept=".pdf,.xlsx,.xls,.csv,.txt" required style={{ width: "100%" }} />
-        </label>
-        <button type="submit" disabled={busy} style={{ marginTop: 12 }}>
-          আপলোড করুন
-        </button>
-      </form>
+          <Button type="submit" disabled={busy} className="self-start">
+            সেভ করুন
+          </Button>
+        </form>
+      </Card>
+
+      {/* Knowledge base */}
+      <Card>
+        <p className="mb-3 text-sm font-semibold text-text">নলেজ বেস ডকুমেন্ট</p>
+
+        {documents.length === 0 ? (
+          <EmptyState icon={<FileText className="h-8 w-8" />} title="এখনো কোনো ফাইল আপলোড হয়নি" />
+        ) : (
+          <div className="mb-4 flex flex-col gap-2">
+            {documents.map((d) => (
+              <div key={d.id} className="rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-text">
+                      {d.file_name} <span className="text-xs font-normal text-text-muted">({d.file_type.toUpperCase()})</span>
+                    </p>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <Badge variant={statusVariant[d.status] ?? "neutral"}>{statusLabel[d.status] ?? d.status}</Badge>
+                      {d.error_message && <span className="text-xs text-danger">{d.error_message}</span>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    {d.status === "ready" && (
+                      <button
+                        disabled={busy}
+                        onClick={() => toggleChunks(d.id)}
+                        className="flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-gray-50"
+                      >
+                        চাংক {expandedDocId === d.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
+                    {d.status === "failed" && (
+                      <button
+                        disabled={busy}
+                        onClick={() => handleReprocess(d.id)}
+                        className="flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-gray-50"
+                        aria-label="আবার চেষ্টা করুন"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      disabled={busy}
+                      onClick={() => handleDelete(d.id)}
+                      className="flex items-center gap-1 rounded-lg border border-danger-light px-2 py-1.5 text-xs text-danger hover:bg-danger-light"
+                      aria-label="মুছুন"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {expandedDocId === d.id && (
+                  <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+                    {!chunksByDoc[d.id] && <p className="text-xs text-text-muted">লোড হচ্ছে...</p>}
+                    {chunksByDoc[d.id]?.length === 0 && <p className="text-xs text-text-muted">কোনো chunk নেই।</p>}
+                    {chunksByDoc[d.id]?.map((c, i) => (
+                      <div key={c.id} className="rounded-lg bg-app-bg p-2 text-xs">
+                        <p className="mb-1 text-text-muted">chunk {i + 1}</p>
+                        <p className="whitespace-pre-wrap text-text">{c.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form action={handleUpload} className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-end">
+          <label className="block flex-1 text-sm">
+            <span className="mb-1.5 block font-medium text-text">নতুন ফাইল আপলোড (PDF, XLSX, CSV, TXT — সর্বোচ্চ 10MB)</span>
+            <input
+              type="file"
+              name="file"
+              accept=".pdf,.xlsx,.xls,.csv,.txt"
+              required
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-text file:mr-3 file:rounded-md file:border-0 file:bg-primary-light file:px-3 file:py-1.5 file:text-primary"
+            />
+          </label>
+          <Button type="submit" disabled={busy}>
+            <Upload className="h-4 w-4" /> আপলোড করুন
+          </Button>
+        </form>
+      </Card>
     </div>
   );
 }
