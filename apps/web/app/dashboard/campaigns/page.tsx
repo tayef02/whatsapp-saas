@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Plus, Megaphone } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { EmptyState, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge } from "@/components/ui";
 
 const statusLabel: Record<string, string> = {
   draft: "খসড়া",
@@ -11,12 +13,14 @@ const statusLabel: Record<string, string> = {
   failed: "ব্যর্থ",
 };
 
-const statusColor: Record<string, string> = {
-  sending: "#dcfce7",
-  paused: "#fef3c7",
-  cancelled: "#f3f4f6",
-  completed: "#dbeafe",
-  failed: "#fee2e2",
+const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
+  sending: "success",
+  scheduled: "info",
+  paused: "warning",
+  cancelled: "neutral",
+  completed: "info",
+  failed: "danger",
+  draft: "neutral",
 };
 
 export default async function CampaignsPage() {
@@ -28,60 +32,66 @@ export default async function CampaignsPage() {
     .order("created_at", { ascending: false });
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h1>ক্যাম্পেইন</h1>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-text">ক্যাম্পেইন</h1>
         <Link
           href="/dashboard/campaigns/new"
-          style={{ background: "#16a34a", color: "white", padding: "8px 16px", borderRadius: 8, textDecoration: "none" }}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
         >
-          + নতুন ক্যাম্পেইন
+          <Plus className="h-4 w-4" /> নতুন ক্যাম্পেইন
         </Link>
       </div>
 
-      {(!campaigns || campaigns.length === 0) && <p>এখনো কোনো ক্যাম্পেইন নেই।</p>}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {campaigns?.map((c) => {
-          const stats = Array.isArray(c.campaign_stats) ? c.campaign_stats[0] : c.campaign_stats;
-          return (
+      {(!campaigns || campaigns.length === 0) && (
+        <EmptyState
+          icon={<Megaphone className="h-10 w-10" />}
+          title="এখনো কোনো ক্যাম্পেইন নেই"
+          description="একটা টেমপ্লেট আর অনলাইন নাম্বার থাকলেই প্রথম ক্যাম্পেইন পাঠাতে পারবেন।"
+          action={
             <Link
-              key={c.id}
-              href={`/dashboard/campaigns/${c.id}`}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                padding: 14,
-                background: "white",
-                borderRadius: 8,
-                border: "1px solid #eee",
-                textDecoration: "none",
-                color: "inherit",
-              }}
+              href="/dashboard/campaigns/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
             >
-              <div>
-                <strong>{c.name}</strong>
-                <div style={{ fontSize: 13, color: "#666" }}>
-                  {stats
-                    ? `${stats.sent_count}/${stats.total_recipients} পাঠানো হয়েছে · ${Math.max(stats.delivered_count, stats.read_count)} ডেলিভার্ড · ${stats.read_count} পড়া হয়েছে · ${stats.failed_count} ব্যর্থ`
-                    : ""}
-                </div>
-              </div>
-              <span
-                style={{
-                  alignSelf: "center",
-                  fontSize: 12,
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  background: statusColor[c.status] ?? "#f3f4f6",
-                }}
-              >
-                {statusLabel[c.status] ?? c.status}
-              </span>
+              <Plus className="h-4 w-4" /> নতুন ক্যাম্পেইন
             </Link>
-          );
-        })}
-      </div>
+          }
+        />
+      )}
+
+      {campaigns && campaigns.length > 0 && (
+        <Table>
+          <TableHead>
+            <TableRow className="hover:bg-transparent">
+              <TableHeaderCell>নাম</TableHeaderCell>
+              <TableHeaderCell>অগ্রগতি</TableHeaderCell>
+              <TableHeaderCell>স্ট্যাটাস</TableHeaderCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {campaigns.map((c) => {
+              const stats = Array.isArray(c.campaign_stats) ? c.campaign_stats[0] : c.campaign_stats;
+              return (
+                <TableRow key={c.id}>
+                  <TableCell>
+                    <Link href={`/dashboard/campaigns/${c.id}`} className="font-medium text-text hover:text-primary hover:underline">
+                      {c.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-text-muted">
+                    {stats
+                      ? `${stats.sent_count}/${stats.total_recipients} পাঠানো · ${Math.max(stats.delivered_count, stats.read_count)} ডেলিভার্ড · ${stats.read_count} পড়া · ${stats.failed_count} ব্যর্থ`
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant[c.status] ?? "neutral"}>{statusLabel[c.status] ?? c.status}</Badge>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }

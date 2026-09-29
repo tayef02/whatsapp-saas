@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Info, PauseCircle, PlayCircle, XCircle, RotateCcw } from "lucide-react";
+import { Card, Badge, Button } from "@/components/ui";
 import { pauseCampaign, resumeCampaign, cancelCampaign, retryFailedMessages } from "./actions";
 
 type Stats = {
@@ -43,6 +45,16 @@ const statusLabel: Record<string, string> = {
   failed: "ব্যর্থ",
 };
 
+const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
+  sending: "success",
+  scheduled: "info",
+  paused: "warning",
+  cancelled: "neutral",
+  completed: "info",
+  failed: "danger",
+  draft: "neutral",
+};
+
 const pausedReasonLabel: Record<string, string> = {
   manual: "আপনি নিজে পজ করেছেন",
   number_disconnected: "নাম্বার ডিসকানেক্ট/ব্যান হয়েছিল",
@@ -80,76 +92,70 @@ export default function CampaignReport({ initial, stallNote }: { initial: Campai
   }
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h1>ক্যাম্পেইন রিপোর্ট</h1>
-        <span style={{ fontSize: 13, padding: "4px 10px", borderRadius: 999, background: "#f3f4f6" }}>
-          {statusLabel[data.status] ?? data.status}
-        </span>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-text">ক্যাম্পেইন রিপোর্ট</h1>
+        <Badge variant={statusVariant[data.status] ?? "neutral"}>{statusLabel[data.status] ?? data.status}</Badge>
       </div>
 
       {data.paused_reason && (
-        <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
-          ⏸️ পজ হওয়ার কারণ: {pausedReasonLabel[data.paused_reason] ?? data.paused_reason}
-        </div>
+        <p className="flex items-center gap-2 rounded-lg bg-warning-light px-3 py-2 text-sm text-warning">
+          <PauseCircle className="h-4 w-4 shrink-0" /> পজ হওয়ার কারণ: {pausedReasonLabel[data.paused_reason] ?? data.paused_reason}
+        </p>
       )}
 
       {data.status === "sending" && stallNote && (
-        <div style={{ background: "#eff6ff", padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
-          ℹ️ {stallNote}
-        </div>
+        <p className="flex items-center gap-2 rounded-lg bg-info-light px-3 py-2 text-sm text-info">
+          <Info className="h-4 w-4 shrink-0" /> {stallNote}
+        </p>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatBox label="মোট" value={stats.total_recipients} />
         <StatBox label="পাঠানো হয়েছে" value={stats.sent_count} />
         {/* "পড়া হয়েছে" মানে ডেলিভার্ডও হয়েছে। delivered_count/read_count আলাদা ইভেন্ট কাউন্টার —
-            যে মেসেজ delivered→read দুটো ইভেন্টই পায় সেটা দুই কাউন্টারেই আলাদাভাবে বাড়ে (সেগুলো
-            যোগ করলে ডাবল-কাউন্ট হয়ে যায়, total_recipients ছাড়িয়ে যেতে পারে)। যে মেসেজ delivered
-            বাদ দিয়ে সরাসরি read এ যায় সেটা শুধু read_count এ বাড়ে। তাই "কমপক্ষে ডেলিভার্ড" বোঝাতে
-            max() ব্যবহার করা হচ্ছে, যোগ না */}
+            যোগ করলে ডাবল-কাউন্ট হয়ে যায়, তাই "কমপক্ষে ডেলিভার্ড" বোঝাতে max() ব্যবহার করা হচ্ছে */}
         <StatBox label="ডেলিভার্ড" value={Math.max(stats.delivered_count, stats.read_count)} />
         <StatBox label="পড়া হয়েছে" value={stats.read_count} />
-        <StatBox label="ব্যর্থ" value={stats.failed_count} color="#dc2626" />
-        <StatBox label="অজানা" value={stats.unknown_count} color="#b45309" />
+        <StatBox label="ব্যর্থ" value={stats.failed_count} variant="danger" />
+        <StatBox label="অজানা" value={stats.unknown_count} variant="warning" />
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="flex flex-wrap gap-2">
         {data.status === "sending" && (
-          <button disabled={busy} onClick={() => run(pauseCampaign)}>
-            পজ করুন
-          </button>
+          <Button variant="secondary" disabled={busy} onClick={() => run(pauseCampaign)}>
+            <PauseCircle className="h-4 w-4" /> পজ করুন
+          </Button>
         )}
         {data.status === "paused" && (
-          <button disabled={busy} onClick={() => run(resumeCampaign)}>
-            আবার চালু করুন
-          </button>
+          <Button variant="secondary" disabled={busy} onClick={() => run(resumeCampaign)}>
+            <PlayCircle className="h-4 w-4" /> আবার চালু করুন
+          </Button>
         )}
         {["draft", "scheduled", "sending", "paused"].includes(data.status) && (
-          <button disabled={busy} onClick={() => run(cancelCampaign)} style={{ background: "white", color: "#dc2626", border: "1px solid #dc2626" }}>
-            বাতিল করুন
-          </button>
+          <Button variant="danger" disabled={busy} onClick={() => run(cancelCampaign)}>
+            <XCircle className="h-4 w-4" /> বাতিল করুন
+          </Button>
         )}
         {stats.failed_count > 0 && (
-          <button disabled={busy} onClick={() => run(retryFailedMessages)} style={{ background: "#eee", color: "#333" }}>
-            ব্যর্থগুলো আবার পাঠান
-          </button>
+          <Button variant="secondary" disabled={busy} onClick={() => run(retryFailedMessages)}>
+            <RotateCcw className="h-4 w-4" /> ব্যর্থগুলো আবার পাঠান
+          </Button>
         )}
       </div>
 
       {data.failedMessages && data.failedMessages.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <h2 style={{ fontSize: 16, marginBottom: 8 }}>ব্যর্থ মেসেজের তালিকা</h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div>
+          <p className="mb-2 text-sm font-semibold text-text">ব্যর্থ মেসেজের তালিকা</p>
+          <div className="flex flex-col gap-2">
             {data.failedMessages.map((m) => (
-              <div
-                key={m.id}
-                style={{ background: "white", border: "1px solid #fecaca", borderRadius: 8, padding: 10, fontSize: 13 }}
-              >
-                <strong>{contactName(m.contacts)}</strong> · {m.phone}
-                {m.retry_count > 0 && <span style={{ color: "#666" }}> · {m.retry_count} বার চেষ্টা হয়েছে</span>}
-                <div style={{ color: "#dc2626", marginTop: 2 }}>{m.failed_reason ?? "কারণ জানা যায়নি"}</div>
-              </div>
+              <Card key={m.id} className="border-danger-light">
+                <p className="text-sm text-text">
+                  <strong className="font-medium">{contactName(m.contacts)}</strong> · {m.phone}
+                  {m.retry_count > 0 && <span className="text-text-muted"> · {m.retry_count} বার চেষ্টা হয়েছে</span>}
+                </p>
+                <p className="mt-1 text-sm text-danger">{m.failed_reason ?? "কারণ জানা যায়নি"}</p>
+              </Card>
             ))}
           </div>
         </div>
@@ -158,11 +164,13 @@ export default function CampaignReport({ initial, stallNote }: { initial: Campai
   );
 }
 
-function StatBox({ label, value, color }: { label: string; value: number; color?: string }) {
+function StatBox({ label, value, variant }: { label: string; value: number; variant?: "danger" | "warning" }) {
   return (
-    <div style={{ background: "white", border: "1px solid #eee", borderRadius: 8, padding: 12, textAlign: "center" }}>
-      <div style={{ fontSize: 22, fontWeight: 700, color: color ?? "#111" }}>{value}</div>
-      <div style={{ fontSize: 12, color: "#666" }}>{label}</div>
-    </div>
+    <Card className="text-center">
+      <div className={`text-xl font-semibold ${variant === "danger" ? "text-danger" : variant === "warning" ? "text-warning" : "text-text"}`}>
+        {value}
+      </div>
+      <div className="text-xs text-text-muted">{label}</div>
+    </Card>
   );
 }

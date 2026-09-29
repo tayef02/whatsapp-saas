@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
 import { renderMessage } from "@whatsapp-saas/core/templates/render";
 import { formatWhatsAppPreviewHtml } from "@whatsapp-saas/core/templates/format-preview";
+import { Card, Input, Textarea, Button } from "@/components/ui";
 import { createTemplate, updateTemplate, deleteTemplate, checkVariableCoverage, type VariableCoverage } from "./actions";
 
 type SampleContact = { name: string | null; phone: string; custom_fields: Record<string, string> };
@@ -30,6 +32,7 @@ export default function TemplateForm({ mode, templateId, initial, sampleContact,
   const [previewSeed, setPreviewSeed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [coverage, setCoverage] = useState<VariableCoverage[] | null>(null);
   const [checkingCoverage, setCheckingCoverage] = useState(false);
 
@@ -57,6 +60,7 @@ export default function TemplateForm({ mode, templateId, initial, sampleContact,
   async function handleDelete() {
     if (!templateId) return;
     if (!confirm("এই টেমপ্লেট ডিলিট করবেন?")) return;
+    setDeleting(true);
     await deleteTemplate(templateId);
     router.push("/dashboard/templates");
   }
@@ -73,105 +77,105 @@ export default function TemplateForm({ mode, templateId, initial, sampleContact,
   }
 
   return (
-    <div style={{ display: "flex", gap: 24, maxWidth: 900 }}>
-      <div className="auth-card" style={{ margin: 0, flex: 1 }}>
-        <h1>{mode === "create" ? "নতুন টেমপ্লেট" : "টেমপ্লেট এডিট"}</h1>
-        {error && <div className="error">{error}</div>}
+    <div className="flex flex-col gap-6 lg:flex-row">
+      <Card className="flex-1">
+        <h1 className="mb-4 text-base font-semibold text-text">{mode === "create" ? "নতুন টেমপ্লেট" : "টেমপ্লেট এডিট"}</h1>
+        {error && <p className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
 
-        <form action={handleSubmit}>
-          <label htmlFor="name">নাম</label>
-          <input id="name" name="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-
-          <label htmlFor="category">ক্যাটাগরি (ঐচ্ছিক)</label>
-          <input id="category" name="category" type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="যেমন: ঈদ, সেল" />
-
-          <label htmlFor="content">মেসেজ</label>
-          <textarea
-            id="content"
-            name="content"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows={8}
-            style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", marginBottom: 8, fontFamily: "inherit" }}
-            placeholder="যেমন: {{name|ভাই}}, {আসসালামু আলাইকুম|হ্যালো}! *ঈদ অফার* চলছে..."
+        <form action={handleSubmit} className="flex flex-col gap-4">
+          <Input id="name" name="name" type="text" required label="নাম" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input
+            id="category"
+            name="category"
+            type="text"
+            label="ক্যাটাগরি (ঐচ্ছিক)"
+            placeholder="যেমন: ঈদ, সেল"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
           />
 
-          <div style={{ marginBottom: 16 }}>
-            {variableSuggestions.map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => insertVariable(key)}
-                style={{ fontSize: 12, padding: "3px 8px", marginRight: 6, marginBottom: 6, borderRadius: 999, border: "1px solid #ddd", background: "#f7f7f8", color: "#333", cursor: "pointer" }}
-              >
-                {"{{" + key + "}}"}
-              </button>
-            ))}
+          <div>
+            <Textarea
+              id="content"
+              name="content"
+              label="মেসেজ"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={8}
+              placeholder="যেমন: {{name|ভাই}}, {আসসালামু আলাইকুম|হ্যালো}! *ঈদ অফার* চলছে..."
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {variableSuggestions.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => insertVariable(key)}
+                  className="rounded-full border border-border bg-app-bg px-2.5 py-1 text-xs text-text-muted hover:bg-gray-100"
+                >
+                  {"{{" + key + "}}"}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <label htmlFor="media">ছবি বা PDF (ঐচ্ছিক)</label>
-          <input id="media" name="media" type="file" accept="image/*,.pdf" />
-          {initial?.media_url && (
-            <p style={{ fontSize: 12, color: "#666" }}>
-              আগের ফাইল আছে ({initial.media_type}), নতুন দিলে বদলে যাবে
-            </p>
-          )}
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-medium text-text">ছবি বা PDF (ঐচ্ছিক)</span>
+            <input
+              id="media"
+              name="media"
+              type="file"
+              accept="image/*,.pdf"
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-text file:mr-3 file:rounded-md file:border-0 file:bg-primary-light file:px-3 file:py-1.5 file:text-primary"
+            />
+            {initial?.media_url && <span className="mt-1 block text-xs text-text-muted">আগের ফাইল আছে ({initial.media_type}), নতুন দিলে বদলে যাবে</span>}
+          </label>
 
-          <button type="submit" disabled={loading} style={{ marginTop: 16 }}>
+          <Button type="submit" loading={loading}>
             {loading ? "সেভ হচ্ছে..." : "সেভ করুন"}
-          </button>
+          </Button>
         </form>
 
-        <button type="button" onClick={handleCheckCoverage} disabled={checkingCoverage} style={{ marginTop: 12, background: "#eee", color: "#333" }}>
+        <Button variant="secondary" onClick={handleCheckCoverage} disabled={checkingCoverage} className="mt-3">
           {checkingCoverage ? "চেক হচ্ছে..." : "ভেরিয়েবল চেক করুন"}
-        </button>
+        </Button>
 
         {coverage && coverage.length > 0 && (
-          <div style={{ marginTop: 12, fontSize: 13 }}>
+          <div className="mt-3 flex flex-col gap-1.5 text-sm">
             {coverage.map((c) => (
-              <div key={c.key} style={{ color: c.missingCount > 0 ? "#b45309" : "#166534" }}>
+              <span key={c.key} className={`flex items-center gap-1.5 ${c.missingCount > 0 ? "text-warning" : "text-success"}`}>
+                {c.missingCount > 0 ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
                 {c.missingCount > 0
-                  ? `⚠️ {{${c.key}}} — ${c.totalContacts} জনের মধ্যে ${c.missingCount} জনের এই তথ্য নেই`
-                  : `✅ {{${c.key}}} — সবার আছে`}
-              </div>
+                  ? `{{${c.key}}} — ${c.totalContacts} জনের মধ্যে ${c.missingCount} জনের এই তথ্য নেই`
+                  : `{{${c.key}}} — সবার আছে`}
+              </span>
             ))}
           </div>
         )}
 
         {mode === "edit" && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            style={{ marginTop: 16, background: "white", color: "#dc2626", border: "1px solid #dc2626" }}
-          >
+          <Button variant="danger" onClick={handleDelete} loading={deleting} className="mt-4 w-full">
             ডিলিট করুন
-          </button>
+          </Button>
         )}
-      </div>
+      </Card>
 
-      <div style={{ flex: 1 }}>
+      <Card className="flex-1 self-start">
+        <p className="mb-3 text-sm font-semibold text-text">প্রিভিউ</p>
         <div
-          style={{
-            background: "#dcf8c6",
-            borderRadius: 8,
-            padding: 16,
-            minHeight: 120,
-            fontSize: 14,
-            whiteSpace: "pre-wrap",
-          }}
+          className="min-h-[120px] rounded-lg bg-[#dcf8c6] p-4 text-sm whitespace-pre-wrap"
           dangerouslySetInnerHTML={{ __html: previewHtml || "<span style='color:#888'>প্রিভিউ এখানে দেখাবে</span>" }}
         />
         <button
           type="button"
           onClick={() => setPreviewSeed((s) => s + 1)}
-          style={{ marginTop: 8, fontSize: 13, background: "#eee", color: "#333" }}
+          className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
         >
-          আবার দেখুন (নতুন spintax)
+          <RefreshCw className="h-3.5 w-3.5" /> আবার দেখুন (নতুন spintax)
         </button>
-        <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
+        <p className="mt-3 text-xs text-text-muted">
           নমুনা কন্টাক্ট: {sampleContact.name ?? "(নাম নেই)"} · {sampleContact.phone}
         </p>
-      </div>
+      </Card>
     </div>
   );
 }
