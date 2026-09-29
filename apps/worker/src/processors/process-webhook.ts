@@ -223,13 +223,17 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
   const providerMessageId = key.id;
 
   const supabase = getSupabase();
-  const { data: number } = await supabase
+  const { data: number, error: numberError } = await supabase
     .from("whatsapp_numbers")
     .select("id, workspace_id, bot_enabled")
     .eq("instance_name", instanceName)
     .maybeSingle();
 
-  if (!number) return;
+  if (numberError) {
+    console.error(`[handleIncomingMessage] whatsapp_numbers lookup failed instance=${instanceName}: ${numberError.message}`);
+    throw new Error(`whatsapp_numbers lookup failed: ${numberError.message}`);
+  }
+  if (!number) return; // এই instance এর কোনো row নেই — স্বাভাবিক (কখনো register হয়নি), এরর না
 
   const isStop = isStopKeyword(text);
   const isStart = isStartKeyword(text);
@@ -265,12 +269,16 @@ async function handleGroupParticipantsUpdate(instanceName: string, data: Record<
   if (action !== "add" || !groupJid || participants.length === 0) return;
 
   const supabase = getSupabase();
-  const { data: number } = await supabase
+  const { data: number, error: numberError } = await supabase
     .from("whatsapp_numbers")
     .select("id, workspace_id")
     .eq("instance_name", instanceName)
     .maybeSingle();
-  if (!number) return;
+  if (numberError) {
+    console.error(`[handleGroupParticipantsUpdate] whatsapp_numbers lookup failed instance=${instanceName}: ${numberError.message}`);
+    throw new Error(`whatsapp_numbers lookup failed: ${numberError.message}`);
+  }
+  if (!number) return; // এই instance এর কোনো row নেই — স্বাভাবিক, এরর না
 
   const { data: group } = await supabase
     .from("groups")
@@ -426,12 +434,16 @@ async function handleGroupMessage(
   const mentionedPhonesFromText = [...text.matchAll(/@(\d{7,15})/g)].map((m) => m[1]);
 
   const supabase = getSupabase();
-  const { data: number } = await supabase
+  const { data: number, error: numberError } = await supabase
     .from("whatsapp_numbers")
     .select("id, workspace_id, phone_number")
     .eq("instance_name", instanceName)
     .maybeSingle();
-  if (!number) return;
+  if (numberError) {
+    console.error(`[handleGroupMessage] whatsapp_numbers lookup failed instance=${instanceName}: ${numberError.message}`);
+    throw new Error(`whatsapp_numbers lookup failed: ${numberError.message}`);
+  }
+  if (!number) return; // এই instance এর কোনো row নেই — স্বাভাবিক, এরর না
 
   const { data: group } = await supabase
     .from("groups")
@@ -447,11 +459,17 @@ async function handleGroupMessage(
 
   // স্প্যাম/ব্যানড-ওয়ার্ড/লিংক ফিল্টার — কিওয়ার্ড/mention ট্রিগারের আগেই চেক হয়, ম্যাচ করলে
   // keyword/AI প্রসেসিং একদম স্কিপ হয়ে যায় (একটা ব্যানড মেসেজ কোনোভাবেই রিপ্লাই ট্রিগার করবে না)
-  const { data: filters } = await supabase
+  const { data: filters, error: filtersError } = await supabase
     .from("workspace_group_filters")
     .select("banned_words, banned_link_patterns")
     .eq("workspace_id", group.workspace_id)
     .maybeSingle();
+
+  if (filtersError) {
+    // ফিল্টার লোড করতে না পারলে ফিল্টার বন্ধ ধরে এগিয়ে যাওয়া হচ্ছে (নিচের ?? [] দিয়েই) —
+    // কিন্তু চুপচাপ না, লগে স্পষ্ট থাকা দরকার যে এই মেসেজে আসলে ফিল্টার চেকই হয়নি
+    console.error(`[group-moderation] workspace_group_filters lookup failed workspace=${group.workspace_id}: ${filtersError.message}`);
+  }
 
   const lowerTextForFilter = text.toLowerCase();
   const matchedBadWord = (filters?.banned_words ?? []).find((w: string) => w && lowerTextForFilter.includes(w.toLowerCase()));
@@ -517,7 +535,7 @@ async function handleGroupMessage(
     if (!structuredOrder.name || !normalizedPhone) {
       // অসম্পূর্ণ/ভুল ফরম্যাট — silent fail না করে raw_summary হিসেবে সেভ করা হয়, ডাটা হারায় না
       console.error(`[group-order-capture] malformed structured order in group=${groupJid}: "${text}"`);
-      const { data: order } = await supabase
+      const { data: order, error: rawOrderError } = await supabase
         .from("orders")
         .insert({
           workspace_id: group.workspace_id,
@@ -528,6 +546,9 @@ async function handleGroupMessage(
         })
         .select("id, order_number")
         .maybeSingle();
+      if (rawOrderError) {
+        console.error(`[group-order-capture] failed to save malformed order (raw_summary) in group=${groupJid}: ${rawOrderError.message}`);
+      }
       await createNotification(
         group.workspace_id,
         "group_order_capture_failed",
@@ -581,11 +602,17 @@ async function handleGroupMessage(
     return;
   }
 
-  const { data: rules } = await supabase
+  const { data: rules, error: rulesError } = await supabase
     .from("group_keyword_replies")
     .select("id, trigger_type, reply_mode, keyword, reply_text, cooldown_seconds")
     .eq("group_id", group.id)
     .eq("is_active", true);
+
+  if (rulesError) {
+    // রুল লোড করতে না পারলে কোনো রুল ম্যাচ করানো হচ্ছে না (bot চুপ থাকবে) — এটাই নিরাপদ দিক,
+    // কিন্তু চুপচাপ না, স্পষ্ট লগ থাকা দরকার
+    console.error(`[group-autoreply] group_keyword_replies lookup failed group=${group.id}: ${rulesError.message}`);
+  }
 
   const lowerText = text.toLowerCase();
   const isMentioned = number.phone_number
@@ -749,11 +776,15 @@ async function handleAutoReply(
     .maybeSingle();
 
   if (!contact) {
-    const { data: newContact } = await supabase
+    const { data: newContact, error: newContactError } = await supabase
       .from("contacts")
       .insert({ workspace_id: number.workspace_id, phone, source: "inbound" })
       .select("id, name, custom_fields")
       .maybeSingle();
+    if (newContactError) {
+      console.error(`[autoreply] contacts insert failed workspace=${number.workspace_id} phone=${phone}: ${newContactError.message}`);
+      throw new Error(`contacts insert failed: ${newContactError.message}`);
+    }
     contact = newContact;
   }
   if (!contact) return;
@@ -892,11 +923,18 @@ async function tryAiReply(
   let supportPhone: string | null = null;
 
   try {
-    const { data: settings } = await supabase
+    const { data: settings, error: settingsError } = await supabase
       .from("workspace_ai_settings")
       .select("llm_provider, system_prompt, support_phone, typical_delivery_time")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
+
+    if (settingsError) {
+      // এরর হলে "provider সেট নেই" ধরে ভুল ধারণা না দিয়ে সরাসরি technical_failure — যেমন
+      // নিচের apiKey/documents চেকগুলো (আর সবার নিচের catch ব্লক) একই পাথে যায়
+      console.error(`[autoreply] workspace_ai_settings lookup failed workspace=${workspaceId}: ${settingsError.message}`);
+      return { kind: "technical_failure", supportPhone };
+    }
 
     supportPhone = settings?.support_phone ?? null;
 
