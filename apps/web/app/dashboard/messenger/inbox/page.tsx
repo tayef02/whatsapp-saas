@@ -1,12 +1,10 @@
-import { Inbox } from "lucide-react";
-import ComingSoon from "../ComingSoon";
+import { MessageSquare } from "lucide-react";
+import { Card, EmptyState } from "@/components/ui";
 
-export default function MessengerInboxPage() {
+export default function MessengerInboxIndexPage() {
   return (
-    <ComingSoon
-      icon={<Inbox className="h-10 w-10" />}
-      title="Messenger ইনবক্স"
-      description="পেজ কানেক্ট হওয়ার পর কাস্টমারদের Messenger কথোপকথন এখানে দেখা যাবে।"
-    />
+    <Card className="flex h-full items-center justify-center">
+      <EmptyState icon={<MessageSquare className="h-10 w-10" />} title="একটা কথোপকথন বাছাই করুন" description="বাঁ পাশের তালিকা থেকে একটা কথোপকথনে ক্লিক করুন" />
+    </Card>
   );
 }

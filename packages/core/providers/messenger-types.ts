@@ -1,35 +1,36 @@
-// Messenger চ্যানেলের জন্য আলাদা ইন্টারফেস — WhatsAppProvider (evolution.ts, types.ts) এর
-// সাথে সরাসরি মেলে না, তাই implement করারও দরকার নেই। কারণ:
-//   - WhatsAppProvider এ গ্রুপ (JID), পোল, admin-only mode এর মতো মেথড আছে যেগুলোর
-//     Messenger এ কোনো সমতুল্য নেই (Facebook পেজে "গ্রুপ" বলে কিছু নেই)
-//   - Messenger এর নিজস্ব concept আছে যেগুলোর WhatsApp এ সমতুল্য নেই (কমেন্ট রিপ্লাই/হাইড,
-//     পোস্ট পাবলিশ/শিডিউল, ২৪-ঘণ্টা মেসেজিং উইন্ডো + message tag)
-// Phase M0: শুধু টাইপ/ইন্টারফেস (কাঠামো) — কোনো implementation class এখনো নেই, সেটা M1 এ
-// (পেজ কানেক্ট + webhook এর আসল লজিকের সাথে) আসবে।
+// Messenger চ্যানেলের জন্য আলাদা ইন্টারফেস — WhatsAppProvider এর সাথে মেলে না (types.ts এ
+// গ্রুপ/পোল/admin-mode এর মতো মেথড আছে যেগুলোর Messenger এ কোনো সমতুল্য নেই), তাই
+// implement করার দরকার নেই।
+//
+// Phase M1: পেজ কানেক্ট (OAuth) + ইনবক্স (টেক্সট পাঠানো, প্রোফাইল নাম আনা) বাস্তবায়িত।
+// কমেন্ট/পোস্ট মেথড এখনো নেই (M3/M4 এ আসবে)।
 
-export type MessengerPageStatus = "active" | "token_expired" | "disconnected";
+export interface MessengerPageInfo {
+  pageId: string;
+  pageName: string;
+  pageAccessToken: string;
+}
 
 export interface MessengerProvider {
-  // পেজ কানেক্ট (M1) — Facebook Login for Business দিয়ে OAuth কোড এক্সচেঞ্জ করে
-  // long-lived Page Access Token আনা, Vault এ সেভ করা
-  exchangeCodeForPageToken(code: string, redirectUri: string): Promise<{ pageId: string; pageName: string; pageAccessToken: string }>;
+  // ধাপ ১: Facebook এর OAuth ডায়ালগে পাঠানোর URL বানায় (M1)
+  getOAuthDialogUrl(redirectUri: string, state: string): string;
 
-  // ইনবক্স (M2) — কাস্টমারকে মেসেজ পাঠানো, ২৪ ঘণ্টা উইন্ডোর বাইরে হলে messageTag লাগবে
-  sendMessage(
-    pageAccessToken: string,
-    psid: string,
-    text: string,
-    messageTag?: string
-  ): Promise<{ messageId: string }>;
+  // ধাপ ২: callback এ পাওয়া code কে প্রথমে short-lived, তারপর long-lived user token এ
+  // এক্সচেঞ্জ করে (M1)
+  exchangeCodeForUserToken(code: string, redirectUri: string): Promise<{ userAccessToken: string }>;
+  getLongLivedUserToken(shortLivedToken: string): Promise<{ userAccessToken: string }>;
 
-  // কাস্টমারের Facebook প্রোফাইল নাম আনা (PSID থেকে, প্রথমবার কথোপকথন শুরু হলে)
+  // ধাপ ৩: ইউজার যে পেজগুলো ম্যানেজ করে তার তালিকা (প্রতিটার নিজস্ব page access token সহ) (M1)
+  listPages(userAccessToken: string): Promise<MessengerPageInfo[]>;
+
+  // পেজ কানেক্ট/ডিসকানেক্ট হলে webhook সাবস্ক্রাইব/আনসাবস্ক্রাইব (M1)
+  subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void>;
+  unsubscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void>;
+
+  // ইনবক্স (M1: টেক্সট, M2 এ media/tag যোগ হবে) — messagingType "RESPONSE" (২৪ ঘণ্টা
+  // উইন্ডোর ভেতরে) M1 এ একমাত্র সাপোর্টেড টাইপ, উইন্ডোর বাইরে পাঠানো UI লেভেলেই আটকানো হয়
+  sendMessage(pageAccessToken: string, psid: string, text: string, messagingType: "RESPONSE"): Promise<{ messageId: string }>;
+
+  // কাস্টমারের Facebook প্রোফাইল নাম আনা (PSID থেকে) — ব্যর্থ হলে null (M1)
   getUserProfile(pageAccessToken: string, psid: string): Promise<{ name: string | null }>;
-
-  // কমেন্ট অটোমেশন (M3) — পোস্টের কমেন্টে রিপ্লাই, প্রয়োজনে লুকানো/ডিলিট
-  replyToComment(pageAccessToken: string, commentId: string, text: string): Promise<{ commentId: string }>;
-  hideComment(pageAccessToken: string, commentId: string, hidden: boolean): Promise<void>;
-  deleteComment(pageAccessToken: string, commentId: string): Promise<void>;
-
-  // পোস্ট শিডিউলার (M4) — পেজে টেক্সট/ছবি পোস্ট পাবলিশ করা
-  publishPost(pageAccessToken: string, pageId: string, message: string, imageUrl?: string): Promise<{ postId: string }>;
 }

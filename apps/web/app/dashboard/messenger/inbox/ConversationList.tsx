@@ -1,0 +1,83 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { Card, EmptyState } from "@/components/ui";
+import { MessageSquare } from "lucide-react";
+import { formatDhakaDateTime } from "@/lib/format-date";
+
+type Conversation = {
+  id: string;
+  status: string;
+  customer_name: string | null;
+  psid: string;
+  last_message_at: string;
+  last_user_message_at: string | null;
+  messenger_pages: { page_name: string | null } | { page_name: string | null }[] | null;
+};
+
+type Filter = "all" | "unread";
+
+export default function ConversationList({ conversations, unreadIds }: { conversations: Conversation[]; unreadIds: string[] }) {
+  const pathname = usePathname();
+  const [filter, setFilter] = useState<Filter>("all");
+  const unreadSet = new Set(unreadIds);
+
+  const unreadCount = conversations.filter((c) => unreadSet.has(c.id)).length;
+  const filtered = filter === "unread" ? conversations.filter((c) => unreadSet.has(c.id)) : conversations;
+
+  return (
+    <Card className="flex h-full flex-col overflow-hidden p-0">
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border p-2">
+        <FilterTab label="সব" active={filter === "all"} onClick={() => setFilter("all")} />
+        <FilterTab label={`উত্তর বাকি (${unreadCount})`} active={filter === "unread"} onClick={() => setFilter("unread")} />
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {filtered.length === 0 && (
+          <div className="p-4">
+            <EmptyState icon={<MessageSquare className="h-8 w-8" />} title="কোনো কথোপকথন নেই" />
+          </div>
+        )}
+
+        {filtered.map((c) => {
+          const page = Array.isArray(c.messenger_pages) ? c.messenger_pages[0] : c.messenger_pages;
+          const isUnread = unreadSet.has(c.id);
+          const isActive = pathname === `/dashboard/messenger/inbox/${c.id}`;
+
+          return (
+            <Link
+              key={c.id}
+              href={`/dashboard/messenger/inbox/${c.id}`}
+              className={`block border-b border-border px-3 py-3 last:border-b-0 ${isActive ? "bg-primary-light" : "hover:bg-gray-50"}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className={`min-w-0 truncate text-sm ${isUnread ? "font-semibold text-text" : "font-medium text-text"}`}>
+                  {c.customer_name || c.psid}
+                </p>
+              </div>
+              <div className="mt-0.5 flex items-center justify-between gap-2">
+                <span className="truncate text-xs text-text-muted">{page?.page_name}</span>
+                <span className="shrink-0 text-xs text-text-muted">{formatDhakaDateTime(c.last_message_at)}</span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function FilterTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-medium whitespace-nowrap transition-colors ${
+        active ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}

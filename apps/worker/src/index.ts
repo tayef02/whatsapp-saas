@@ -36,6 +36,10 @@ import { GROUP_MEMBER_INACTIVITY_QUEUE_NAME } from "./queues/group-member-inacti
 import { runGroupInactiveMemberFlagTick } from "./processors/group-member-inactivity";
 import { KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/knowledge-base-queue";
 import { processKnowledgeBaseDocument } from "./processors/process-knowledge-base";
+import { MESSENGER_WEBHOOK_QUEUE_NAME } from "./queues/messenger-webhook-queue";
+import { processMessengerWebhookEvent } from "./processors/process-messenger-webhook";
+import { MESSENGER_JOBS_QUEUE_NAME } from "./queues/messenger-jobs-queue";
+import { processMessengerReply } from "./processors/process-messenger-reply";
 
 const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
@@ -198,8 +202,38 @@ knowledgeBaseWorker.on("failed", (job, err) => {
   console.error(`[knowledge-base-worker] job ${job?.id} ব্যর্থ:`, err.message);
 });
 
+// Messenger এর raw webhook ইভেন্ট — WhatsApp এর webhookWorker থেকে সম্পূর্ণ আলাদা queue/worker,
+// দুই চ্যানেলের ইভেন্ট কখনো একে অপরের সাথে মেশে না
+const messengerWebhookWorker = new Worker(
+  MESSENGER_WEBHOOK_QUEUE_NAME,
+  async (job) => {
+    await processMessengerWebhookEvent(job.data);
+  },
+  { connection }
+);
+
+messengerWebhookWorker.on("failed", (job, err) => {
+  console.error(`[messenger-webhook-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
+// Messenger এর আউটগোয়িং job — এখন শুধু "reply" (ইনবক্স থেকে এজেন্টের উত্তর), M2+ এ আরও
+// job type যোগ হবে (WhatsApp এর chatbot-autoreply queue এর প্যাটার্নে, কিন্তু আলাদা queue তে)
+const messengerJobsWorker = new Worker(
+  MESSENGER_JOBS_QUEUE_NAME,
+  async (job) => {
+    if (job.name === "reply") {
+      await processMessengerReply(job.data);
+    }
+  },
+  { connection }
+);
+
+messengerJobsWorker.on("failed", (job, err) => {
+  console.error(`[messenger-jobs-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
 console.log(
-  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process queue শুনছে..."
+  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process, messenger-webhook, messenger-jobs queue শুনছে..."
 );
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য

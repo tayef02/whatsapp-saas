@@ -65,25 +65,53 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
     </div>
   );
 
-  // Messenger ট্যাবে এখনো কোনো টেবিল/ডাটা নেই (Phase M0) — তাই নিচের কোনো কোয়েরিই চালানো
-  // হচ্ছে না, সরাসরি গাইড কার্ড দেখানো হচ্ছে
   if (channel === "messenger") {
+    const supabase = await createClient();
+
+    const { count: pagesCount } = await supabase.from("messenger_pages").select("id", { count: "exact", head: true }).eq("status", "active");
+
+    // এখনো কোনো পেজ কানেক্ট করা না থাকলে কোনো conversations/messages কোয়েরি চালানোর
+    // দরকার নেই — সরাসরি গাইড কার্ড
+    if (!pagesCount) {
+      return (
+        <div className="flex flex-col gap-6">
+          {channelTabs}
+          <EmptyState
+            icon={<MessageSquare className="h-10 w-10" />}
+            title="এখনো কোনো Facebook পেজ কানেক্ট করা হয়নি"
+            description="একটা Facebook পেজ কানেক্ট করলে এখানে Messenger এর স্ট্যাট দেখা যাবে।"
+            action={
+              <Link
+                href="/dashboard/messenger"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+              >
+                <MessageSquare className="h-4 w-4" /> প্রথম Facebook পেজ কানেক্ট করুন
+              </Link>
+            }
+          />
+        </div>
+      );
+    }
+
+    const { count: conversationsCount } = await supabase.from("messenger_conversations").select("id", { count: "exact", head: true });
+
+    const { startIso: todayStart } = getDhakaDayBoundariesUtc(0);
+    const { count: todayMessagesCount } = await supabase
+      .from("messenger_messages")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", todayStart);
+
     return (
       <div className="flex flex-col gap-6">
         {channelTabs}
-        <EmptyState
-          icon={<MessageSquare className="h-10 w-10" />}
-          title="এখনো কোনো Facebook পেজ কানেক্ট করা হয়নি"
-          description="Messenger চ্যানেল এখনো সেটআপ হয়নি — Meta অনুমোদনের পর এখান থেকে পেজ কানেক্ট করা যাবে।"
-          action={
-            <Link
-              href="/dashboard/messenger"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
-            >
-              <MessageSquare className="h-4 w-4" /> প্রথম Facebook পেজ কানেক্ট করুন
-            </Link>
-          }
-        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard icon={<MessageSquare className="h-5 w-5" />} label="কানেক্টেড পেজ" value={`${pagesCount ?? 0}`} />
+          <StatCard icon={<Users className="h-5 w-5" />} label="মোট কথোপকথন" value={`${conversationsCount ?? 0}`} />
+          <StatCard icon={<Send className="h-5 w-5" />} label="আজকের মেসেজ" value={`${todayMessagesCount ?? 0}`} />
+        </div>
+        <Link href="/dashboard/messenger/inbox" className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+          ইনবক্সে যান <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
     );
   }

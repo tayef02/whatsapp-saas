@@ -1,8 +1,9 @@
 # Messenger চ্যানেল — রোডম্যাপ (M0-M5)
 
-এই ডকুমেন্ট Facebook Messenger চ্যানেল যোগ করার প্রতিটা ধাপের পরিকল্পনা রাখে। **M0 (কাঠামো)
-সম্পন্ন** — এই ধাপে শুধু DB টেবিল, UI খোলস, ফিচার ফ্ল্যাগ; কোনো আসল Messenger লজিক (OAuth,
-webhook, মেসেজ পাঠানো) এখনো নেই।
+এই ডকুমেন্ট Facebook Messenger চ্যানেল যোগ করার প্রতিটা ধাপের পরিকল্পনা রাখে। **M0 (কাঠামো) ও
+M1 (পেজ কানেক্ট + webhook + টেক্সট ইনবক্স) সম্পন্ন** — টেস্ট করার ধাপ নিচে "M1 টেস্ট করার
+ধাপ" সেকশনে আছে। এখনো বাকি: AI রিপ্লাই (M2), কমেন্ট অটোমেশন (M3), পোস্ট শিডিউলার (M4),
+মডারেশন (M5)।
 
 ## ব্রাঞ্চ ও ফ্ল্যাগ
 
@@ -69,10 +70,10 @@ alter table public.orders
 
 ---
 
-## M1 — পেজ কানেক্ট ও Webhook
+## M1 — পেজ কানেক্ট ও Webhook (সম্পন্ন)
 
 **লক্ষ্য**: Facebook Login for Business দিয়ে OAuth flow, Page Access Token আনা (Vault এ
-সেভ), webhook সাবস্ক্রাইব করা।
+সেভ), webhook সাবস্ক্রাইব করা, শুধু-টেক্সট ইনবক্স (AI ছাড়া)।
 
 **দরকারি Meta পারমিশন** ([Meta ডকুমেন্টেশন](https://developers.facebook.com/documentation/business-messaging/messenger-platform/overview) অনুযায়ী):
 - `pages_show_list` — ইউজারের পেজ তালিকা দেখতে (কোনটা কানেক্ট করবে বাছাই করার জন্য)
@@ -83,13 +84,38 @@ alter table public.orders
   App Review submission এ আলাদাভাবে উল্লেখ করতে হবে
 
 এই সবগুলোই Advanced Access দরকার হয় প্রোডাকশনে, মানে **Meta App Review বাধ্যতামূলক** —
-রিভিউ টিম বট টেস্ট করে দেখবে প্রতিটা পারমিশন আসলেই দরকার কিনা।
+রিভিউ টিম বট টেস্ট করে দেখবে প্রতিটা পারমিশন আসলেই দরকার কিনা। App Review এর আগে **App Roles
+এ যোগ করা টেস্ট ইউজার/টেস্ট পেজ দিয়ে Development mode এ টেস্ট করা যায়** (নিচের টেস্ট সেকশন
+দেখুন) — রিভিউ ছাড়াই।
 
-**কাজ**: OAuth কোড এক্সচেঞ্জ (`exchangeCodeForPageToken` — messenger-types.ts তে স্টাব করা
-আছে), long-lived token এ কনভার্ট, Vault এ সেভ (workspace_ai_settings.api_key_secret_id এর
-প্যাটার্নে নতুন `set_messenger_page_token`/`get_messenger_page_token` RPC লাগবে),
-`messenger_pages` রো insert, webhook সাবস্ক্রাইব (`messages`, `messaging_postbacks`,
-`feed` fields)।
+**যা বানানো হয়েছে**:
+- `packages/core/providers/messenger.ts` — `MetaMessengerProvider` ক্লাস (Graph API v21.0):
+  OAuth dialog URL, code→token এক্সচেঞ্জ, long-lived token, পেজ তালিকা (`listPages`),
+  webhook সাবস্ক্রাইব/আনসাবস্ক্রাইব, `sendMessage`, `getUserProfile`।
+- `supabase/migrations/0042_messenger_vault_functions.sql` — `set_messenger_page_token`/
+  `get_messenger_page_token`/`clear_messenger_page_token` RPC (Vault প্যাটার্ন,
+  `workspace_ai_settings.api_key_secret_id` এর মতোই — `get_messenger_page_token` শুধু
+  `service_role` কল করতে পারে)।
+- `/dashboard/messenger/connect/start`, `/callback`, `/select` — OAuth flow, পেজ টোকেন
+  কখনো URL/DB প্লেইন কলামে না, শুধু অল্প-সময়ের httpOnly কুকিতে (single-use) থেকে সরাসরি
+  Vault এ যায়। পেজ ডিসকানেক্ট করলে webhook আনসাবস্ক্রাইব + Vault থেকে টোকেন মুছে যায়।
+- `/api/webhooks/messenger` — GET এ `hub.verify_token` যাচাই, POST এ raw body দিয়ে
+  `X-Hub-Signature-256` timing-safe যাচাই, তারপর `messenger-webhook-events` কিউতে পুশ করে
+  সাথে সাথে `200 OK` (কোনো DB কাজ webhook route এ হয় না — WhatsApp এর webhook এর একই নিয়ম)।
+- আলাদা BullMQ কিউ (`messenger-webhook-events`, `messenger-jobs`) ও আলাদা `Worker` —
+  WhatsApp এর `evolution-webhook-events`/`chatbot-autoreply` এর সাথে কোনো মিশ্রণ নেই।
+- `apps/worker/src/processors/process-messenger-webhook.ts` — কনভারসেশন upsert, মেসেজ
+  insert (dedup `provider_message_id` দিয়ে), কাস্টমার নাম Graph API থেকে best-effort ফেচ।
+  ছবি/ফাইল এখন শুধু "[ছবি পাঠিয়েছে]" টাইপ প্লেসহোল্ডার — আসল ডাউনলোড M2 তে।
+- `/dashboard/messenger/inbox` — WhatsApp ইনবক্সের একই ডিজাইন, দুইটা ট্যাব (সব/উত্তর বাকি),
+  প্রতিটা কথোপকথনে "২৪ ঘণ্টার উইন্ডো: X ঘণ্টা বাকি" ব্যাজ, উইন্ডো শেষ হলে রিপ্লাই বক্স বন্ধ।
+  এজেন্ট রিপ্লাইও `messenger-jobs` কিউ দিয়ে যায় (Next.js থেকে সরাসরি Graph API কল না) —
+  **কোনো AI/বট রিপ্লাই এই ধাপে নেই**, শুধু মানুষ-এজেন্ট ম্যানুয়াল রিপ্লাই।
+- ড্যাশবোর্ড Messenger ট্যাবে এখন আসল সংখ্যা (কানেক্টেড পেজ, মোট কথোপকথন, আজকের মেসেজ) —
+  কোনো পেজ কানেক্ট না থাকলে আগের মতোই গাইড কার্ড দেখাবে।
+
+**জানা সীমাবদ্ধতা (M1 তে ইচ্ছাকৃতভাবে বাদ)**: ছবি/ফাইল ডাউনলোড, AI/বট রিপ্লাই, human_agent
+ট্যাগ দিয়ে উইন্ডো বাড়ানো — এই তিনটা M2 তে আসবে।
 
 ---
 
@@ -149,6 +175,116 @@ BullMQ delayed job (WhatsApp announcement scheduler এর প্যাটার
 ইনঅ্যাক্টিভ/স্প্যাম ইউজার ফ্ল্যাগ করা (auto-remove না, শুধু দেখানো — WhatsApp এর একই নীতি)।
 
 **পারমিশন**: M3 এর `pages_manage_engagement` যথেষ্ট (হাইড/ডিলিট একই পারমিশনে কভার হয়)।
+
+---
+
+## M1 টেস্ট করার ধাপ
+
+### ১. Meta App সেটআপ (একবারই করতে হবে)
+
+1. [Meta for Developers](https://developers.facebook.com/apps) এ একটা নতুন App বানান, টাইপ
+   "Business"। App ID ও App Secret (Settings → Basic) কপি করে রাখুন।
+2. App এ "Messenger" প্রোডাক্ট যোগ করুন (Add Product)।
+3. Development mode এ App Roles → Roles এ নিজেকে (এবং যাদের পেজে টেস্ট করবেন তাদের) Admin/
+   Tester হিসেবে যোগ করুন — App Review ছাড়াই Development mode এ টেস্ট-ইউজার নিজের পেজ
+   কানেক্ট করতে পারবেন।
+4. Facebook Login for Business সেটআপ (App → Facebook Login for Business → Settings) এ
+   Valid OAuth Redirect URI বসান: `{APP_URL}/dashboard/messenger/connect/callback`
+   (লোকাল টেস্টে টানেল URL, প্রোডাকশনে আসল ডোমেইন — নিচে দেখুন)।
+
+### ২. `.env.local` এ যা বসাতে হবে (নাম, মান নিজে Meta App থেকে বসাবেন)
+
+`apps/web/.env.example` এ এই তিনটা নাম আগে থেকেই আছে — `.env.local` এ আসল মান বসান:
+
+```
+MESSENGER_APP_ID=          # Meta App এর App ID
+MESSENGER_APP_SECRET=      # Meta App এর App Secret — কখনো git এ কমিট না
+MESSENGER_WEBHOOK_VERIFY_TOKEN=   # নিজে একটা র‍্যান্ডম স্ট্রিং বানান (যেমন openssl rand -hex 16) —
+                                    # এটাই webhook সেটআপের সময় Meta তে "Verify Token" ফিল্ডে বসবে
+```
+
+`NEXT_PUBLIC_MESSENGER_ENABLED=true` করুন যাতে সাইডবার/মেনু/রুট আনলক হয়। `APP_URL` আগে থেকেই
+অ্যাপে আছে (WhatsApp webhook এর জন্য ব্যবহার হয়) — Messenger callback URL বানাতেও এটাই
+রিইউজ হচ্ছে, আলাদা ভ্যারিয়েবল লাগবে না।
+
+### ৩. Migration চালানোর ক্রম (Supabase SQL Editor এ নিজে চালাবেন, ক্রম গুরুত্বপূর্ণ)
+
+1. `0040_messenger_pages.sql`
+2. `0041_messenger_conversations_messages.sql`
+3. `0042_messenger_vault_functions.sql`
+
+তিনটাই একে অপরের উপর নির্ভরশীল ক্রমে (পরেরটা আগেরটার টেবিল রেফার করে), তাই এই ক্রম মানা
+জরুরি। তিনটাই `create table if not exists`/`create or replace function` ধাঁচের, তাই দুইবার
+ভুলে চললেও ক্ষতি নেই।
+
+### ৪. লোকালে টেস্ট করা (পাবলিক HTTPS URL লাগবে — Meta লোকালhost webhook নেয় না)
+
+Meta কে webhook subscribe করাতে একটা পাবলিক HTTPS URL লাগবে। লোকাল ডেভ সার্ভার (`localhost:3000`)
+বাইরে থেকে দেখাতে একটা টানেল লাগবে — **ngrok** সবচেয়ে সহজ:
+
+```bash
+ngrok http 3000
+```
+
+এটা একটা URL দেবে (যেমন `https://xxxx.ngrok-free.app`) — এটাই টেস্টের সময়কার `APP_URL` হবে
+(`.env.local` এ বসান), আর Meta App ড্যাশবোর্ডেও এই URL ব্যবহার হবে।
+
+ngrok ছাড়া বিকল্প: **cloudflared** (`cloudflared tunnel --url http://localhost:3000`) — সেইম
+কাজ, একাউন্ট ছাড়াই চলে।
+
+⚠️ টানেল রিস্টার্ট করলে URL বদলে যায় (ফ্রি ngrok এ) — তাই প্রতিবার `.env.local`-এর `APP_URL`
+আর Meta App এর webhook URL/OAuth redirect URI দুই জায়গাতেই আপডেট করা লাগবে।
+
+### ৫. Meta App এ Webhook সেটআপ
+
+App ড্যাশবোর্ড → Messenger → Settings → Webhooks → "Add Callback URL":
+- **Callback URL**: `{APP_URL}/api/webhooks/messenger` (যেমন `https://xxxx.ngrok-free.app/api/webhooks/messenger`)
+- **Verify Token**: ধাপ ২ এ `.env.local`-এ বসানো `MESSENGER_WEBHOOK_VERIFY_TOKEN` এর ঠিক একই মান
+- সাবস্ক্রাইব করুন: `messages`, `messaging_postbacks`
+
+"Verify and Save" চাপলে অ্যাপ চলন্ত থাকতে হবে (dev সার্ভার + টানেল দুটোই আপ) — Meta তখনই GET
+রিকোয়েস্ট পাঠিয়ে verify token যাচাই করবে।
+
+### ৬. পুরো ফ্লো টেস্ট
+
+1. dev সার্ভার + টানেল চালু রেখে অ্যাপে লগইন করুন, সাইডবারে "Messenger" ট্যাবে যান।
+2. "কানেক্ট করুন" চাপুন → Facebook লগইন ডায়ালগ → পারমিশন দিন → নিজের টেস্ট পেজ বাছাই করুন।
+3. কানেক্ট হওয়ার পর `messenger_pages` এ status=`active` রো তৈরি হবে কিনা Supabase এ চেক করুন।
+4. ঐ Facebook পেজে গিয়ে পেজের Messenger এ (facebook.com থেকে, অথবা পেজের পাবলিক লিংক থেকে
+   "Message" বাটনে) একটা টেক্সট মেসেজ পাঠান।
+5. অ্যাপের `/dashboard/messenger/inbox` এ কথোপকথন ও মেসেজ দেখা উচিত কয়েক সেকেন্ডের মধ্যে —
+   না দেখা গেলে worker এর টার্মিনাল লগ (`messenger-webhook-events`/`messenger-jobs` মেনশন করা
+   লাইন) চেক করুন।
+6. ইনবক্স থেকে একটা রিপ্লাই পাঠান, Facebook এ (কাস্টমার সাইডে) মেসেজটা পৌঁছাচ্ছে কিনা দেখুন।
+7. "ডিসকানেক্ট" চেপে `messenger_pages` এ status=`disconnected` হচ্ছে আর webhook আনসাবস্ক্রাইব
+   হচ্ছে কিনা (Meta অ্যাপ ড্যাশবোর্ডে ঐ পেজের subscription লিস্টে আর না থাকা) যাচাই করুন।
+
+### ৭. VPS এ ডিপ্লয় করা — `main` না ভেঙে
+
+`messenger` ব্রাঞ্চ এখনো `main` এ merge হয়নি, তাই প্রোডাকশন VPS এ বর্তমান ডিপ্লয়মেন্ট
+(যেটা সম্ভবত `main` চালাচ্ছে) স্পর্শ না করে টেস্ট করার সহজ উপায়:
+
+**অপশন A (সুপারিশকৃত) — আলাদা ডিরেক্টরি/কন্টেইনারে পাশাপাশি চালানো**:
+1. VPS এ রিপোর 2nd clone বানান আলাদা পাথে (যেমন `/opt/whatsapp-saas-messenger-test`), সেখানে
+   `git checkout messenger`।
+2. `docker-compose.yml` এ `apps/web`/`apps/worker` এর কন্টেইনার নাম ও পোর্ট বদলে আলাদা রাখুন
+   (যেমন web `3001`, worker আলাদা কন্টেইনার নাম) যাতে `main`-এর চলমান কন্টেইনারের সাথে নাম/
+   পোর্ট সংঘর্ষ না হয়। `.env` আলাদা (নিজস্ব Redis DB index বা আলাদা Redis কন্টেইনার ব্যবহার
+   করলে BullMQ কিউ নামও আলাদা থাকায় নিরাপদ, কিন্তু আলাদা Redis রাখাই সবচেয়ে নিরাপদ)।
+3. Nginx এ এই টেস্ট ইনস্ট্যান্সের জন্য একটা সাবডোমেইন (যেমন `messenger-test.yourdomain.com`)
+   বা পাথ প্রক্সি করুন, SSL (Let's Encrypt) নিন — Meta কে এই URL দিন।
+4. টেস্ট শেষে, M2+ ধাপ চলতে চলতে যখন `main` এ merge করার সময় আসবে, তখন এই টেস্ট ইনস্ট্যান্স
+   বন্ধ করে স্বাভাবিক ডিপ্লয় প্রসেসে `main` আপডেট করবেন।
+
+**অপশন B — একই ইনস্ট্যান্সে ব্রাঞ্চ বদলে টেস্ট (ঝুঁকিপূর্ণ, শুধু ট্রাফিক কম থাকা সময়ে)**:
+`main`-এর ডিরেক্টরিতেই সাময়িকভাবে `git checkout messenger` করে rebuild/restart করলে সেই সময়
+WhatsApp প্রোডাকশন ট্রাফিকও এই কোডে চলবে — Messenger কোড WhatsApp টেবিল/প্রসেসর ছোঁয় না বলে
+তাত্ত্বিকভাবে নিরাপদ, কিন্তু টেস্ট শেষে `main`-এ ফিরে আসতে ভুলে গেলে সমস্যা হতে পারে। তাই
+**অপশন A সুপারিশ করা হচ্ছে** — সবসময় `main` আলাদা ও অক্ষত থাকে।
+
+যেহেতু `NEXT_PUBLIC_MESSENGER_ENABLED=false` ডিফল্ট, `main`-এ যদি ভুলবশত `messenger` ব্রাঞ্চের
+কোড merge ও হয়ে যায় (ভবিষ্যতে), ফ্ল্যাগ অফ থাকা অবস্থায় Messenger এর কোনো UI/রুট দেখা যাবে
+না (route handler গুলোও এখন ফ্ল্যাগ চেক করে `/dashboard` এ রিডাইরেক্ট করে দেয়)।
 
 ---
 
