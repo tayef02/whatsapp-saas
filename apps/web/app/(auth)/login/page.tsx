@@ -7,8 +7,18 @@ import { MessageCircle, Eye, EyeOff } from "lucide-react";
 import { Card, Input, Button } from "@/components/ui";
 import { login } from "../actions";
 
+// Supabase এর রাগরাগে এরর মেসেজ — ব্যবহারকারীকে বাংলায় স্পষ্ট করে দেখানোর জন্য ম্যাপ করা।
+// login() সার্ভার অ্যাকশন অপরিবর্তিত, শুধু এখানে ডিসপ্লে করার আগে টেক্সট বদলানো হচ্ছে।
+function translateAuthError(message: string): string {
+  if (message.toLowerCase().includes("invalid login credentials")) {
+    return "ইমেইল বা পাসওয়ার্ড ভুল হয়েছে";
+  }
+  return message;
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -20,7 +30,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.error) {
-      setError(result.error);
+      setError(translateAuthError(result.error));
       return;
     }
     router.push("/");
@@ -42,7 +52,15 @@ export default function LoginPage() {
           {error && <p className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
 
           <form action={handleSubmit} className="flex flex-col gap-4">
-            <Input id="email" name="email" type="email" label="ইমেইল" required />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              label="ইমেইল"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
 
             <label className="block text-sm">
               <span className="mb-1.5 block font-medium text-text">পাসওয়ার্ড</span>
