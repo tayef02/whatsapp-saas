@@ -9,10 +9,13 @@ import {
   ArrowRight,
   MessageCircleWarning,
   ShieldCheck,
+  MessageSquare,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Badge, EmptyState } from "@/components/ui";
 import { formatDhakaDateTime, getDhakaDayBoundariesUtc } from "@/lib/format-date";
+
+const MESSENGER_ENABLED = process.env.NEXT_PUBLIC_MESSENGER_ENABLED === "true";
 
 const campaignStatusLabel: Record<string, string> = {
   draft: "খসড়া",
@@ -42,7 +45,49 @@ const CHART_SERIES = [
   { key: "failed" as const, color: "var(--color-danger)", label: "ব্যর্থ" },
 ];
 
-export default async function DashboardHome() {
+export default async function DashboardHome({ searchParams }: { searchParams: Promise<{ channel?: string }> }) {
+  // ফ্ল্যাগ বন্ধ থাকলে (ডিফল্ট) চ্যানেল ট্যাব দেখানোই হয় না, আর channel সবসময় "whatsapp" —
+  // নিচের কোনো Messenger কোয়েরি/কন্টেন্ট কখনো রেন্ডার হয় না, WhatsApp ড্যাশবোর্ড আগের মতোই
+  const rawChannel = MESSENGER_ENABLED ? (await searchParams).channel : undefined;
+  const channel: "all" | "whatsapp" | "messenger" = !MESSENGER_ENABLED
+    ? "whatsapp"
+    : rawChannel === "messenger"
+      ? "messenger"
+      : rawChannel === "whatsapp"
+        ? "whatsapp"
+        : "all";
+
+  const channelTabs = MESSENGER_ENABLED && (
+    <div className="flex w-fit gap-1 rounded-lg border border-border bg-card p-1">
+      <ChannelTab href="/dashboard" active={channel === "all"} label="সব" />
+      <ChannelTab href="/dashboard?channel=whatsapp" active={channel === "whatsapp"} label="WhatsApp" />
+      <ChannelTab href="/dashboard?channel=messenger" active={channel === "messenger"} label="Messenger" />
+    </div>
+  );
+
+  // Messenger ট্যাবে এখনো কোনো টেবিল/ডাটা নেই (Phase M0) — তাই নিচের কোনো কোয়েরিই চালানো
+  // হচ্ছে না, সরাসরি গাইড কার্ড দেখানো হচ্ছে
+  if (channel === "messenger") {
+    return (
+      <div className="flex flex-col gap-6">
+        {channelTabs}
+        <EmptyState
+          icon={<MessageSquare className="h-10 w-10" />}
+          title="এখনো কোনো Facebook পেজ কানেক্ট করা হয়নি"
+          description="Messenger চ্যানেল এখনো সেটআপ হয়নি — Meta অনুমোদনের পর এখান থেকে পেজ কানেক্ট করা যাবে।"
+          action={
+            <Link
+              href="/dashboard/messenger"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
+            >
+              <MessageSquare className="h-4 w-4" /> প্রথম Facebook পেজ কানেক্ট করুন
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
   const supabase = await createClient();
 
   const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
@@ -136,6 +181,8 @@ export default async function DashboardHome() {
 
   return (
     <div className="flex flex-col gap-6">
+      {channelTabs}
+
       {hasNoNumbers && (
         <EmptyState
           icon={<Smartphone className="h-10 w-10" />}
@@ -282,6 +329,19 @@ export default async function DashboardHome() {
         </Link>
       )}
     </div>
+  );
+}
+
+function ChannelTab({ href, active, label }: { href: string; active: boolean; label: string }) {
+  return (
+    <Link
+      href={href}
+      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+        active ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+      }`}
+    >
+      {label}
+    </Link>
   );
 }
 

@@ -78,6 +78,13 @@
 ### ফেজ ৩ (স্কেলের সময়)
 Meta Cloud API, চ্যাটবট বিল্ডার, পাবলিক API + ওয়েবহুক, ড্রিপ ক্যাম্পেইন, অ্যানালিটিক্স, রিসেলার/হোয়াইট-লেবেল
 
+## Messenger চ্যানেল (নতুন, শুরু হয়েছে — `messenger` ব্রাঞ্চে)
+- পুরো কাজ `messenger` গিট ব্রাঞ্চে, `main` এ না — WhatsApp এর কোনো টেবিল/server action/worker প্রসেসর এই কাজে ছোঁয়া হয় না
+- **M0 (কাঠামো) সম্পন্ন**: `messenger_pages`/`messenger_conversations`/`messenger_messages` টেবিল (migration 0040-0041, আলাদা টেবিল, WhatsApp এর সাথে merge না — কারণ বিস্তারিত `docs/messenger-plan.md` তে), `packages/core/providers/messenger-types.ts` (শুধু ইন্টারফেস, কোনো implementation class না), সাইডবার চ্যানেল সুইচার (WhatsApp | Messenger, URL-ভিত্তিক: `/dashboard/messenger/...`), `nav-config.ts` একমাত্র উৎস, ড্যাশবোর্ডে সব/WhatsApp/Messenger ট্যাব
+- **ফিচার ফ্ল্যাগ**: `NEXT_PUBLIC_MESSENGER_ENABLED` (ডিফল্ট `false`) — বন্ধ থাকলে সুইচার/মেনু/রুট সব লুকানো বা 404, বিটা ইউজার কিছুই দেখে না। `.env.example` এ যোগ করা আছে, আসল `.env` এ বসাতে হবে চালু করতে চাইলে
+- **workspace_ai_settings ও নলেজ বেস** দুই চ্যানেলেই শেয়ার্ড (আলাদা কনফিগ না) — `tryAiReply()` কোর সম্পূর্ণ reuse হবে, শুধু `whatsappNumberId` প্যারামিটার M2 তে generic করতে হবে (নোট `docs/messenger-plan.md` এ)
+- **পরের ধাপ**: M1 (পেজ কানেক্ট ও webhook — Meta App Review লাগবে, দরকারি পারমিশন ডকুমেন্টে আছে) → M2 (ইনবক্স ও AI) → M3 (কমেন্ট অটোমেশন, এই ধাপে `orders.channel`/`messenger_page_id` migration) → M4 (পোস্ট শিডিউলার) → M5 (মডারেশন) — বিস্তারিত `docs/messenger-plan.md`
+
 ## ডিপ্লয়মেন্ট
 - সব সার্ভিসের Dockerfile + docker-compose, Nginx + SSL config
 - গ্রোথ প্ল্যান: ০-৫০ ইউজার (এক VPS) → ৫০-২০০ (Evolution+worker আলাদা সার্ভার) → ২০০+ (মাল্টি Evolution + মাল্টি worker + LB)

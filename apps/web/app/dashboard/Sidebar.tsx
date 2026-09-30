@@ -2,8 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X } from "lucide-react";
-import { navGroups, adminNavGroup, isNavItemActive, type NavGroup } from "./nav-config";
+import { X, MessageCircle, MessageSquare } from "lucide-react";
+import { getNavGroups, isNavItemActive, getChannelFromPathname, type Channel } from "./nav-config";
+
+// ফ্ল্যাগ বন্ধ থাকলে (ডিফল্ট) চ্যানেল সুইচার সম্পূর্ণ লুকানো, সবসময় WhatsApp — বিটা ইউজার
+// আধাখেচড়া Messenger ফিচার দেখবে না। build-time এ inline হয়ে যায় (NEXT_PUBLIC_ প্রিফিক্স)
+const MESSENGER_ENABLED = process.env.NEXT_PUBLIC_MESSENGER_ENABLED === "true";
 
 // isSuperAdmin=true হলে শুধু তখনই "অ্যাডমিন" গ্রুপ দেখানো হয় (dashboard/layout.tsx এর
 // existing is_super_admin RPC কল থেকে পাস হয়ে আসে — নতুন কোনো লজিক না)
@@ -20,7 +24,10 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
 
-  const groups: NavGroup[] = isSuperAdmin ? [...navGroups, adminNavGroup] : navGroups;
+  // ফ্ল্যাগ বন্ধ থাকলে pathname যাই হোক, চ্যানেল সবসময় "whatsapp" ধরা হচ্ছে (যদিও
+  // /dashboard/messenger/* রুট নিজেও ফ্ল্যাগ বন্ধ থাকলে 404 দেয়, এটা একটা দ্বিতীয় সুরক্ষা)
+  const channel: Channel = MESSENGER_ENABLED ? getChannelFromPathname(pathname) : "whatsapp";
+  const groups = getNavGroups(channel, isSuperAdmin);
 
   return (
     <>
@@ -42,6 +49,29 @@ export default function Sidebar({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {MESSENGER_ENABLED && (
+          <div className="flex gap-1 border-b border-border p-2">
+            <Link
+              href="/dashboard"
+              onClick={onClose}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                channel === "whatsapp" ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+              }`}
+            >
+              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+            </Link>
+            <Link
+              href="/dashboard/messenger"
+              onClick={onClose}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                channel === "messenger" ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+              }`}
+            >
+              <MessageSquare className="h-3.5 w-3.5" /> Messenger
+            </Link>
+          </div>
+        )}
 
         <nav className="px-3 py-4">
           {groups.map((group) => (
