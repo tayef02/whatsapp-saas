@@ -3,7 +3,7 @@ import { getSupabase } from "../lib/supabase";
 import { pauseCampaignsForNumber } from "../lib/campaign-safety";
 import { isStopKeyword, isStartKeyword } from "@whatsapp-saas/core/campaigns/stop-keywords";
 import { AUTOREPLY_QUEUE_NAME } from "../queues/autoreply-queue";
-import type { AutoReplyJobData } from "@whatsapp-saas/core/chatbot/types";
+import type { AutoReplyJobData, DownloadInboxMediaJobData } from "@whatsapp-saas/core/chatbot/types";
 import { createNotification } from "../lib/notify";
 import { generateEmbedding, generateChatReply, type LlmProvider, type ChatTurn } from "@whatsapp-saas/core/chatbot/llm";
 import {
@@ -211,11 +211,8 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
     return;
   }
 
-  const text =
-    (data.message as { conversation?: string } | undefined)?.conversation ??
-    (data.message as { extendedTextMessage?: { text?: string } } | undefined)?.extendedTextMessage?.text ??
-    "";
-  if (!text.trim()) return;
+  const { text, mediaType } = extractMessageContent(data);
+  if (!text.trim() && !mediaType) return; // পুরোপুরি অপ্রাসঙ্গিক মেসেজ টাইপ (reaction, poll, protocol ইত্যাদি)
 
   const phone = phoneFromJid(key.remoteJid);
   if (!phone) return;
@@ -250,7 +247,7 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
     return;
   }
 
-  await handleAutoReply(supabase, number, phone, text, providerMessageId);
+  await handleAutoReply(supabase, number, phone, text, providerMessageId, mediaType);
 }
 
 // নতুন মেম্বার গ্রুপে জয়েন করলে (Baileys এর action="add") ওয়েলকাম মেসেজ পাঠায়, যদি সেই
@@ -305,21 +302,21 @@ async function handleGroupParticipantsUpdate(instanceName: string, data: Record<
   await getAutoReplyQueue().add("group-reply", jobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
 }
 
-// গ্রুপ মেসেজে শুধু কিওয়ার্ড-বেসড অটো-রিপ্লাই চেক হয় (AI/RAG চলে না, সেটা শুধু ১:১ চ্যাটের জন্য)।
-type GroupMessageContent = { text: string; mediaType: "image" | "document" | "video" | "audio" | "sticker" | null };
+// গ্রুপ আর ১:১ চ্যাট দুটোতেই ব্যবহার হয় (আগে শুধু গ্রুপে ব্যবহার হতো, নাম অনুযায়ী) —
+// Baileys/Evolution এর মেসেজ অবজেক্ট generic, গ্রুপ/১:১ ভেদে আলাদা কিছু নেই
+type MessageContent = { text: string; mediaType: "image" | "document" | "video" | "audio" | "sticker" | null };
 
-// Baileys/Evolution এর মেসেজ অবজেক্ট থেকে টেক্সট বা মিডিয়া (ক্যাপশনসহ) বের করে। মিডিয়া
-// ফাইল আসলেই ডাউনলোড করে স্টোরেজে সেভ করা এখনো implement করা হয়নি (Evolution base64 কোন
-// ফিল্ডে পাঠায় লাইভ payload না দেখে নিশ্চিত না) — তাই raw media অবজেক্ট একবার লগ করা হয়,
-// যাতে পরের ধাপে সঠিক ফিল্ড ধরে media_url পপুলেট করা যায়
-function extractGroupMessageContent(data: Record<string, unknown>): GroupMessageContent {
+// Baileys/Evolution এর মেসেজ অবজেক্ট থেকে টেক্সট বা মিডিয়া (ক্যাপশনসহ) বের করে। মিডিয়া হলে
+// caption (থাকলে) text হিসেবে রিটার্ন হয়, আসল ফাইল ডাউনলোড আলাদা queued job এ হয় (গ্রুপে
+// maybeQueueMediaDownload, ১:১ তে maybeQueueInboxMediaDownload)
+function extractMessageContent(data: Record<string, unknown>): MessageContent {
   const message = data.message as Record<string, any> | undefined;
   if (!message) return { text: "", mediaType: null };
 
   if (typeof message.conversation === "string") return { text: message.conversation, mediaType: null };
   if (typeof message.extendedTextMessage?.text === "string") return { text: message.extendedTextMessage.text, mediaType: null };
 
-  const mediaFields: Array<[string, GroupMessageContent["mediaType"]]> = [
+  const mediaFields: Array<[string, MessageContent["mediaType"]]> = [
     ["imageMessage", "image"],
     ["documentMessage", "document"],
     ["videoMessage", "video"],
@@ -329,14 +326,14 @@ function extractGroupMessageContent(data: Record<string, unknown>): GroupMessage
   for (const [key, type] of mediaFields) {
     const media = message[key];
     if (media) {
-      console.log(`[group-messages] media message detected (type=${type}): ${JSON.stringify(media).slice(0, 300)}`);
+      console.log(`[messages] media message detected (type=${type}): ${JSON.stringify(media).slice(0, 300)}`);
       return { text: typeof media.caption === "string" ? media.caption : "", mediaType: type };
     }
   }
   return { text: "", mediaType: null };
 }
 
-const GROUP_MEDIA_LABEL_BN: Record<string, string> = {
+const MEDIA_LABEL_BN: Record<string, string> = {
   image: "[ছবি পাঠিয়েছে]",
   document: "[ডকুমেন্ট পাঠিয়েছে]",
   video: "[ভিডিও পাঠিয়েছে]",
@@ -406,6 +403,28 @@ async function maybeQueueMediaDownload(
   await getAutoReplyQueue().add("download-group-media", jobData, { attempts: 2, backoff: { type: "exponential", delay: 3000 } });
 }
 
+// ১:১ ইনবক্সের মিডিয়া ডাউনলোডের জন্য — উপরের maybeQueueMediaDownload এর ঠিক একই প্যাটার্ন,
+// শুধু conversation_messages/inbox-media bucket টার্গেট করে (group_messages/group-media এর বদলে)
+async function maybeQueueInboxMediaDownload(
+  conversationMessageId: string | null,
+  mediaType: string | null,
+  conversationId: string,
+  workspaceId: string,
+  whatsappNumberId: string,
+  messageId: string | undefined
+) {
+  if (!conversationMessageId || !mediaType || !messageId) return;
+
+  const jobData: DownloadInboxMediaJobData = {
+    conversationMessageId,
+    workspaceId,
+    conversationId,
+    whatsappNumberId,
+    messageId,
+  };
+  await getAutoReplyQueue().add("download-inbox-media", jobData, { attempts: 2, backoff: { type: "exponential", delay: 3000 } });
+}
+
 // গ্রুপটা এখনো sync করা না থাকলে (groups টেবিলে নেই) কিছু করার নেই, স্কিপ। প্রতিটা মেসেজ
 // group_messages এ লগ হয় (ট্রিগার মিলুক বা না মিলুক) — ভবিষ্যতে AI ট্রিগার হলে যেন গ্রুপের
 // আসল কথোপকথনের প্রসঙ্গ থাকে। প্রথম যে রুল (keyword বা @mention) মেসেজে মেলে সেটাই ট্রিগার
@@ -416,7 +435,7 @@ async function handleGroupMessage(
   data: Record<string, unknown>,
   key: { remoteJid?: string; participant?: string; id?: string }
 ) {
-  const { text, mediaType } = extractGroupMessageContent(data);
+  const { text, mediaType } = extractMessageContent(data);
   if (!text.trim() && !mediaType) return; // অচেনা/অপ্রাসঙ্গিক মেসেজ টাইপ (reaction, poll, protocol ইত্যাদি)
 
   const groupJid = key.remoteJid;
@@ -686,7 +705,7 @@ async function handleGroupMessage(
     .reverse()
     .map(
       (m: { direction: string; sender_phone: string | null; sender_name: string | null; content: string | null; media_type: string | null }) => {
-        const shown = m.content || (m.media_type ? GROUP_MEDIA_LABEL_BN[m.media_type] : "") || "";
+        const shown = m.content || (m.media_type ? MEDIA_LABEL_BN[m.media_type] : "") || "";
         return {
           role: m.direction === "inbound" ? "user" : "assistant",
           content: m.direction === "inbound" ? `[${m.sender_name || m.sender_phone || "member"}]: ${shown}` : shown,
@@ -736,23 +755,48 @@ async function insertInboundMessage(
   supabase: ReturnType<typeof getSupabase>,
   conversationId: string,
   text: string,
-  providerMessageId: string | undefined
-): Promise<{ isDuplicate: boolean }> {
-  const { error } = await supabase.from("conversation_messages").insert({
-    conversation_id: conversationId,
-    direction: "inbound",
-    sender_type: "customer",
-    content: text,
-    provider_message_id: providerMessageId ?? null,
-  });
+  providerMessageId: string | undefined,
+  mediaType: string | null
+): Promise<{ isDuplicate: boolean; messageId: string | null }> {
+  const { data, error } = await supabase
+    .from("conversation_messages")
+    .insert({
+      conversation_id: conversationId,
+      direction: "inbound",
+      sender_type: "customer",
+      content: text,
+      provider_message_id: providerMessageId ?? null,
+      media_type: mediaType,
+    })
+    .select("id")
+    .maybeSingle();
 
   if (error?.code === "23505") {
     console.log(`[autoreply] duplicate inbound message ignored (conversation=${conversationId}, providerMessageId=${providerMessageId})`);
-    return { isDuplicate: true };
+    return { isDuplicate: true, messageId: null };
   }
   if (error) {
     console.error(`[autoreply] failed to insert inbound message (conversation=${conversationId}):`, error.message);
+    return { isDuplicate: false, messageId: null };
   }
+  return { isDuplicate: false, messageId: data?.id ?? null };
+}
+
+// মেসেজ সেভ করা আর (মিডিয়া থাকলে) ডাউনলোড job বসানো — handed_off আর স্বাভাবিক দুই পথেই
+// একইভাবে দরকার (এজেন্টের কাছে হ্যান্ডঅফ হওয়া কথোপকথনেও কাস্টমারের পাঠানো ছবি দেখা দরকার)
+async function saveInboundMessageAndQueueMedia(
+  supabase: ReturnType<typeof getSupabase>,
+  conversationId: string,
+  workspaceId: string,
+  whatsappNumberId: string,
+  text: string,
+  providerMessageId: string | undefined,
+  mediaType: string | null
+): Promise<{ isDuplicate: boolean }> {
+  const { isDuplicate, messageId } = await insertInboundMessage(supabase, conversationId, text, providerMessageId, mediaType);
+  if (isDuplicate) return { isDuplicate: true };
+
+  await maybeQueueInboxMediaDownload(messageId, mediaType, conversationId, workspaceId, whatsappNumberId, providerMessageId);
   return { isDuplicate: false };
 }
 
@@ -766,7 +810,8 @@ async function handleAutoReply(
   number: { id: string; workspace_id: string },
   phone: string,
   text: string,
-  providerMessageId: string | undefined
+  providerMessageId: string | undefined,
+  mediaType: string | null
 ) {
   let { data: contact } = await supabase
     .from("contacts")
@@ -809,7 +854,7 @@ async function handleAutoReply(
   // না চাপা পর্যন্ত পরের সব মেসেজেও চুপ থাকবে (ইচ্ছাকৃতভাবে sticky, ইনবাউন্ড মেসেজ তবুও সেভ হয়)
   if (conversation.status === "handed_off") {
     console.log(`[autoreply] conversation=${conversation.id} is handed_off, bot staying silent`);
-    await insertInboundMessage(supabase, conversation.id, text, providerMessageId);
+    await saveInboundMessageAndQueueMedia(supabase, conversation.id, number.workspace_id, number.id, text, providerMessageId, mediaType);
     return;
   }
 
@@ -830,9 +875,26 @@ async function handleAutoReply(
     .reverse()
     .map((m: { direction: string; content: string }) => ({ role: m.direction === "inbound" ? "user" : "assistant", content: m.content }));
 
-  const { isDuplicate } = await insertInboundMessage(supabase, conversation.id, text, providerMessageId);
+  const { isDuplicate } = await saveInboundMessageAndQueueMedia(
+    supabase,
+    conversation.id,
+    number.workspace_id,
+    number.id,
+    text,
+    providerMessageId,
+    mediaType
+  );
   if (isDuplicate) {
     console.log(`[autoreply] skipping AI call — duplicate webhook event for an already-processed message`);
+    return;
+  }
+
+  // ছবি/ভিডিও/অডিও/ডকুমেন্ট এসেছে কিন্তু কোনো ক্যাপশন/টেক্সট নেই — মেসেজ ততক্ষণে সেভ হয়ে
+  // গেছে (উপরে, ইনবক্সে দেখা যাবে), কিন্তু AI কে খালি প্রশ্ন পাঠিয়ে কল করা হচ্ছে না। এটা আগের
+  // আচরণেরই ধারাবাহিকতা (আগে এই ধরনের মেসেজে কোনো রিপ্লাই-ই যেত না, পুরো মেসেজটাই বাদ যেত) —
+  // ক্যাপশন থাকলে স্বাভাবিক টেক্সট মেসেজের মতোই নিচের AI ফ্লো চলবে
+  if (mediaType && !text.trim()) {
+    console.log(`[autoreply] media message with no caption (type=${mediaType}), saved but skipping AI reply (conversation=${conversation.id})`);
     return;
   }
 

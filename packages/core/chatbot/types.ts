@@ -19,3 +19,15 @@ export type DirectMessageJobData = {
   phone: string;
   replyText: string;
 };
+
+// ১:১ ইনবক্সে কাস্টমারের পাঠানো ছবি/ভিডিও/অডিও/ডকুমেন্ট ধরা পড়লে ("download-inbox-media"
+// নামে একই chatbot-autoreply queue তে যায়) — আসল ফাইল ডাউনলোড+ডিক্রিপ্ট করে inbox-media
+// bucket এ সেভ করে conversation_messages.media_path আপডেট করা হয় (group এর
+// DownloadGroupMediaJobData/process-group-media.ts এর ঠিক একই প্যাটার্ন)
+export type DownloadInboxMediaJobData = {
+  conversationMessageId: string;
+  workspaceId: string;
+  conversationId: string;
+  whatsappNumberId: string;
+  messageId: string;
+};

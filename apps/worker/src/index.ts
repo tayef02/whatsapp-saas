@@ -27,6 +27,7 @@ import { processAutoReply } from "./processors/process-autoreply";
 import { processGroupReply } from "./processors/process-group-reply";
 import { processDeleteGroupMessage } from "./processors/process-group-moderation";
 import { processDownloadGroupMedia } from "./processors/process-group-media";
+import { processDownloadInboxMedia } from "./processors/process-inbox-media";
 import { processDirectMessage } from "./processors/process-direct-message";
 import { processSendGroupAnnouncement } from "./processors/process-group-announcement-send";
 import { GROUP_ANNOUNCEMENT_SCHEDULER_QUEUE_NAME } from "./queues/group-announcement-queues";
@@ -136,10 +137,10 @@ groupMemberInactivityWorker.on("failed", (job, err) => {
 });
 
 // keyword rule/fallback ম্যাচ হলে auto-reply পাঠানোর job — একই queue তে ১:১ চ্যাটের "reply",
-// গ্রুপ কিওয়ার্ডের "group-reply", স্প্যাম-ফিল্টারের "delete-group-message", মিডিয়া
-// ডাউনলোডের "download-group-media", শিডিউলড অ্যানাউন্সমেন্টের "send-group-announcement", আর
-// কনভারসেশন-ছাড়া কাস্টমারকে সরাসরি পাঠানোর "direct-message" — ছয় ধরনের job আসে, job.name
-// দিয়ে আলাদা করা হয়
+// গ্রুপ কিওয়ার্ডের "group-reply", স্প্যাম-ফিল্টারের "delete-group-message", গ্রুপ মিডিয়া
+// ডাউনলোডের "download-group-media", ১:১ ইনবক্স মিডিয়া ডাউনলোডের "download-inbox-media",
+// শিডিউলড অ্যানাউন্সমেন্টের "send-group-announcement", আর কনভারসেশন-ছাড়া কাস্টমারকে সরাসরি
+// পাঠানোর "direct-message" — সাত ধরনের job আসে, job.name দিয়ে আলাদা করা হয়
 const autoReplyWorker = new Worker(
   AUTOREPLY_QUEUE_NAME,
   async (job) => {
@@ -149,6 +150,8 @@ const autoReplyWorker = new Worker(
       await processDeleteGroupMessage(job.data);
     } else if (job.name === "download-group-media") {
       await processDownloadGroupMedia(job.data);
+    } else if (job.name === "download-inbox-media") {
+      await processDownloadInboxMedia(job.data);
     } else if (job.name === "send-group-announcement") {
       await processSendGroupAnnouncement(job.data);
     } else if (job.name === "direct-message") {
