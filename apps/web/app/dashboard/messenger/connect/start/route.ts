@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { buildMessengerRedirectUri } from "@/lib/messenger-url";
 import { MetaMessengerProvider } from "@whatsapp-saas/core/providers/messenger";
 
 const STATE_COOKIE = "messenger_oauth_state";
@@ -28,8 +29,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard/messenger?error=not_configured", request.url));
   }
 
-  const appUrl = process.env.APP_URL;
-  if (!appUrl) {
+  // APP_URL (WhatsApp/Evolution এর webhook এর জন্য, ভেতরের docker নেটওয়ার্ক URL হতে পারে,
+  // যেমন http://host.docker.internal:3000) এখানে ব্যবহার করা যাবে না — Facebook এর OAuth
+  // redirect_uri ব্রাউজার সরাসরি ভিজিট করে, তাই এটা অবশ্যই পাবলিক HTTPS হতে হবে। আলাদা
+  // MESSENGER_PUBLIC_URL না থাকলে বা https না হলে চুপচাপ কিছু ধরে নেওয়া হবে না — স্পষ্ট এরর।
+  const redirectUri = buildMessengerRedirectUri();
+  if (!redirectUri) {
     return NextResponse.redirect(new URL("/dashboard/messenger?error=not_configured", request.url));
   }
 
@@ -46,7 +51,6 @@ export async function GET(request: NextRequest) {
   });
 
   const provider = new MetaMessengerProvider({ appId, appSecret });
-  const redirectUri = `${appUrl}/dashboard/messenger/connect/callback`;
   const oauthUrl = provider.getOAuthDialogUrl(redirectUri, state);
 
   return NextResponse.redirect(oauthUrl);

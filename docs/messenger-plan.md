@@ -189,23 +189,29 @@ BullMQ delayed job (WhatsApp announcement scheduler এর প্যাটার
    Tester হিসেবে যোগ করুন — App Review ছাড়াই Development mode এ টেস্ট-ইউজার নিজের পেজ
    কানেক্ট করতে পারবেন।
 4. Facebook Login for Business সেটআপ (App → Facebook Login for Business → Settings) এ
-   Valid OAuth Redirect URI বসান: `{APP_URL}/dashboard/messenger/connect/callback`
-   (লোকাল টেস্টে টানেল URL, প্রোডাকশনে আসল ডোমেইন — নিচে দেখুন)।
+   Valid OAuth Redirect URI বসান: `{MESSENGER_PUBLIC_URL}/dashboard/messenger/connect/callback`
+   (লোকাল টেস্টে টানেল HTTPS URL, প্রোডাকশনে আসল ডোমেইন — নিচে দেখুন)। **অবশ্যই https** —
+   http দিলে Facebook "isn't using a secure connection" এরর দেখায়, কানেক্ট flow শুরুই হয় না।
 
 ### ২. `.env.local` এ যা বসাতে হবে (নাম, মান নিজে Meta App থেকে বসাবেন)
 
-`apps/web/.env.example` এ এই তিনটা নাম আগে থেকেই আছে — `.env.local` এ আসল মান বসান:
+`apps/web/.env.example` এ এই চারটা নাম আগে থেকেই আছে — `.env.local` এ আসল মান বসান:
 
 ```
 MESSENGER_APP_ID=          # Meta App এর App ID
 MESSENGER_APP_SECRET=      # Meta App এর App Secret — কখনো git এ কমিট না
+MESSENGER_PUBLIC_URL=      # পাবলিক HTTPS base URL, শেষে / ছাড়া (যেমন https://xxxx.ngrok-free.app)
+                           # — শুধু OAuth redirect_uri বানাতে ব্যবহার হয়, WhatsApp এর APP_URL
+                           # (docker-internal http হতে পারে) থেকে সম্পূর্ণ আলাদা, রিইউজ করা হয় না
 MESSENGER_WEBHOOK_VERIFY_TOKEN=   # নিজে একটা র‍্যান্ডম স্ট্রিং বানান (যেমন openssl rand -hex 16) —
                                     # এটাই webhook সেটআপের সময় Meta তে "Verify Token" ফিল্ডে বসবে
 ```
 
-`NEXT_PUBLIC_MESSENGER_ENABLED=true` করুন যাতে সাইডবার/মেনু/রুট আনলক হয়। `APP_URL` আগে থেকেই
-অ্যাপে আছে (WhatsApp webhook এর জন্য ব্যবহার হয়) — Messenger callback URL বানাতেও এটাই
-রিইউজ হচ্ছে, আলাদা ভ্যারিয়েবল লাগবে না।
+`NEXT_PUBLIC_MESSENGER_ENABLED=true` করুন যাতে সাইডবার/মেনু/রুট আনলক হয়।
+
+**`MESSENGER_PUBLIC_URL` না থাকলে বা `https://` দিয়ে শুরু না হলে** কানেক্ট বাটনে ক্লিক করলে
+সরাসরি "Messenger এখনো সেটআপ হয়নি" এরর দেখাবে (চুপচাপ localhost/http ধরে নেওয়া হয় না) —
+`apps/web/lib/messenger-url.ts` এই যাচাই করে।
 
 ### ৩. Migration চালানোর ক্রম (Supabase SQL Editor এ নিজে চালাবেন, ক্রম গুরুত্বপূর্ণ)
 
@@ -226,19 +232,23 @@ Meta কে webhook subscribe করাতে একটা পাবলিক HT
 ngrok http 3000
 ```
 
-এটা একটা URL দেবে (যেমন `https://xxxx.ngrok-free.app`) — এটাই টেস্টের সময়কার `APP_URL` হবে
-(`.env.local` এ বসান), আর Meta App ড্যাশবোর্ডেও এই URL ব্যবহার হবে।
+এটা একটা URL দেবে (যেমন `https://xxxx.ngrok-free.app`) — এটাই টেস্টের সময়কার
+`MESSENGER_PUBLIC_URL` হবে (`.env.local` এ বসান, শেষে `/` ছাড়া), আর Meta App
+ড্যাশবোর্ডের OAuth redirect URI ও webhook callback URL দুটোতেই এই একই URL ব্যবহার হবে
+(`APP_URL` এর আলাদা মান হতে পারে — ওটা শুধু WhatsApp/Evolution এর জন্য, এখানে অপ্রাসঙ্গিক)।
 
 ngrok ছাড়া বিকল্প: **cloudflared** (`cloudflared tunnel --url http://localhost:3000`) — সেইম
 কাজ, একাউন্ট ছাড়াই চলে।
 
-⚠️ টানেল রিস্টার্ট করলে URL বদলে যায় (ফ্রি ngrok এ) — তাই প্রতিবার `.env.local`-এর `APP_URL`
-আর Meta App এর webhook URL/OAuth redirect URI দুই জায়গাতেই আপডেট করা লাগবে।
+⚠️ টানেল রিস্টার্ট করলে URL বদলে যায় (ফ্রি ngrok এ) — তাই প্রতিবার `.env.local`-এর
+`MESSENGER_PUBLIC_URL`, Facebook Login for Business এর Valid OAuth Redirect URI, আর Meta
+App এর webhook callback URL — তিন জায়গাতেই আপডেট করা লাগবে, নাহলে "redirect_uri mismatch"
+বা signature-যাচাই ব্যর্থ হবে।
 
 ### ৫. Meta App এ Webhook সেটআপ
 
 App ড্যাশবোর্ড → Messenger → Settings → Webhooks → "Add Callback URL":
-- **Callback URL**: `{APP_URL}/api/webhooks/messenger` (যেমন `https://xxxx.ngrok-free.app/api/webhooks/messenger`)
+- **Callback URL**: `{MESSENGER_PUBLIC_URL}/api/webhooks/messenger` (যেমন `https://xxxx.ngrok-free.app/api/webhooks/messenger`)
 - **Verify Token**: ধাপ ২ এ `.env.local`-এ বসানো `MESSENGER_WEBHOOK_VERIFY_TOKEN` এর ঠিক একই মান
 - সাবস্ক্রাইব করুন: `messages`, `messaging_postbacks`
 
@@ -273,7 +283,13 @@ App ড্যাশবোর্ড → Messenger → Settings → Webhooks → "
    করলে BullMQ কিউ নামও আলাদা থাকায় নিরাপদ, কিন্তু আলাদা Redis রাখাই সবচেয়ে নিরাপদ)।
 3. Nginx এ এই টেস্ট ইনস্ট্যান্সের জন্য একটা সাবডোমেইন (যেমন `messenger-test.yourdomain.com`)
    বা পাথ প্রক্সি করুন, SSL (Let's Encrypt) নিন — Meta কে এই URL দিন।
-4. টেস্ট শেষে, M2+ ধাপ চলতে চলতে যখন `main` এ merge করার সময় আসবে, তখন এই টেস্ট ইনস্ট্যান্স
+4. এই ইনস্ট্যান্সের `.env` এ `MESSENGER_PUBLIC_URL=https://messenger-test.yourdomain.com`
+   (শেষে `/` ছাড়া) বসান — এটাই Facebook Login for Business এর Valid OAuth Redirect URI আর
+   webhook callback URL এ ব্যবহৃত হবে। প্রোডাকশনে `main`-এ merge হওয়ার পর এটা আসল ডোমেইন হবে,
+   যেমন `MESSENGER_PUBLIC_URL=https://app.yourdomain.com` (`APP_URL` থেকে আলাদা রাখা —
+   `APP_URL` WhatsApp/Evolution এর জন্য docker-internal মান রাখতে পারে, `MESSENGER_PUBLIC_URL`
+   সবসময় পাবলিক-থেকে-দেখা-যাওয়া https ডোমেইন হতে হবে)।
+5. টেস্ট শেষে, M2+ ধাপ চলতে চলতে যখন `main` এ merge করার সময় আসবে, তখন এই টেস্ট ইনস্ট্যান্স
    বন্ধ করে স্বাভাবিক ডিপ্লয় প্রসেসে `main` আপডেট করবেন।
 
 **অপশন B — একই ইনস্ট্যান্সে ব্রাঞ্চ বদলে টেস্ট (ঝুঁকিপূর্ণ, শুধু ট্রাফিক কম থাকা সময়ে)**:

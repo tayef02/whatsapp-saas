@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { buildMessengerRedirectUri } from "@/lib/messenger-url";
 import { MetaMessengerProvider } from "@whatsapp-saas/core/providers/messenger";
 
 const STATE_COOKIE = "messenger_oauth_state";
@@ -43,13 +44,15 @@ export async function GET(request: NextRequest) {
 
   const appId = process.env.MESSENGER_APP_ID;
   const appSecret = process.env.MESSENGER_APP_SECRET;
-  const appUrl = process.env.APP_URL;
-  if (!appId || !appSecret || !appUrl) {
+  // start/route.ts এর সাথে অভিন্ন মান হওয়া বাধ্যতামূলক — Facebook এই ঠিক একই redirect_uri দিয়েই
+  // কোড ইস্যু করেছে, এক্সচেঞ্জের সময় সামান্য পার্থক্যও (ট্রেইলিং স্ল্যাশ, http/https) Facebook
+  // "redirect_uri mismatch" এরর দেবে — তাই দুই রুটেই একই buildMessengerRedirectUri() ব্যবহার
+  const redirectUri = buildMessengerRedirectUri();
+  if (!appId || !appSecret || !redirectUri) {
     return NextResponse.redirect(new URL("/dashboard/messenger?error=not_configured", request.url));
   }
 
   const provider = new MetaMessengerProvider({ appId, appSecret });
-  const redirectUri = `${appUrl}/dashboard/messenger/connect/callback`;
 
   try {
     const { userAccessToken: shortLived } = await provider.exchangeCodeForUserToken(code, redirectUri);

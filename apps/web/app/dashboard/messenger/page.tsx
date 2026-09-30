@@ -7,7 +7,8 @@ import PageCard from "./PageCard";
 const errorMessage: Record<string, string> = {
   oauth_denied: "Facebook এ অনুমতি দেওয়া হয়নি, তাই কানেক্ট করা যায়নি।",
   invalid_state: "লিংকের মেয়াদ শেষ হয়ে গেছে, আবার চেষ্টা করুন।",
-  not_configured: "Messenger এর জন্য এখনো App ID/Secret সেট করা হয়নি (সার্ভার .env দেখুন)।",
+  not_configured:
+    "Messenger এখনো সেটআপ হয়নি — MESSENGER_APP_ID/MESSENGER_APP_SECRET/MESSENGER_PUBLIC_URL (https দিয়ে শুরু) ঠিকমতো .env এ বসানো আছে কিনা দেখুন।",
   no_pages: "আপনার কোনো Facebook পেজ পাওয়া যায়নি (অ্যাডমিন অ্যাক্সেস আছে এমন পেজ লাগবে)।",
   oauth_failed: "Facebook এর সাথে সংযোগ করতে সমস্যা হয়েছে, আবার চেষ্টা করুন।",
   no_workspace: "workspace পাওয়া যায়নি।",
