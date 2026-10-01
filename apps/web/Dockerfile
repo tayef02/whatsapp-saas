@@ -14,6 +14,16 @@ FROM node:24-alpine AS builder
 WORKDIR /repo
 COPY --from=deps /repo/node_modules ./node_modules
 COPY . .
+# NEXT_PUBLIC_* ভ্যারিয়েবল Next.js build-time এ client বান্ডেলে বসে যায় (রানটাইমে env_file
+# দিয়ে দিলে কাজ করে না) — .env.production ইচ্ছাকৃতভাবে .dockerignore এ থাকায় (secret leak
+# ঠেকাতে) build context এও যায় না, তাই docker-compose.production.yml থেকে build arg হয়ে
+# এখানে আসতে হবে
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_MESSENGER_ENABLED
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_MESSENGER_ENABLED=$NEXT_PUBLIC_MESSENGER_ENABLED
 RUN npm run build --workspace=apps/web
 
 FROM node:24-alpine AS runner

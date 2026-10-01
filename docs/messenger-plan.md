@@ -269,34 +269,119 @@ App ড্যাশবোর্ড → Messenger → Settings → Webhooks → "
 7. "ডিসকানেক্ট" চেপে `messenger_pages` এ status=`disconnected` হচ্ছে আর webhook আনসাবস্ক্রাইব
    হচ্ছে কিনা (Meta অ্যাপ ড্যাশবোর্ডে ঐ পেজের subscription লিস্টে আর না থাকা) যাচাই করুন।
 
-### ৭. VPS এ ডিপ্লয় করা — `main` না ভেঙে
+### ৭. VPS এ ডিপ্লয় করা (আসল প্রোডাকশন স্ট্যাক, `docker-compose.production.yml`)
 
-`messenger` ব্রাঞ্চ এখনো `main` এ merge হয়নি, তাই প্রোডাকশন VPS এ বর্তমান ডিপ্লয়মেন্ট
-(যেটা সম্ভবত `main` চালাচ্ছে) স্পর্শ না করে টেস্ট করার সহজ উপায়:
+আগের সংস্করণে এই সেকশনে একটা হাইপোথেটিক্যাল দ্বিতীয়-ইনস্ট্যান্স সেটআপ লেখা ছিল —
+`docker-compose.production.yml`/`apps/web/Dockerfile`/`apps/worker/Dockerfile` আসলে পড়ে
+দেখার পর সেটা বাদ দিয়ে নিচের ধাপগুলো বাস্তব সেটআপ অনুযায়ী লেখা হলো। প্রোডাকশন স্ট্যাকে একটাই
+`web`/`worker`/`redis` কম্পোজ, Traefik দিয়ে `wa.srv1980546.hstgr.cloud` ডোমেইনে রাউট করা, আর
+Evolution API সম্পূর্ণ আলাদা (এই কম্পোজ স্পর্শ করে না)।
 
-**অপশন A (সুপারিশকৃত) — আলাদা ডিরেক্টরি/কন্টেইনারে পাশাপাশি চালানো**:
-1. VPS এ রিপোর 2nd clone বানান আলাদা পাথে (যেমন `/opt/whatsapp-saas-messenger-test`), সেখানে
-   `git checkout messenger`।
-2. `docker-compose.yml` এ `apps/web`/`apps/worker` এর কন্টেইনার নাম ও পোর্ট বদলে আলাদা রাখুন
-   (যেমন web `3001`, worker আলাদা কন্টেইনার নাম) যাতে `main`-এর চলমান কন্টেইনারের সাথে নাম/
-   পোর্ট সংঘর্ষ না হয়। `.env` আলাদা (নিজস্ব Redis DB index বা আলাদা Redis কন্টেইনার ব্যবহার
-   করলে BullMQ কিউ নামও আলাদা থাকায় নিরাপদ, কিন্তু আলাদা Redis রাখাই সবচেয়ে নিরাপদ)।
-3. Nginx এ এই টেস্ট ইনস্ট্যান্সের জন্য একটা সাবডোমেইন (যেমন `messenger-test.yourdomain.com`)
-   বা পাথ প্রক্সি করুন, SSL (Let's Encrypt) নিন — Meta কে এই URL দিন।
-4. এই ইনস্ট্যান্সের `.env` এ `MESSENGER_PUBLIC_URL=https://messenger-test.yourdomain.com`
-   (শেষে `/` ছাড়া) বসান — এটাই Facebook Login for Business এর Valid OAuth Redirect URI আর
-   webhook callback URL এ ব্যবহৃত হবে। প্রোডাকশনে `main`-এ merge হওয়ার পর এটা আসল ডোমেইন হবে,
-   যেমন `MESSENGER_PUBLIC_URL=https://app.yourdomain.com` (`APP_URL` থেকে আলাদা রাখা —
-   `APP_URL` WhatsApp/Evolution এর জন্য docker-internal মান রাখতে পারে, `MESSENGER_PUBLIC_URL`
-   সবসময় পাবলিক-থেকে-দেখা-যাওয়া https ডোমেইন হতে হবে)।
-5. টেস্ট শেষে, M2+ ধাপ চলতে চলতে যখন `main` এ merge করার সময় আসবে, তখন এই টেস্ট ইনস্ট্যান্স
-   বন্ধ করে স্বাভাবিক ডিপ্লয় প্রসেসে `main` আপডেট করবেন।
+**পদ্ধতি**: `messenger` ব্রাঞ্চ সরাসরি এই একই VPS/ডোমেইনে ডিপ্লয় করে ফ্ল্যাগ `true` রেখে টেস্ট
+করা হবে (আলাদা সাবডোমেইন/ইনস্ট্যান্স না) — WhatsApp এর কোনো টেবিল/কোড Messenger স্পর্শ করে
+না বলে এটা নিরাপদ, আর সমস্যা হলে নিচের রোলব্যাক কমান্ডে সেকেন্ডে `main`-এ ফেরা যায়।
 
-**অপশন B — একই ইনস্ট্যান্সে ব্রাঞ্চ বদলে টেস্ট (ঝুঁকিপূর্ণ, শুধু ট্রাফিক কম থাকা সময়ে)**:
-`main`-এর ডিরেক্টরিতেই সাময়িকভাবে `git checkout messenger` করে rebuild/restart করলে সেই সময়
-WhatsApp প্রোডাকশন ট্রাফিকও এই কোডে চলবে — Messenger কোড WhatsApp টেবিল/প্রসেসর ছোঁয় না বলে
-তাত্ত্বিকভাবে নিরাপদ, কিন্তু টেস্ট শেষে `main`-এ ফিরে আসতে ভুলে গেলে সমস্যা হতে পারে। তাই
-**অপশন A সুপারিশ করা হচ্ছে** — সবসময় `main` আলাদা ও অক্ষত থাকে।
+#### ৭.১ `NEXT_PUBLIC_MESSENGER_ENABLED` বিল্ড-টাইমে কীভাবে যায়
+
+`NEXT_PUBLIC_*` ভ্যারিয়েবল Next.js এ **build-time এ client বান্ডেলে বসে যায়** — কন্টেইনার
+চালু হওয়ার সময় `env_file` দিয়ে দিলে কাজ করে না (ততক্ষণে বান্ডেল তৈরি হয়ে গেছে)। আর
+`.env.production` ইচ্ছাকৃতভাবে `.dockerignore` এ থাকায় (secret leak ঠেকাতে) Docker build
+context এও ঢোকে না। তাই এটা `docker-compose.production.yml` থেকে build arg হিসেবে পাস করতে
+হয় — এই কাজেই দুইটা ফাইল বদলানো হয়েছে:
+
+- [apps/web/Dockerfile](../apps/web/Dockerfile) এর `builder` স্টেজে, `npm run build` এর আগে
+  `ARG NEXT_PUBLIC_MESSENGER_ENABLED` + `ENV NEXT_PUBLIC_MESSENGER_ENABLED=$NEXT_PUBLIC_MESSENGER_ENABLED`
+  যোগ হয়েছে।
+- [docker-compose.production.yml](../docker-compose.production.yml) এর `web.build` এ
+  `args: { NEXT_PUBLIC_MESSENGER_ENABLED: ${NEXT_PUBLIC_MESSENGER_ENABLED:-false} }` যোগ হয়েছে
+  — `--env-file .env.production` দিয়ে কম্পোজ চালানো হয় বলে `${...}` ওখান থেকেই রিজলভ হবে।
+  ভ্যালু না থাকলে ডিফল্ট `false` (ফ্ল্যাগ বন্ধ) — চুপচাপ `true` ধরে নেওয়া হয় না।
+
+**পাশাপাশি একটা পুরনো, Messenger-অসম্পর্কিত বাগও এই রিভিউতে ধরা পড়লো এবং একই প্যাচে ঠিক করা
+হয়েছে**: `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` আগে কোনো build arg হিসেবেই
+পাস হচ্ছিল না — মানে প্রোডাকশন ইমেজের ব্রাউজার বান্ডেলে এই দুইটা আগে থেকেই `undefined` বসে
+যাচ্ছিল, যেটা client-side Supabase ব্যবহার করা অংশে (যেমন লগইন ফর্ম) সমস্যা করতে পারতো। এই
+দুইটাও এখন একই ARG/ENV + `build.args` প্যাটার্নে যোগ করা হয়েছে। **এটা যাচাই করতে**: ডিপ্লয়ের
+পর ব্রাউজারে DevTools কনসোলে `window.location.reload()` করে লগইন ফর্ম/অন্য client-side
+Supabase কল ঠিকমতো কাজ করছে কিনা একবার দেখে নেবেন — আগে এটা কখনো টেস্ট করা না থাকলে এই
+ডিপ্লয়েই প্রথমবার সঠিকভাবে কাজ করতে পারে।
+
+#### ৭.২ `.env.production` এ নতুন ভ্যারিয়েবল (নাম, মান নিজে বসাবেন — এখানে ফাইল এডিট করা হয়নি)
+
+```
+MESSENGER_APP_ID=
+MESSENGER_APP_SECRET=
+MESSENGER_WEBHOOK_VERIFY_TOKEN=
+MESSENGER_PUBLIC_URL=https://wa.srv1980546.hstgr.cloud
+NEXT_PUBLIC_MESSENGER_ENABLED=true
+```
+
+`MESSENGER_PUBLIC_URL` এখানে অ্যাপের বিদ্যমান `APP_URL` এর ঠিক একই ডোমেইন (`wa.srv1980546.hstgr.cloud`,
+Traefik লেবেলে আগে থেকেই আছে) — কিন্তু আলাদা ভ্যারিয়েবল হিসেবে রাখা হয়েছে কারণ `APP_URL`
+ভবিষ্যতে docker-internal/অন্য মান নিতে পারে (WhatsApp/Evolution এর জন্য), `MESSENGER_PUBLIC_URL`
+সবসময় পাবলিক https ডোমেইন থাকতে হবে এই গ্যারান্টি রাখতে।
+
+**worker এর আসলে কী লাগে**: `MESSENGER_APP_ID`/`MESSENGER_APP_SECRET` শুধু (রিপ্লাই পাঠাতে ও
+কাস্টমার নাম আনতে) — `MESSENGER_PUBLIC_URL`/`MESSENGER_WEBHOOK_VERIFY_TOKEN`/
+`NEXT_PUBLIC_MESSENGER_ENABLED` শুধু `web` ব্যবহার করে। যেহেতু দুটো সার্ভিসই একই
+`.env.production` ফাইল `env_file:` দিয়ে পুরোটা লোড করে, আলাদা করে ভাগ করার দরকার নেই — সব
+ভ্যারিয়েবল দুই কন্টেইনারেই যাবে, অপ্রয়োজনীয়গুলো শুধু ব্যবহার হবে না।
+
+**যাচাই করা হয়েছে — flag বন্ধ বা env না থাকলে worker ক্র্যাশ করে না**:
+[process-messenger-reply.ts](../apps/worker/src/processors/process-messenger-reply.ts) ও
+[process-messenger-webhook.ts](../apps/worker/src/processors/process-messenger-webhook.ts)
+দুটোই `MESSENGER_APP_ID`/`SECRET` না পেলে `console.error` লিখে নিরাপদে রিটার্ন করে (throw
+করে না), আর `apps/worker/src/index.ts` এর `messengerWebhookWorker`/`messengerJobsWorker`
+শুধু Redis কানেকশন লাগে চালু হতে — এই দুইটা env var এর উপর নির্ভর করে না। তাই
+`NEXT_PUBLIC_MESSENGER_ENABLED=false` রাখলেও, বা Messenger env var গুলো একেবারে না বসালেও,
+WhatsApp এর worker queue (webhook, campaign-send, chatbot-autoreply ইত্যাদি) স্বাভাবিকভাবে
+চলতে থাকবে — কোনো কোড পরিবর্তন লাগেনি, এটা আগে থেকেই নিরাপদভাবে লেখা ছিল।
+
+#### ৭.৩ ডিপ্লয় কমান্ড (VPS এ, রিপোর রুট থেকে)
+
+```bash
+git fetch origin
+git checkout messenger
+git pull origin messenger
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build web worker
+```
+
+শেষ লাইনে স্পষ্ট করে `web worker` বলায় শুধু এই দুইটা সার্ভিস রিবিল্ড/রিস্টার্ট হবে — `redis`
+অক্ষত থাকবে (রিস্টার্ট হবে না বলে BullMQ এর ইন-ফ্লাইট job হারাবে না)। Evolution API এই কম্পোজে
+নেই বলে এমনিতেই অপ্রভাবিত।
+
+#### ৭.৪ রোলব্যাক কমান্ড
+
+```bash
+git checkout main
+git pull origin main
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build web worker
+```
+
+⚠️ এই দুই কমান্ডের আগে `git status` দেখে নেওয়া ভালো — VPS এ কোনো আনকমিটেড পরিবর্তন (যেমন
+ম্যানুয়াল হটফিক্স) থাকলে ব্রাঞ্চ বদলানোর আগে সেটা `git stash` করে রাখা, নাহলে checkout আটকে
+যেতে পারে বা পরিবর্তন হারাতে পারে।
+
+#### ৭.৫ Meta App এ তিন জায়গায় কী বসবে (স্থায়ী ডোমেইন দিয়ে)
+
+| জায়গা | মান |
+|---|---|
+| App Domains (Settings → Basic) | `wa.srv1980546.hstgr.cloud` |
+| Valid OAuth Redirect URI (Facebook Login for Business → Settings) | `https://wa.srv1980546.hstgr.cloud/dashboard/messenger/connect/callback` |
+| Webhook Callback URL (Messenger → Settings → Webhooks) | `https://wa.srv1980546.hstgr.cloud/api/webhooks/messenger`, Verify Token = `.env.production`-এর `MESSENGER_WEBHOOK_VERIFY_TOKEN` এর ঠিক একই মান |
+
+এই ধাপের পর "পুরো ফ্লো টেস্ট" (উপরের ধাপ ৬) ঠিক একইভাবে করবেন, শুধু dev সার্ভার/টানেলের বদলে
+সরাসরি `https://wa.srv1980546.hstgr.cloud` এ।
+
+---
+
+<details>
+<summary>আগের টানেল-ভিত্তিক লোকাল টেস্ট ধাপ (ধাপ ৪-৫, এখনো বৈধ — শুধু VPS টেস্টের বদলে দ্রুত
+লোকাল আইটারেশনের জন্য প্রাসঙ্গিক এখন)</summary>
+
+ধাপ ৪-৫ (ngrok/cloudflared টানেল) উপরেই আছে, অপরিবর্তিত। VPS এ টেস্ট করলে ওই ধাপ লাগবে না।
+
+</details>
 
 যেহেতু `NEXT_PUBLIC_MESSENGER_ENABLED=false` ডিফল্ট, `main`-এ যদি ভুলবশত `messenger` ব্রাঞ্চের
 কোড merge ও হয়ে যায় (ভবিষ্যতে), ফ্ল্যাগ অফ থাকা অবস্থায় Messenger এর কোনো UI/রুট দেখা যাবে

@@ -21,6 +21,13 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      # NEXT_PUBLIC_* ভ্যারিয়েবল build-time এ লাগে (client বান্ডেলে বসে যায়), শুধু env_file
+      # দিয়ে রানটাইমে দিলে কাজ করবে না — --env-file .env.production দিয়ে docker compose
+      # চালানো হয় বলে নিচের ${...} এখান থেকেই রিজলভ হবে
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_MESSENGER_ENABLED: ${NEXT_PUBLIC_MESSENGER_ENABLED:-false}
     container_name: wa-web
     env_file:
       - .env.production

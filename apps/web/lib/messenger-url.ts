@@ -1,13 +1,18 @@
-// Facebook এর OAuth redirect_uri ব্রাউজার সরাসরি ভিজিট করে, তাই এটা অবশ্যই পাবলিক HTTPS URL
-// হতে হবে — APP_URL (WhatsApp webhook এর জন্য, docker-internal http হতে পারে) এখানে কাজ করবে
-// না। MESSENGER_PUBLIC_URL না থাকলে বা https না হলে null রিটার্ন করে (চুপচাপ localhost/http
-// ধরে নেওয়া হয় না), কলার তখন স্পষ্ট "not_configured" এরর দেখাবে।
-export function buildMessengerRedirectUri(): string | null {
+// Messenger OAuth এর যেকোনো redirect (সফল বা ব্যর্থ) কখনো request.url থেকে বানানো হবে না —
+// VPS এ Nginx/Docker এর পেছনে request.url এ ভুল host/protocol (ইন্টারনাল docker হোস্ট, বা
+// http) আসতে পারে, যেটা আগে একবার Facebook এর OAuth redirect_uri কেই ভেঙে দিয়েছিল। এর বদলে
+// MESSENGER_PUBLIC_URL (স্থায়ী, পাবলিক HTTPS ডোমেইন) থেকেই সবসময় বানাতে হবে। না থাকলে বা
+// https:// দিয়ে শুরু না হলে null — কলার তখন চুপচাপ কিছু ধরে না নিয়ে স্পষ্ট এরর দেখাবে।
+export function buildPublicUrl(path: string): string | null {
   const raw = process.env.MESSENGER_PUBLIC_URL;
   if (!raw) return null;
 
   const base = raw.replace(/\/+$/, "");
   if (!base.startsWith("https://")) return null;
 
-  return `${base}/dashboard/messenger/connect/callback`;
+  return `${base}${path}`;
+}
+
+export function buildMessengerRedirectUri(): string | null {
+  return buildPublicUrl("/dashboard/messenger/connect/callback");
 }
