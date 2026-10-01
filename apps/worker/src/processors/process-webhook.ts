@@ -234,13 +234,12 @@ async function handleIncomingMessage(instanceName: string, data: Record<string, 
     return; // STOP/START নিজেই একটা কমান্ড — bot_enabled নির্বিশেষে সবসময় কাজ করবে
   }
 
-  // নাম্বার কার্ডে "বট অন/অফ" টগল — whatsapp_numbers.bot_enabled (migration 0037)। এটা শুধু
-  // ১:১ AI চ্যাটবট রিপ্লাই বন্ধ করে; ক্যাম্পেইন/গ্রুপ ফিচার/অর্ডার-স্ট্যাটাস মেসেজ এই চেকের বাইরে।
-  if (!number.bot_enabled) {
-    console.log(`[autoreply] bot is turned off for number=${number.id}, skipping`);
-    return;
-  }
-
+  // নাম্বার কার্ডে "বট অন/অফ" টগল — whatsapp_numbers.bot_enabled (migration 0037)। আগে এখানেই
+  // bot_enabled=false হলে পুরো মেসেজ-প্রসেসিং (সেভ করাসহ) স্কিপ হয়ে যেত — মানে বট বন্ধ থাকা
+  // অবস্থায় কাস্টমারের মেসেজ ইনবক্সেই সেভ হতো না (বাগ)। এখন handleAutoReply() সবসময় কল হয়;
+  // bot_enabled চেক তার ভেতরে, মেসেজ সেভ হওয়ার *পরে* — শুধু AI রিপ্লাই/typing স্কিপ করে।
+  // এটা শুধু ১:১ AI চ্যাটবট রিপ্লাই বন্ধ করে; ক্যাম্পেইন/গ্রুপ ফিচার/অর্ডার-স্ট্যাটাস মেসেজ এই
+  // চেকের বাইরে।
   await handleAutoReply(supabase, number, phone, text, providerMessageId, mediaType);
 }
 
@@ -801,7 +800,7 @@ async function saveInboundMessageAndQueueMedia(
 // একদম নিরুত্তর থাকবে না
 async function handleAutoReply(
   supabase: ReturnType<typeof getSupabase>,
-  number: { id: string; workspace_id: string },
+  number: { id: string; workspace_id: string; bot_enabled: boolean },
   phone: string,
   text: string,
   providerMessageId: string | undefined,
@@ -855,6 +854,14 @@ async function handleAutoReply(
   // resolved থেকে আবার active — নতুন মেসেজ এসেছে মানে কথোপকথন আবার চলছে
   if (conversation.status === "resolved") {
     await supabase.from("conversations").update({ status: "active" }).eq("id", conversation.id);
+  }
+
+  // নাম্বার কার্ডে "বট বন্ধ" থাকলে — handed_off এর ঠিক একই প্যাটার্ন: মেসেজ (ও মিডিয়া থাকলে
+  // সেটাও) সেভ হয়ে যাবে (ইনবক্সে দেখা যাবে), শুধু AI কল/typing/রিপ্লাই স্কিপ হয়
+  if (!number.bot_enabled) {
+    console.log(`[autoreply] bot is turned off for number=${number.id}, saving message but skipping AI reply`);
+    await saveInboundMessageAndQueueMedia(supabase, conversation.id, number.workspace_id, number.id, text, providerMessageId, mediaType);
+    return;
   }
 
   // বর্তমান মেসেজ ইনসার্ট করার *আগে* ইতিহাস টেনে আনা হচ্ছে, যাতে এই মেসেজটা নিজেই

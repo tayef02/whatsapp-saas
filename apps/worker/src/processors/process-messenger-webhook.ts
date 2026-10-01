@@ -35,10 +35,10 @@ const DB_MEDIA_TYPE: Record<string, "image" | "document" | "video" | "audio"> = 
 };
 
 // Messenger থেকে ইনকামিং টেক্সট/মিডিয়া মেসেজ — messenger_conversations upsert, messenger_messages
-// এ dedup সহ insert, নতুন কথোপকথনে কাস্টমারের নাম আনার চেষ্টা। bot_enabled (পেজ-ভিত্তিক) আর
-// conversation.status (handed_off/resolved/active) দেখে AI রিপ্লাই পাঠানো হয় কিনা ঠিক হয় —
-// WhatsApp এর handleIncomingMessage/handleAutoReply এর ঠিক একই নিয়ম (bot_enabled বন্ধ থাকলে
-// WhatsApp এও পুরো মেসেজ-প্রসেসিং স্কিপ হয়, এখানে একই ধারাবাহিকতা রাখা হয়েছে)
+// এ dedup সহ insert (bot_enabled/status যাই হোক, মেসেজ সবসময় সেভ হয়, নইলে ইনবক্সেই দেখা
+// যাবে না), নতুন কথোপকথনে কাস্টমারের নাম আনার চেষ্টা। bot_enabled (পেজ-ভিত্তিক) আর
+// conversation.status (handed_off/resolved/active) দেখে শুধু AI রিপ্লাই/typing পাঠানো হয়
+// কিনা ঠিক হয় — WhatsApp এর handleIncomingMessage/handleAutoReply এর ঠিক একই নিয়ম
 export async function processMessengerWebhookEvent(data: MessengerWebhookJobData) {
   if (!data.message) return; // messaging_postbacks ইত্যাদি অন্য ইভেন্ট টাইপ, এখনো হ্যান্ডল হয় না
 
@@ -56,13 +56,6 @@ export async function processMessengerWebhookEvent(data: MessengerWebhookJobData
   }
   if (!page) {
     console.log(`[messenger-webhook] no connected page for page_id=${data.pageId}, skipping`);
-    return;
-  }
-
-  // নাম্বার কার্ডের মতোই — পেজে "বট অন/অফ" টগল বন্ধ থাকলে পুরো মেসেজ-প্রসেসিং স্কিপ হয়
-  // (WhatsApp এর handleIncomingMessage এর ঠিক একই নিয়ম)
-  if (!page.bot_enabled) {
-    console.log(`[messenger-webhook] bot is turned off for page=${page.id}, skipping`);
     return;
   }
 
@@ -125,6 +118,17 @@ export async function processMessengerWebhookEvent(data: MessengerWebhookJobData
   // resolved থেকে আবার active — নতুন মেসেজ এসেছে মানে কথোপকথন আবার চলছে
   if (conversation.status === "resolved") {
     await supabase.from("messenger_conversations").update({ status: "active" }).eq("id", conversation.id);
+  }
+
+  // পেজে "বট অন/অফ" টগল বন্ধ থাকলে — handed_off এর ঠিক একই প্যাটার্ন: মেসেজ (ও মিডিয়া
+  // থাকলে সেটাও) সেভ হয় (ইনবক্সে দেখা যাবে), শুধু AI কল/typing/রিপ্লাই স্কিপ হয়। আগে এই
+  // চেক সবার আগে বসানো ছিল, যার ফলে বট বন্ধ থাকা অবস্থায় কাস্টমারের মেসেজ ইনবক্সেই সেভ
+  // হতো না (বাগ) — WhatsApp এর handleAutoReply এ একই বাগ, একই কারণে, এখানে ঠিক করা হলো
+  if (!page.bot_enabled) {
+    console.log(`[messenger-webhook] bot is turned off for page=${page.id}, saving message but skipping AI reply`);
+    const { messageId } = await insertInboundMessage(supabase, conversation.id, content, data.message.mid, mediaType);
+    if (messageId) await maybeQueueMediaDownload(messageId, mediaType, page.workspace_id, conversation.id, attachment?.payload?.url);
+    return;
   }
 
   // বর্তমান মেসেজ ইনসার্ট করার *আগে* ইতিহাস টেনে আনা হচ্ছে, যাতে এই মেসেজটা নিজেই history-তে
