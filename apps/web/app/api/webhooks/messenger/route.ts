@@ -76,39 +76,51 @@ export async function POST(request: NextRequest) {
 
   const queue = getMessengerWebhookQueue();
 
-  // একটা POST এ একাধিক entry/messaging event ব্যাচ হয়ে আসতে পারে — প্রতিটাকে আলাদা job
-  // হিসেবে বসানো হচ্ছে, যাতে প্রতিটার নিজস্ব mid-ভিত্তিক jobId (dedup) থাকে
-  for (const entry of body.entry ?? []) {
-    const pageId = entry.id;
-    if (!pageId) continue;
+  try {
+    // একটা POST এ একাধিক entry/messaging event ব্যাচ হয়ে আসতে পারে — প্রতিটাকে আলাদা job
+    // হিসেবে বসানো হচ্ছে, যাতে প্রতিটার নিজস্ব mid-ভিত্তিক jobId (dedup) থাকে
+    for (const entry of body.entry ?? []) {
+      const pageId = entry.id;
+      if (!pageId) continue;
 
-    for (const event of entry.messaging ?? []) {
-      const senderPsid = event.sender?.id;
-      if (!senderPsid || event.message?.is_echo) continue; // নিজের পাঠানো মেসেজের echo, স্কিপ
+      for (const event of entry.messaging ?? []) {
+        const senderPsid = event.sender?.id;
+        if (!senderPsid || event.message?.is_echo) continue; // নিজের পাঠানো মেসেজের echo, স্কিপ
 
-      const jobData: MessengerWebhookJobData = {
-        pageId,
-        senderPsid,
-        timestamp: event.timestamp ?? Date.now(),
-        message: event.message?.mid
-          ? {
-              mid: event.message.mid,
-              text: event.message.text,
-              attachments: event.message.attachments,
-            }
-          : undefined,
-      };
+        const jobData: MessengerWebhookJobData = {
+          pageId,
+          senderPsid,
+          timestamp: event.timestamp ?? Date.now(),
+          message: event.message?.mid
+            ? {
+                mid: event.message.mid,
+                text: event.message.text,
+                attachments: event.message.attachments,
+              }
+            : undefined,
+        };
 
-      const jobId = event.message?.mid ? `messenger:${event.message.mid}` : undefined;
+        // BullMQ কাস্টম jobId এ কোলন থাকলে ("messenger:${mid}" এর মতো) "Custom Id cannot
+        // contain :" থ্রো করে — jobId.split(':').length ঠিক ৩ না হলে এই থ্রো হয় (bullmq
+        // job.js এর addJob)। তাই কোলনের বদলে আন্ডারস্কোর — dedup এর যুক্তি (mid থাকলেই
+        // jobId সেট, নাহলে auto-generated) অপরিবর্তিত।
+        const jobId = event.message?.mid ? `messenger_${pageId}_${event.message.mid}` : undefined;
 
-      await queue.add("event", jobData, {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 2000 },
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
-        ...(jobId ? { jobId } : {}),
-      });
+        await queue.add("event", jobData, {
+          attempts: 3,
+          backoff: { type: "exponential", delay: 2000 },
+          removeOnComplete: 1000,
+          removeOnFail: 1000,
+          ...(jobId ? { jobId } : {}),
+        });
+      }
     }
+  } catch (err) {
+    // queue তে বসাতেই ব্যর্থ হলে (Redis ডাউন, বা jobId/payload সংক্রান্ত কোনো বাগ) এই ইভেন্ট
+    // চিরতরে হারিয়ে যাবে যদি আমরা এখানে চুপচাপ 200 দিয়ে দিই — Meta 200 না পেলে পরে আবার এই
+    // একই POST পাঠায় (retry), তাই এখানে 500 দেওয়াই নিরাপদ, 200 না
+    console.error("[messenger webhook] queue.add ব্যর্থ:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "queue unavailable" }, { status: 500 });
   }
 
   return NextResponse.json({ status: "ok" });

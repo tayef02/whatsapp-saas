@@ -27,15 +27,27 @@ export async function POST(request: NextRequest) {
   // ক্ষেত্রে dedup নির্ভর করে প্রসেসিং কোডের নিজস্ব idempotency এর উপর (১:১ চ্যাটে ইতিমধ্যে
   // conversation_messages এর unique index দিয়ে এটা সুরক্ষিত — migration 0024 দেখুন)।
   const messageId = body?.data?.key?.id as string | undefined;
-  const jobId = messageId ? `${body?.instance}:${body?.event}:${messageId}` : undefined;
+  // BullMQ কাস্টম jobId এ কোলন থাকলে সাধারণত "Custom Id cannot contain :" থ্রো করে — ব্যতিক্রম
+  // শুধু jobId.split(':').length ঠিক ৩ হলে (পুরনো repeatable job id ফরম্যাটের সাথে compat
+  // রাখতে, bullmq job.js এর addJob দেখুন)। এখানে ঠিক ২টা কোলন (৩ অংশ) থাকায় এতদিন কাকতালীয়ভাবে
+  // থ্রো করেনি, কিন্তু এটা অনির্ভরযোগ্য (BullMQ এর নিজস্ব TODO আছে এই exception সরিয়ে দেওয়ার,
+  // আর instance/event এ কখনো কোলন ঢুকলেই এখনই ভাঙত) — তাই কোলনের বদলে আন্ডারস্কোর।
+  const jobId = messageId ? `${body?.instance}_${body?.event}_${messageId}` : undefined;
 
-  await getWebhookQueue().add("event", body, {
-    attempts: 3,
-    backoff: { type: "exponential", delay: 2000 },
-    removeOnComplete: 1000,
-    removeOnFail: 1000,
-    ...(jobId ? { jobId } : {}),
-  });
+  try {
+    await getWebhookQueue().add("event", body, {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 2000 },
+      removeOnComplete: 1000,
+      removeOnFail: 1000,
+      ...(jobId ? { jobId } : {}),
+    });
+  } catch (err) {
+    // queue তে বসাতেই ব্যর্থ হলে চুপচাপ 200 দিলে এই মেসেজ/ইভেন্ট চিরতরে হারিয়ে যাবে — Evolution
+    // কে 500 দিলে retry করার সুযোগ থাকে, তাই এখানে 500, কখনো silent 200 না
+    console.error(`[webhook route] queue.add ব্যর্থ event=${body?.event} instance=${body?.instance}:`, err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "queue unavailable" }, { status: 500 });
+  }
 
   return NextResponse.json({ status: "ok" });
 }
