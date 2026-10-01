@@ -624,10 +624,10 @@ npx tsx scripts/test-messenger-comment.ts <page_id> "দাম কত?"
   কলামে দেখুন) — worker এটা দিয়েই workspace/সেটিংস লুকআপ করে, তাই আসল হতে হবে।
   comment_id/post_id/from (কমেন্টকারীর psid) স্ক্রিপ্ট নিজেই নকল তৈরি করে।
 - কমেন্টের লেখায় একটা ফোন নাম্বার দিলে (`"দাম কত? 01712345678"`) লিড ক্যাপচার টেস্ট হয়ে যায়।
-- secret (`MESSENGER_APP_SECRET`, `apps/web/.env.local` থেকে পড়া হয়) আর payload কখনো কনসোলে
-  প্রিন্ট হয় না — শুধু HTTP status আর একটা ছোট ব্যাখ্যা লাইন দেখায়।
+- secret (ডিফল্টে `apps/web/.env.local` থেকে পড়া হয়), payload, আর টার্গেট URL এর কোনো
+  কোয়েরি-স্ট্রিং কখনো কনসোলে প্রিন্ট হয় না — শুধু HTTP status আর একটা ছোট ব্যাখ্যা লাইন দেখায়।
 
-**যা আশা করবেন**:
+**যা আশা করবেন** (লোকালে চালালে):
 - HTTP status `200` — webhook রুট ইভেন্টটা queue তে বসিয়েছে।
 - worker এর লগে `[messenger-comment]` প্রিফিক্সের লাইন — কমেন্ট সেভ হওয়া, রুল ম্যাচ/না-ম্যাচ,
   cooldown, রিপ্লাই জব queue হওয়া দেখাবে।
@@ -638,6 +638,40 @@ npx tsx scripts/test-messenger-comment.ts <page_id> "দাম কত?"
   বাগ না, শুধু নকল ডাটার সীমাবদ্ধতা। রুল-ম্যাচিং/লগ/queue পর্যন্ত কাজ করলেই স্ক্রিপ্টের উদ্দেশ্য
   পূরণ হয়েছে ধরা যায়।
 - signature ভুল হলে (secret মিলছে না) `401` আসবে।
+
+### ৮. প্রোডাকশনে (VPS) চালানো
+
+একই স্ক্রিপ্ট `--url` ফ্ল্যাগ দিয়ে লাইভ সার্ভারেও চালানো যায় — তখন webhook রুট আসল
+`wa-worker` কন্টেইনারে চলা worker-কে ইভেন্টটা দেয়, লোকাল worker লাগে না।
+
+```bash
+npx tsx scripts/test-messenger-comment.ts <page_id> "দাম কত?" --url https://wa.srv1980546.hstgr.cloud
+```
+
+- `--url` এ শুধু origin (উপরের উদাহরণের মতো) দিলেই চলবে — webhook পাথ (`/api/webhooks/messenger`)
+  স্ক্রিপ্ট নিজেই যুক্ত করে নেয়। সম্পূর্ণ পাথ দিলেও কাজ করবে।
+- secret সবসময় **আপনার লোকাল মেশিনের** `apps/web/.env.local` থেকে পড়া হয় (production সার্ভারে
+  কোনো রিকোয়েস্ট যায় না secret আনার জন্য) — তাই লোকাল `.env.local` এ ঠিক সেই Meta App এর
+  `MESSENGER_APP_SECRET` থাকতে হবে যেটা production এও ব্যবহার হচ্ছে (সাধারণত একই, কারণ app secret
+  Meta App এর সাথে বাঁধা, deployment environment এর সাথে না)। আলাদা ফাইলে রাখলে
+  `--env-path <path>` দিয়ে দেখিয়ে দিন, যেমন `--env-path ./production-secret.env.local`।
+  (ফ্ল্যাগের নাম ইচ্ছাকৃতভাবে `--env-file` না — `tsx` নিজেই `--env-file` কে node এর built-in
+  env-loader ফ্ল্যাগ হিসেবে intercept করে script এর কাছে পৌঁছানোর আগেই, তাই নাম সংঘর্ষ এড়াতে
+  `--env-path` রাখা হয়েছে।)
+
+**VPS তে কী আশা করবেন**:
+
+```bash
+docker logs -f wa-worker
+```
+
+- `[messenger-comment]` প্রিফিক্সের লাইন — কমেন্ট লগ হওয়া, রুল ম্যাচ/cooldown/না-ম্যাচ।
+- লিড ফোন নাম্বার দিলে dashboard এ "কমেন্টে নতুন লিড" নোটিফিকেশন তৈরি হওয়ার লগ।
+- রুল ম্যাচ করলে `[messenger-comment-reply]` প্রিফিক্সে একটা Meta API এরর — নকল `comment_id`
+  বলে এটাই প্রত্যাশিত, worker/queue ক্রাশ করছে না এটাই আসল পরীক্ষার বিষয়।
+- ⚠️ যদি webhook থেকে কোনো লগই না আসে: webhook route টা আসলে request পেয়েছে কিনা Nginx/`wa-web`
+  এর লগে (`docker logs wa-web`) `POST /api/webhooks/messenger` লাইন খুঁজুন — না পেলে ডোমেইন/SSL/
+  Nginx proxy কনফিগারেশন সমস্যা, worker এর কোড না।
 
 ---
 
