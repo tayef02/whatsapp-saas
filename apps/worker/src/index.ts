@@ -43,6 +43,8 @@ import { processMessengerReply } from "./processors/process-messenger-reply";
 import { processDownloadMessengerMedia } from "./processors/process-messenger-media";
 import { MESSENGER_KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/messenger-knowledge-base-queue";
 import { processMessengerKnowledgeBaseDocument } from "./processors/process-messenger-knowledge-base";
+import { processMessengerCommentEvent } from "./processors/process-messenger-comment";
+import { processMessengerCommentReply } from "./processors/process-messenger-comment-reply";
 
 const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
@@ -220,22 +222,27 @@ messengerKnowledgeBaseWorker.on("failed", (job, err) => {
 });
 
 // Messenger এর raw webhook ইভেন্ট — WhatsApp এর webhookWorker থেকে সম্পূর্ণ আলাদা queue/worker,
-// দুই চ্যানেলের ইভেন্ট কখনো একে অপরের সাথে মেশে না
+// দুই চ্যানেলের ইভেন্ট কখনো একে অপরের সাথে মেশে না। "event" = DM (M1-M2), "comment" = পোস্টের
+// কমেন্ট (M3) — একই queue, job name দিয়ে আলাদা প্রসেসরে যায়
 const messengerWebhookWorker = new Worker(
   MESSENGER_WEBHOOK_QUEUE_NAME,
   async (job) => {
-    await processMessengerWebhookEvent(job.data);
+    if (job.name === "comment") {
+      await processMessengerCommentEvent(job.data);
+    } else {
+      await processMessengerWebhookEvent(job.data);
+    }
   },
   { connection }
 );
 
 messengerWebhookWorker.on("failed", (job, err) => {
-  console.error(`[messenger-webhook-worker] job ${job?.id} ব্যর্থ:`, err.message);
+  console.error(`[messenger-webhook-worker] job ${job?.id} (${job?.name}) ব্যর্থ:`, err.message);
 });
 
-// Messenger এর আউটগোয়িং job — "reply" (ইনবক্স/AI বট/অর্ডার-নোটিফিকেশন, তিনটাই একই "reply"
-// job) আর "download-media" (ইনকামিং ছবি/ফাইল ডাউনলোড), WhatsApp এর chatbot-autoreply queue এর
-// প্যাটার্নে কিন্তু সম্পূর্ণ আলাদা queue তে
+// Messenger এর আউটগোয়িং job — "reply" (ইনবক্স/AI বট/অর্ডার-নোটিফিকেশন), "download-media"
+// (ইনকামিং ছবি/ফাইল), "comment-reply" (কমেন্ট পাবলিক রিপ্লাই/Private Reply, M3) — WhatsApp এর
+// chatbot-autoreply queue এর প্যাটার্নে কিন্তু সম্পূর্ণ আলাদা queue তে
 const messengerJobsWorker = new Worker(
   MESSENGER_JOBS_QUEUE_NAME,
   async (job) => {
@@ -243,13 +250,15 @@ const messengerJobsWorker = new Worker(
       await processMessengerReply(job.data);
     } else if (job.name === "download-media") {
       await processDownloadMessengerMedia(job.data);
+    } else if (job.name === "comment-reply") {
+      await processMessengerCommentReply(job.data);
     }
   },
   { connection }
 );
 
 messengerJobsWorker.on("failed", (job, err) => {
-  console.error(`[messenger-jobs-worker] job ${job?.id} ব্যর্থ:`, err.message);
+  console.error(`[messenger-jobs-worker] job ${job?.id} (${job?.name}) ব্যর্থ:`, err.message);
 });
 
 console.log(

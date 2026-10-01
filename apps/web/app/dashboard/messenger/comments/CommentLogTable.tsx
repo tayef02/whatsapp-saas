@@ -1,0 +1,63 @@
+"use client";
+
+import { Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge, EmptyState } from "@/components/ui";
+import { History } from "lucide-react";
+import { formatDhakaDateTime } from "@/lib/format-date";
+
+type CommentRow = {
+  id: string;
+  from_name: string | null;
+  comment_text: string;
+  reply_sent: boolean;
+  reply_text: string | null;
+  is_lead: boolean;
+  lead_phone: string | null;
+  created_at: string;
+};
+
+export default function CommentLogTable({ comments }: { comments: CommentRow[] }) {
+  return (
+    <div>
+      <p className="mb-3 text-sm font-semibold text-text">সাম্প্রতিক কমেন্ট (সর্বশেষ ৫০টা)</p>
+      {comments.length === 0 ? (
+        <EmptyState icon={<History className="h-10 w-10" />} title="এখনো কোনো কমেন্ট আসেনি" />
+      ) : (
+        <Table>
+          <TableHead>
+            <TableRow className="hover:bg-transparent">
+              <TableHeaderCell>কাস্টমার</TableHeaderCell>
+              <TableHeaderCell>কমেন্ট</TableHeaderCell>
+              <TableHeaderCell>রিপ্লাই</TableHeaderCell>
+              <TableHeaderCell>তারিখ</TableHeaderCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {comments.map((c) => (
+              <TableRow key={c.id}>
+                <TableCell className="whitespace-nowrap">
+                  {c.from_name || "(অজানা)"}
+                  {c.is_lead && (
+                    <Badge variant="success" className="ml-1.5">
+                      লিড {c.lead_phone}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-[280px] truncate" title={c.comment_text}>
+                  {c.comment_text || <span className="text-text-muted">(টেক্সট নেই)</span>}
+                </TableCell>
+                <TableCell>
+                  {c.reply_sent ? (
+                    <Badge variant="success">পাঠানো হয়েছে</Badge>
+                  ) : (
+                    <Badge variant="neutral">রিপ্লাই যায়নি</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-text-muted">{formatDhakaDateTime(c.created_at)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}

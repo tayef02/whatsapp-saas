@@ -4,7 +4,7 @@
 //
 // Phase M1: পেজ কানেক্ট (OAuth) + ইনবক্স (টেক্সট পাঠানো, প্রোফাইল নাম আনা) বাস্তবায়িত।
 // Phase M2: sendMessage এ tag (HUMAN_AGENT) সাপোর্ট + typing indicator যোগ হয়েছে।
-// কমেন্ট/পোস্ট মেথড এখনো নেই (M3/M4 এ আসবে)।
+// Phase M3: কমেন্ট রিপ্লাই + Private Reply যোগ হয়েছে। পোস্ট-তৈরির মেথড এখনো নেই (M4 তে আসবে)।
 
 export interface MessengerPageInfo {
   pageId: string;
@@ -47,4 +47,14 @@ export interface MessengerProvider {
 
   // কাস্টমারের Facebook প্রোফাইল নাম আনা (PSID থেকে) — ব্যর্থ হলে null (M1)
   getUserProfile(pageAccessToken: string, psid: string): Promise<{ name: string | null }>;
+
+  // পোস্টের কমেন্টের নিচে পাবলিক রিপ্লাই (M3)
+  replyToComment(pageAccessToken: string, commentId: string, text: string): Promise<{ commentId: string }>;
+
+  // Messenger Private Reply — কমেন্টের মাধ্যমে প্রথমবার ইনবক্সে মেসেজ পাঠানো (কাস্টমার কখনো
+  // DM করেনি, শুধু কমেন্ট করেছে — তাই সাধারণ sendMessage()/RESPONSE টাইপ কাজ করবে না, Graph
+  // API এর recipient এ psid এর বদলে comment_id পাঠাতে হয়)। Meta নিয়ম: প্রতি কমেন্টে একবারই
+  // পাঠানো যায় — এটা এই মেথড নিজে এনফোর্স করে না, caller এর (messenger_comments এর
+  // comment_id dedup) দায়িত্ব (M3)
+  sendPrivateReply(pageAccessToken: string, commentId: string, text: string): Promise<{ messageId: string }>;
 }

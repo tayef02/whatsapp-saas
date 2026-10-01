@@ -119,6 +119,39 @@ export async function disconnectPage(pageId: string) {
   return { error: null };
 }
 
+// Phase M3: webhook এ "feed" field যোগ হয়েছে (কমেন্ট ইভেন্ট পেতে) — আগে কানেক্ট হওয়া পেজ
+// পুরনো subscribed_fields দিয়েই subscribed আছে, আবার subscribePageWebhook() কল করলে Meta
+// বিদ্যমান সাবস্ক্রিপশন নতুন fields দিয়ে replace করে দেয় (WhatsApp Groups পেজের "Webhook
+// ইভেন্ট রিফ্রেশ করুন" বাটনের ঠিক একই নিয়ম)
+export async function refreshMessengerWebhook(pageId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "লগইন করা নেই" };
+
+  const { data: page } = await supabase.from("messenger_pages").select("id, page_id").eq("id", pageId).maybeSingle();
+  if (!page) return { error: "পেজ পাওয়া যায়নি" };
+
+  const admin = createAdminClient();
+  const { data: token } = await admin.rpc("get_messenger_page_token", { p_page_id: pageId });
+  if (!token) return { error: "টোকেন পাওয়া যায়নি — পেজটা আবার কানেক্ট করুন" };
+
+  const appId = process.env.MESSENGER_APP_ID;
+  const appSecret = process.env.MESSENGER_APP_SECRET;
+  if (!appId || !appSecret) return { error: "সার্ভার সেটআপ অসম্পূর্ণ" };
+
+  try {
+    const provider = new MetaMessengerProvider({ appId, appSecret });
+    await provider.subscribePageWebhook(page.page_id, token);
+  } catch (err) {
+    console.error(`[messenger webhook refresh] ব্যর্থ (page=${page.page_id}):`, err instanceof Error ? err.message : err);
+    return { error: "ওয়েবহুক রিফ্রেশ করা যায়নি, একটু পর আবার চেষ্টা করুন" };
+  }
+
+  return { error: null };
+}
+
 // পেজ কার্ডে "বট অন/অফ" টগল — messenger_pages.bot_enabled কলাম আপডেট করে (migration 0040 এ
 // ডিফল্ট true দিয়ে যোগ করা হয়েছিল)। WhatsApp numbers/actions.ts এর toggleBot এর ঠিক একই প্যাটার্ন —
 // worker এর process-messenger-webhook.ts সরাসরি এই কলাম চেক করে

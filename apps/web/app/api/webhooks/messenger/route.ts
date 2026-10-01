@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getMessengerWebhookQueue } from "@/lib/queue/messenger-webhook-queue";
-import type { MessengerWebhookJobData } from "@whatsapp-saas/core/messenger/types";
+import type { MessengerWebhookJobData, MessengerCommentWebhookJobData } from "@whatsapp-saas/core/messenger/types";
 
 // Meta একবার এই GET কল করে webhook URL verify করে — hub.verify_token মিলিয়ে hub.challenge
 // ফেরত দিতে হয়। এটা কোনো secret না (আমরা নিজেরাই বসানো একটা সেটআপ-টাইম পাসওয়ার্ড), তাই
@@ -44,6 +44,21 @@ type MessagingEvent = {
   };
 };
 
+// Phase M3 — "feed" field এর নিচে comment/post/like ইত্যাদি বিভিন্ন ধরনের item আসতে পারে,
+// আমরা শুধু নতুন কমেন্ট (item="comment", verb="add") নিয়ে কাজ করি — এডিট/রিমুভ/রিঅ্যাকশন
+// এই ফেজে হ্যান্ডল হয় না
+type ChangeEvent = {
+  field?: string;
+  value?: {
+    item?: string;
+    verb?: string;
+    comment_id?: string;
+    post_id?: string;
+    message?: string;
+    from?: { id?: string; name?: string };
+  };
+};
+
 // এখানে কোনো DB কাজ হয় না — শুধু signature যাচাই আর queue তে push করে দ্রুত 200 দেওয়া হয়,
 // আসল প্রসেসিং apps/worker করে (WhatsApp webhook route এর ঠিক একই নিয়ম)
 export async function POST(request: NextRequest) {
@@ -63,7 +78,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  let body: { object?: string; entry?: Array<{ id?: string; messaging?: MessagingEvent[] }> };
+  let body: { object?: string; entry?: Array<{ id?: string; messaging?: MessagingEvent[]; changes?: ChangeEvent[] }> };
   try {
     body = JSON.parse(rawBody);
   } catch {
@@ -112,6 +127,33 @@ export async function POST(request: NextRequest) {
           removeOnComplete: 1000,
           removeOnFail: 1000,
           ...(jobId ? { jobId } : {}),
+        });
+      }
+
+      // Phase M3 — একই "messenger-webhook-events" queue তে আলাদা job name ("comment") দিয়ে
+      // যায়, messengerWebhookWorker এটা দেখে DM ("event") আর comment আলাদা প্রসেসরে পাঠায়
+      for (const change of entry.changes ?? []) {
+        if (change.field !== "feed") continue;
+        const value = change.value;
+        if (!value || value.item !== "comment" || value.verb !== "add" || !value.comment_id) continue;
+
+        const commentJobData: MessengerCommentWebhookJobData = {
+          pageId,
+          commentId: value.comment_id,
+          postId: value.post_id ?? null,
+          fromPsid: value.from?.id ?? null,
+          fromName: value.from?.name ?? null,
+          commentText: value.message ?? "",
+        };
+
+        const commentJobId = `messenger_comment_${pageId}_${value.comment_id}`;
+
+        await queue.add("comment", commentJobData, {
+          attempts: 3,
+          backoff: { type: "exponential", delay: 2000 },
+          removeOnComplete: 1000,
+          removeOnFail: 1000,
+          jobId: commentJobId,
         });
       }
     }

@@ -42,3 +42,27 @@ export type DownloadMessengerMediaJobData = {
   conversationId: string;
   mediaUrl: string;
 };
+
+// Phase M3 — পোস্টের নিচে নতুন কমেন্ট (webhook এর "feed" field) — DM ইভেন্টের ঠিক একই
+// "messenger-webhook-events" queue তে যায়, শুধু job name "comment" (DM এর "event" থেকে আলাদা,
+// যাতে messengerWebhookWorker সহজে branch করতে পারে)
+export type MessengerCommentWebhookJobData = {
+  pageId: string; // Facebook Page ID (messenger_pages.page_id, uuid না)
+  commentId: string;
+  postId: string | null;
+  fromPsid: string | null;
+  fromName: string | null;
+  commentText: string;
+};
+
+// ম্যাচ হওয়া রুলের রিপ্লাই পাঠানো — "messenger-jobs" queue তে "comment-reply" নামে।
+// action অনুযায়ী প্রসেসর হয় পাবলিক কমেন্ট রিপ্লাই করবে, নয়তো Private Reply (psid লাগবে,
+// তাই fromPsid প্রয়োজনীয় যখন action="private_reply")
+export type MessengerCommentReplyJobData = {
+  commentId: string;
+  messengerPageId: string;
+  postId: string | null;
+  fromPsid: string | null;
+  action: "public_reply" | "private_reply";
+  replyText: string;
+};

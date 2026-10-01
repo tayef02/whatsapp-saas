@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MessageSquare, PowerOff, Bot } from "lucide-react";
+import { MessageSquare, PowerOff, Bot, RefreshCw } from "lucide-react";
 import { Card, Badge, useToast } from "@/components/ui";
-import { disconnectPage, toggleMessengerPageBot } from "./connect/actions";
+import { disconnectPage, toggleMessengerPageBot, refreshMessengerWebhook } from "./connect/actions";
 
 type MessengerPage = { id: string; page_name: string | null; status: string; connected_at: string | null; bot_enabled: boolean };
 
@@ -53,6 +53,17 @@ export default function PageCard({ page }: { page: MessengerPage }) {
     showToast("success", next ? "বট চালু করা হয়েছে" : "বট বন্ধ করা হয়েছে");
   }
 
+  async function handleRefreshWebhook() {
+    setBusy(true);
+    const res = await refreshMessengerWebhook(page.id);
+    setBusy(false);
+    if (res.error) {
+      showToast("error", res.error);
+      return;
+    }
+    showToast("success", "ওয়েবহুক রিফ্রেশ করা হয়েছে");
+  }
+
   return (
     <Card className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
@@ -88,6 +99,17 @@ export default function PageCard({ page }: { page: MessengerPage }) {
             <Bot className="h-4 w-4" /> {botActive ? "বট চালু" : "বট বন্ধ"}
           </span>
           <span className="text-xs text-text-muted">{botActive ? "এআই চ্যাটবট রিপ্লাই দিচ্ছে" : "ক্লিক করে চালু করুন"}</span>
+        </button>
+      )}
+
+      {page.status !== "disconnected" && (
+        <button
+          onClick={handleRefreshWebhook}
+          disabled={busy}
+          title="নতুন ইভেন্ট টাইপ (যেমন কমেন্ট অটোমেশন) যোগ হলে আগের কানেক্ট করা পেজে এটা চাপতে হয়"
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted hover:bg-gray-50 disabled:opacity-60"
+        >
+          <RefreshCw className="h-3.5 w-3.5" /> ওয়েবহুক রিফ্রেশ করুন
         </button>
       )}
     </Card>

@@ -37,7 +37,18 @@ export class MetaMessengerProvider implements MessengerProvider {
   constructor(private config: MessengerAppConfig) {}
 
   getOAuthDialogUrl(redirectUri: string, state: string): string {
-    const scope = ["pages_show_list", "pages_manage_metadata", "pages_messaging", "pages_read_engagement", "business_management"].join(",");
+    // pages_manage_engagement — M3 তে কমেন্ট রিপ্লাই করতে লাগে (পরে M5 তে হাইড/ডিলিটেও লাগবে)।
+    // ⚠️ এই permission গুলো আসলেই যথেষ্ট কিনা Meta App Review submission এর সময় Meta এর
+    // সর্বশেষ ডকুমেন্টেশনের সাথে মিলিয়ে একবার যাচাই করে নেওয়া ভালো — webhook এর "feed" field
+    // সাবস্ক্রাইব করতে অতিরিক্ত কোনো scope লাগে কিনা সেটা নিশ্চিতভাবে জানা নেই।
+    const scope = [
+      "pages_show_list",
+      "pages_manage_metadata",
+      "pages_messaging",
+      "pages_read_engagement",
+      "pages_manage_engagement",
+      "business_management",
+    ].join(",");
     const params = new URLSearchParams({
       client_id: this.config.appId,
       redirect_uri: redirectUri,
@@ -83,8 +94,11 @@ export class MetaMessengerProvider implements MessengerProvider {
   }
 
   async subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void> {
+    // "feed" — M3 তে পোস্টের কমেন্ট ইভেন্ট পেতে যোগ হয়েছে। আগে কানেক্ট হওয়া পেজে এই নতুন
+    // field পেতে আবার সাবস্ক্রাইব কল করা লাগবে — তাই PageCard.tsx তে "ওয়েবহুক রিফ্রেশ করুন"
+    // বাটন (WhatsApp Groups পেজের একই প্যাটার্ন)
     const params = new URLSearchParams({
-      subscribed_fields: "messages,messaging_postbacks",
+      subscribed_fields: "messages,messaging_postbacks,feed",
       access_token: pageAccessToken,
     });
     const res = await safeFetch(`${GRAPH_API_BASE}/${pageId}/subscribed_apps?${params.toString()}`, { method: "POST" });
@@ -165,5 +179,42 @@ export class MetaMessengerProvider implements MessengerProvider {
       // প্রোফাইল নাম না পাওয়া গেলে পুরো মেসেজ প্রসেসিং আটকানো ঠিক না — চুপচাপ null
       return { name: null };
     }
+  }
+
+  async replyToComment(pageAccessToken: string, commentId: string, text: string): Promise<{ commentId: string }> {
+    const params = new URLSearchParams({ access_token: pageAccessToken });
+    const res = await safeFetch(`${GRAPH_API_BASE}/${commentId}/comments?${params.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+    if (!res.ok) {
+      const message = await parseGraphError(res);
+      const err = new Error(`কমেন্টে রিপ্লাই পাঠানো ব্যর্থ: ${message}`) as Error & { isAuthError?: boolean };
+      err.isAuthError = res.status === 401 || message.includes("OAuthException");
+      throw err;
+    }
+    const data = (await res.json()) as { id: string };
+    return { commentId: data.id };
+  }
+
+  // Private Reply — recipient এ psid এর বদলে comment_id (Meta এর ডকুমেন্টেড পদ্ধতি, এই পথেই
+  // কাস্টমার কখনো DM না করলেও প্রথম মেসেজ পাঠানো যায়)। ⚠️ এই endpoint/shape Meta এর
+  // ডকুমেন্টেশন অনুযায়ী লেখা, লাইভে প্রথমবার টেস্ট করার সময় যাচাই করে নেওয়া ভালো।
+  async sendPrivateReply(pageAccessToken: string, commentId: string, text: string): Promise<{ messageId: string }> {
+    const params = new URLSearchParams({ access_token: pageAccessToken });
+    const res = await safeFetch(`${GRAPH_API_BASE}/me/messages?${params.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text } }),
+    });
+    if (!res.ok) {
+      const message = await parseGraphError(res);
+      const err = new Error(`Private Reply পাঠানো ব্যর্থ: ${message}`) as Error & { isAuthError?: boolean };
+      err.isAuthError = res.status === 401 || message.includes("OAuthException");
+      throw err;
+    }
+    const data = (await res.json()) as { message_id: string };
+    return { messageId: data.message_id };
   }
 }
