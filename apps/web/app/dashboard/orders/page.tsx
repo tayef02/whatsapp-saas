@@ -1,21 +1,24 @@
 import { createClient } from "@/lib/supabase/server";
 import OrdersList from "./OrdersList";
 
+// Phase ১ (চ্যানেল বিচ্ছিন্নতা): এই পেজ শুধু WhatsApp অর্ডার দেখায় (channel='whatsapp')।
+// Messenger অর্ডার আলাদা /dashboard/messenger/orders পেজে (একই OrdersList কম্পোনেন্ট,
+// শুধু channel প্রপ আলাদা) — orders.channel ছাড়া আর কোনো ডেটা দুই চ্যানেলের মধ্যে মেশে না
 export default async function OrdersPage() {
   const supabase = await createClient();
 
   const { data: orders } = await supabase
     .from("orders")
     .select(
-      "id, order_number, contact_phone, product_name, quantity, delivery_name, delivery_phone, delivery_address, status, cancel_reason, raw_summary, created_at, channel, groups(name), messenger_pages(page_name)"
+      "id, order_number, contact_phone, product_name, quantity, delivery_name, delivery_phone, delivery_address, status, cancel_reason, raw_summary, created_at, channel, groups(name)"
     )
+    .eq("channel", "whatsapp")
     .order("created_at", { ascending: false })
     .limit(200);
 
   const ordersWithGroupName = (orders ?? []).map((o) => {
     const group = Array.isArray(o.groups) ? o.groups[0] : o.groups;
-    const messengerPage = Array.isArray(o.messenger_pages) ? o.messenger_pages[0] : o.messenger_pages;
-    return { ...o, group_name: group?.name ?? null, messenger_page_name: messengerPage?.page_name ?? null };
+    return { ...o, group_name: group?.name ?? null, messenger_page_name: null };
   });
 
   return (
@@ -26,7 +29,7 @@ export default async function OrdersPage() {
           AI চ্যাটবট কথোপকথনে, অথবা গ্রুপে "ORDER: নাম, নাম্বার, প্রোডাক্ট" ফরম্যাটে মেসেজ এলে এখানে অটোমেটিক লিস্ট হবে।
         </p>
       </div>
-      <OrdersList orders={ordersWithGroupName} />
+      <OrdersList orders={ordersWithGroupName} channel="whatsapp" />
     </div>
   );
 }

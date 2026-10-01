@@ -36,11 +36,17 @@ export async function tryAiReply(
   question: string
 ): Promise<AiReplyResult> {
   const channel: "whatsapp" | "messenger" = whatsappNumberId ? "whatsapp" : "messenger";
+  // Phase ১ (চ্যানেল বিচ্ছিন্নতা): Messenger এর নিজস্ব AI সেটিংস/নলেজ বেস টেবিল (migration
+  // 0045) — WhatsApp এর workspace_ai_settings/knowledge_base_documents একদমই স্পর্শ হয় না,
+  // টেবিল/RPC নাম channel অনুযায়ী বাছা হয়
+  const settingsTable = channel === "messenger" ? "messenger_ai_settings" : "workspace_ai_settings";
+  const apiKeyRpc = channel === "messenger" ? "get_messenger_ai_api_key" : "get_workspace_api_key";
+  const documentsTable = channel === "messenger" ? "messenger_knowledge_base_documents" : "knowledge_base_documents";
   let supportPhone: string | null = null;
 
   try {
     const { data: settings, error: settingsError } = await supabase
-      .from("workspace_ai_settings")
+      .from(settingsTable)
       .select("llm_provider, system_prompt, support_phone, typical_delivery_time")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
@@ -48,27 +54,27 @@ export async function tryAiReply(
     if (settingsError) {
       // এরর হলে "provider সেট নেই" ধরে ভুল ধারণা না দিয়ে সরাসরি technical_failure — যেমন
       // নিচের apiKey/documents চেকগুলো (আর সবার নিচের catch ব্লক) একই পাথে যায়
-      console.error(`[autoreply] workspace_ai_settings lookup failed workspace=${workspaceId}: ${settingsError.message}`);
+      console.error(`[autoreply] ${settingsTable} lookup failed workspace=${workspaceId}: ${settingsError.message}`);
       return { kind: "technical_failure", supportPhone };
     }
 
     supportPhone = settings?.support_phone ?? null;
 
     if (!settings?.llm_provider) {
-      console.log(`[autoreply] workspace=${workspaceId} has no AI provider configured`);
+      console.log(`[autoreply] workspace=${workspaceId} (channel=${channel}) has no AI provider configured`);
       return { kind: "technical_failure", supportPhone };
     }
 
     const provider = settings.llm_provider as LlmProvider;
 
-    const { data: apiKey } = await supabase.rpc("get_workspace_api_key", { p_workspace_id: workspaceId });
+    const { data: apiKey } = await supabase.rpc(apiKeyRpc, { p_workspace_id: workspaceId });
     if (!apiKey) {
-      console.log(`[autoreply] workspace=${workspaceId} has a provider set but no API key`);
+      console.log(`[autoreply] workspace=${workspaceId} (channel=${channel}) has a provider set but no API key`);
       return { kind: "technical_failure", supportPhone };
     }
 
     const { data: documents } = await supabase
-      .from("knowledge_base_documents")
+      .from(documentsTable)
       .select("file_name, full_text, word_count")
       .eq("workspace_id", workspaceId)
       .eq("status", "ready");
@@ -84,7 +90,7 @@ export async function tryAiReply(
     if (readyDocs.length > 0 && totalWords <= FULL_TEXT_MODE_MAX_WORDS) {
       context = readyDocs.map((d: { file_name: string; full_text: string | null }) => `# ${d.file_name}\n${d.full_text}`).join("\n\n---\n\n");
     } else if (readyDocs.length > 0) {
-      context = await buildChunkContext(supabase, workspaceId, provider, apiKey, question);
+      context = await buildChunkContext(supabase, workspaceId, provider, apiKey, question, channel);
     }
     // readyDocs.length === 0 হলে context ফাঁকা থাকে — LLM তবুও কল হয়, শুধু system prompt
     // দিয়েই (সাধারণ কথাবার্তা/অর্ডার প্রসেসের নির্দেশনা system prompt-এই থাকতে পারে)
@@ -207,6 +213,7 @@ async function saveOrder(
     workspaceId,
     "new_order",
     `নতুন অর্ডার #${order.order_number}`,
+    channel,
     parsed?.product_name ? `${parsed.product_name}${parsed.quantity ? ` (${parsed.quantity})` : ""} — কাস্টমার: ${phone}` : `কাস্টমার ${phone} থেকে নতুন অর্ডার — বিস্তারিত দেখতে Orders পেজে যান।`
   );
 
@@ -256,20 +263,22 @@ async function buildChunkContext(
   workspaceId: string,
   provider: LlmProvider,
   apiKey: string,
-  question: string
+  question: string,
+  channel: "whatsapp" | "messenger"
 ): Promise<string> {
   const queryEmbedding = await generateEmbedding(provider, apiKey, question);
+  const searchRpc = channel === "messenger" ? "search_messenger_knowledge_base" : "search_knowledge_base";
 
   // ৪ থেকে ৮ এ বাড়ানো হয়েছে — multi-part প্রশ্নে (যেমন দুই প্রোডাক্টের তুলনা, বা প্রোডাক্ট+ডেলিভারি
   // একসাথে) একটা মাত্র query embedding একাধিক উপ-বিষয়ে স্কিউড হতে পারে, বেশি chunk আনলে সব
   // প্রাসঙ্গিক অংশ LLM এর কাছে পৌঁছানোর সম্ভাবনা বাড়ে
-  const { data: matches } = await supabase.rpc("search_knowledge_base", {
+  const { data: matches } = await supabase.rpc(searchRpc, {
     p_workspace_id: workspaceId,
     p_query_embedding: JSON.stringify(queryEmbedding),
     p_provider: provider,
     p_match_count: 8,
   });
 
-  console.log(`[autoreply] chunk retrieval (large KB): found ${matches?.length ?? 0} chunk(s)`);
+  console.log(`[autoreply] chunk retrieval (large KB, channel=${channel}): found ${matches?.length ?? 0} chunk(s)`);
   return (matches ?? []).map((m: { content: string }) => m.content).join("\n\n---\n\n");
 }

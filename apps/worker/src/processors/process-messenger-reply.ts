@@ -104,6 +104,7 @@ export async function processMessengerReply(data: MessengerReplyJobData) {
           page.workspace_id,
           "conversation_handed_off",
           "Messenger এ রিপ্লাই পাঠানো যায়নি",
+          "messenger",
           "Meta এখনো 'Human Agent' মেসেজ ট্যাগ অনুমোদন করেনি (২৪ ঘণ্টার উইন্ডো পার হওয়া কথোপকথনে রিপ্লাই পাঠাতে এটা লাগে) — এই ফিচার ব্যবহার করতে Meta App Review থেকে অনুমোদন লাগবে। কাস্টমার নতুন মেসেজ পাঠালে উইন্ডো আবার খুলবে, তখন স্বাভাবিকভাবে রিপ্লাই পাঠানো যাবে।"
         );
       }

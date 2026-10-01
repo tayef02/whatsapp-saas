@@ -41,6 +41,8 @@ import { processMessengerWebhookEvent } from "./processors/process-messenger-web
 import { MESSENGER_JOBS_QUEUE_NAME } from "./queues/messenger-jobs-queue";
 import { processMessengerReply } from "./processors/process-messenger-reply";
 import { processDownloadMessengerMedia } from "./processors/process-messenger-media";
+import { MESSENGER_KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/messenger-knowledge-base-queue";
+import { processMessengerKnowledgeBaseDocument } from "./processors/process-messenger-knowledge-base";
 
 const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
@@ -203,6 +205,20 @@ knowledgeBaseWorker.on("failed", (job, err) => {
   console.error(`[knowledge-base-worker] job ${job?.id} ব্যর্থ:`, err.message);
 });
 
+// Messenger এর নিজস্ব knowledge base ফাইল প্রসেসিং — WhatsApp এর knowledgeBaseWorker এর থেকে
+// সম্পূর্ণ আলাদা queue (চ্যানেল বিচ্ছিন্নতা নিয়ম)
+const messengerKnowledgeBaseWorker = new Worker(
+  MESSENGER_KNOWLEDGE_BASE_QUEUE_NAME,
+  async (job) => {
+    await processMessengerKnowledgeBaseDocument(job.data);
+  },
+  { connection }
+);
+
+messengerKnowledgeBaseWorker.on("failed", (job, err) => {
+  console.error(`[messenger-knowledge-base-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
 // Messenger এর raw webhook ইভেন্ট — WhatsApp এর webhookWorker থেকে সম্পূর্ণ আলাদা queue/worker,
 // দুই চ্যানেলের ইভেন্ট কখনো একে অপরের সাথে মেশে না
 const messengerWebhookWorker = new Worker(
@@ -237,7 +253,7 @@ messengerJobsWorker.on("failed", (job, err) => {
 });
 
 console.log(
-  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process, messenger-webhook, messenger-jobs queue শুনছে..."
+  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process, messenger-webhook, messenger-jobs, messenger-knowledge-base-process queue শুনছে..."
 );
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য

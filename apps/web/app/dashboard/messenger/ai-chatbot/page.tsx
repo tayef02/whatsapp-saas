@@ -1,35 +1,31 @@
-import Link from "next/link";
-import { Bot, ArrowRight } from "lucide-react";
-import { Card, Badge } from "@/components/ui";
+import { createClient } from "@/lib/supabase/server";
+import MessengerAiChatbotSettings from "./MessengerAiChatbotSettings";
+import { FULL_TEXT_MODE_MAX_WORDS } from "@whatsapp-saas/core/chatbot/constants";
 
-// এটা "শীঘ্রই" খোলস না — workspace_ai_settings/নলেজ বেস দুই চ্যানেলেই শেয়ার্ড (একই সিস্টেম
-// প্রম্পট, একই ডকুমেন্ট), তাই এখানে আলাদা সেটিং বানানো হয়নি, শুধু সেটা জানিয়ে আসল সেটিংস
-// পেজে পাঠানো হচ্ছে। এই তথ্য-কার্ডটা বাস্তব (fake "coming soon" না) — সেটিংস জেনুইনভাবে
-// শেয়ার্ড, শুধু Messenger এর সাথে এখনো ওয়্যার করা হয়নি (M2 তে হবে)
-export default function MessengerAiChatbotPage() {
+// Phase ১ (চ্যানেল বিচ্ছিন্নতা): আগে এখানে একটা "শেয়ার্ড সেটিংস" তথ্য-কার্ড ছিল যা WhatsApp
+// এর পেজে রিডাইরেক্ট করত — এখন এটা সম্পূর্ণ আসল সেটিংস পেজ, নিজস্ব messenger_ai_settings/
+// messenger_knowledge_base_documents টেবিল পড়ে (WhatsApp এর AI ডেটা এখানে ছোঁয়া হয় না)
+export default async function MessengerAiChatbotPage() {
+  const supabase = await createClient();
+
+  const { data: settings } = await supabase
+    .from("messenger_ai_settings")
+    .select("llm_provider, system_prompt, support_phone, typical_delivery_time, api_key_secret_id")
+    .maybeSingle();
+
+  const { data: documents } = await supabase
+    .from("messenger_knowledge_base_documents")
+    .select("id, file_name, file_type, status, error_message, created_at, word_count")
+    .order("created_at", { ascending: false });
+
+  const totalReadyWords = (documents ?? []).filter((d) => d.status === "ready").reduce((sum, d) => sum + (d.word_count ?? 0), 0);
+
   return (
-    <div className="mx-auto max-w-md">
-      <Card className="flex flex-col items-center gap-4 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-light text-primary">
-          <Bot className="h-7 w-7" />
-        </div>
-        <div>
-          <h1 className="text-base font-semibold text-text">এআই চ্যাটবট — শেয়ার্ড সেটিংস</h1>
-          <p className="mt-1 text-sm text-text-muted">
-            Messenger-এর জন্য আলাদা কোনো AI সেটিংস নেই — আপনার WhatsApp চ্যাটবটে যে system prompt, নলেজ বেস আর
-            সাপোর্ট নাম্বার সেট করা আছে, পেজ কানেক্ট হওয়ার পর Messenger-এও সেই একই সেটিংস ব্যবহার হবে।
-          </p>
-        </div>
-
-        <Badge variant="info">পেজ কানেক্ট হওয়ার পর সক্রিয় হবে</Badge>
-
-        <Link
-          href="/dashboard/ai-chatbot"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
-        >
-          চ্যাটবট সেটিংসে যান <ArrowRight className="h-4 w-4" />
-        </Link>
-      </Card>
-    </div>
+    <MessengerAiChatbotSettings
+      settings={settings ?? null}
+      documents={documents ?? []}
+      totalReadyWords={totalReadyWords}
+      fullTextModeMaxWords={FULL_TEXT_MODE_MAX_WORDS}
+    />
   );
 }

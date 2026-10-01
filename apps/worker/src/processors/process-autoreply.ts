@@ -45,6 +45,7 @@ export async function processAutoReply(data: AutoReplyJobData) {
       data.workspaceId,
       "conversation_handed_off",
       "একটা কথোপকথনে এজেন্টের সাহায্য দরকার",
+      "whatsapp",
       "কাস্টমারের প্রশ্নের কোনো উত্তর AI খুঁজে পায়নি — Inbox এ গিয়ে দেখুন।"
     );
   }

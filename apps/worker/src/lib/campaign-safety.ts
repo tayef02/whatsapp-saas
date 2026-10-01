@@ -18,6 +18,7 @@ export async function pauseCampaignsForNumber(numberId: string, workspaceId: str
       workspaceId,
       "campaign_auto_paused",
       "নাম্বার সমস্যার কারণে ক্যাম্পেইন থামানো হয়েছে",
+      "whatsapp",
       `${paused.length}টা চলমান ক্যাম্পেইন পজ করা হয়েছে। নাম্বার ঠিক করে আবার resume করুন।`
     );
   }

@@ -52,19 +52,21 @@ const statusSelectClass: Record<string, string> = {
   cancelled: "bg-danger-light text-danger",
 };
 
-export default function OrdersList({ orders }: { orders: Order[] }) {
+// Phase ১ (চ্যানেল বিচ্ছিন্নতা): এই কম্পোনেন্ট WhatsApp (/dashboard/orders) ও Messenger
+// (/dashboard/messenger/orders) দুই পেজেই reuse হয় — প্রতিটা পেজ শুধু নিজের চ্যানেলের অর্ডার
+// (orders.channel দিয়ে server-side ফিল্টার করা) পাস করে, তাই এখানে আর কোনো চ্যানেল-মেশানো
+// সম্ভাবনা নেই — `channel` প্রপ শুধু খালি-স্টেট টেক্সট ও হেল্পার লেখার জন্য ব্যবহার হয়
+export default function OrdersList({ orders, channel }: { orders: Order[]; channel: "whatsapp" | "messenger" }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [historyByOrder, setHistoryByOrder] = useState<Record<string, HistoryRow[]>>({});
   const [statusFilter, setStatusFilter] = useState("");
-  const [channelFilter, setChannelFilter] = useState("");
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
     return orders.filter((o) => {
       if (statusFilter && o.status !== statusFilter) return false;
-      if (channelFilter && o.channel !== channelFilter) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         const haystack = [
@@ -83,7 +85,7 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
       }
       return true;
     });
-  }, [orders, statusFilter, channelFilter, search]);
+  }, [orders, statusFilter, search]);
 
   async function handleStatusChange(order: Order, status: string) {
     if (status === order.status) return;
@@ -119,7 +121,11 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
       <EmptyState
         icon={<ShoppingCart className="h-10 w-10" />}
         title="এখনো কোনো অর্ডার আসেনি"
-        description={'AI চ্যাটবট কথোপকথনে বা গ্রুপে "ORDER: নাম, নাম্বার, প্রোডাক্ট" ফরম্যাটে মেসেজ এলে এখানে অটোমেটিক লিস্ট হবে।'}
+        description={
+          channel === "whatsapp"
+            ? 'AI চ্যাটবট কথোপকথনে বা গ্রুপে "ORDER: নাম, নাম্বার, প্রোডাক্ট" ফরম্যাটে মেসেজ এলে এখানে অটোমেটিক লিস্ট হবে।'
+            : "Messenger AI চ্যাটবট কথোপকথনে অর্ডার কনফার্ম হলে এখানে অটোমেটিক লিস্ট হবে।"
+        }
       />
     );
   }
@@ -143,11 +149,6 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
               {label}
             </option>
           ))}
-        </Select>
-        <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="w-40">
-          <option value="">সব চ্যানেল</option>
-          <option value="whatsapp">WhatsApp</option>
-          <option value="messenger">Messenger</option>
         </Select>
       </div>
 

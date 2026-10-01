@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { Menu, LogOut } from "lucide-react";
 import Sidebar from "./Sidebar";
 import NotificationBell from "./NotificationBell";
-import { getPageTitle } from "./nav-config";
+import { getPageTitle, getChannelFromPathname } from "./nav-config";
 import { ToastProvider } from "@/components/ui";
 
-type Notification = { id: string; title: string; body: string | null };
+type Notification = { id: string; title: string; body: string | null; channel: "whatsapp" | "messenger" | null };
 
 // dashboard/layout.tsx (সার্ভার কম্পোনেন্ট) থেকে সব ডাটা props হিসেবে আসে — এই ফাইলে কোনো
 // নতুন ডাটা কোয়েরি নেই, শুধু sidebar/topbar এর লেআউট আর মোবাইল টগল state
@@ -30,6 +30,7 @@ export default function DashboardShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const pageTitle = getPageTitle(pathname, isSuperAdmin);
+  const activeChannel = getChannelFromPathname(pathname);
   const avatarInitial = (userName || "?").trim().charAt(0).toUpperCase() || "?";
 
   return (
@@ -52,7 +53,7 @@ export default function DashboardShell({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <NotificationBell notifications={notifications} />
+              <NotificationBell notifications={notifications} activeChannel={activeChannel} />
 
               <div className="ml-1 flex items-center gap-2 border-l border-border pl-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-light text-sm font-semibold text-primary">

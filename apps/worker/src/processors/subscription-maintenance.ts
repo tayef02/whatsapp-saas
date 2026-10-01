@@ -40,10 +40,13 @@ export async function runSubscriptionMaintenanceTick() {
 
     if (existing) continue; // আজকে ইতিমধ্যে নোটিফিকেশন দেওয়া হয়েছে
 
+    // অ্যাকাউন্ট-লেভেল অ্যালার্ট (প্ল্যান/সাবস্ক্রিপশন), কোনো নির্দিষ্ট চ্যানেলের না — channel
+    // null রাখা হচ্ছে, যাতে বেল চ্যানেল যা-ই দেখাক এটা সবসময় দেখায়
     await createNotification(
       workspace.id,
       "subscription_expiring_soon",
       "আপনার প্ল্যানের মেয়াদ শেষ হয়ে আসছে",
+      null,
       `${new Date(workspace.subscription_expires_at as string).toLocaleDateString("bn-BD")} তারিখে মেয়াদ শেষ হবে। মেয়াদ শেষ হলে নতুন ক্যাম্পেইন পাঠানো যাবে না — এখনই রিনিউ করুন।`
     );
   }

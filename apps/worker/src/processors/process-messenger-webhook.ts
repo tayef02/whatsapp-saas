@@ -211,6 +211,7 @@ export async function processMessengerWebhookEvent(data: MessengerWebhookJobData
     page.workspace_id,
     "conversation_handed_off",
     "Messenger AI চ্যাটবট টেকনিক্যাল সমস্যায় পড়েছে",
+    "messenger",
     "কাস্টমারের মেসেজে AI সাড়া দিতে পারেনি (API key/quota/network সমস্যা) — Messenger ইনবক্সে গিয়ে দেখুন।"
   );
 }

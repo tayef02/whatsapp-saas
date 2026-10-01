@@ -29,6 +29,7 @@ export async function processDeleteGroupMessage(data: DeleteGroupMessageJobData)
       data.workspaceId,
       "group_message_delete_failed",
       "গ্রুপ মেসেজ auto-delete ব্যর্থ হয়েছে",
+      "whatsapp",
       `একটা স্প্যাম/ব্যানড-ওয়ার্ড মেসেজ ("${data.matchedText}") অটোমেটিক ডিলিট করা যায়নি — গ্রুপে গিয়ে ম্যানুয়ালি দেখুন।`
     );
   }

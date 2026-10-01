@@ -524,6 +524,7 @@ async function handleGroupMessage(
         group.workspace_id,
         "group_message_flagged",
         "গ্রুপে স্প্যাম/ব্যানড কন্টেন্ট ধরা পড়েছে",
+        "whatsapp",
         `"${matchedFilterText}" মিলে গেছে একটা মেসেজে, কিন্তু মেসেজ আইডি না থাকায় ডিলিট করা যায়নি — ম্যানুয়ালি দেখুন। (কাস্টমার: ${senderPhone})`
       );
       console.log(`[group-moderation] no message id available, notified workspace instead (group=${groupJid})`);
@@ -565,6 +566,7 @@ async function handleGroupMessage(
         group.workspace_id,
         "group_order_capture_failed",
         "গ্রুপে অর্ডার ফরম্যাট বুঝা যায়নি",
+        "whatsapp",
         `"${text}" — নাম/সঠিক ফরম্যাটের নাম্বার পাওয়া যায়নি, raw_summary হিসেবে সেভ হয়েছে${order ? ` (#${order.order_number})` : ""}, ম্যানুয়ালি দেখুন।`
       );
       return;
@@ -600,6 +602,7 @@ async function handleGroupMessage(
       group.workspace_id,
       "new_order",
       `নতুন অর্ডার #${order.order_number} (গ্রুপ থেকে)`,
+      "whatsapp",
       `${structuredOrder.product ? `${structuredOrder.product}${structuredOrder.quantity ? ` (${structuredOrder.quantity})` : ""} — ` : ""}কাস্টমার: ${structuredOrder.name} (${normalizedPhone})`
     );
 
@@ -725,6 +728,7 @@ async function handleGroupMessage(
       group.workspace_id,
       "conversation_handed_off",
       "গ্রুপে AI চ্যাটবট টেকনিক্যাল সমস্যায় পড়েছে",
+      "whatsapp",
       `গ্রুপে AI সাড়া দিতে পারেনি (API key/quota/network সমস্যা) — AI Chatbot সেটিংস চেক করুন।`
     );
   }
@@ -953,6 +957,7 @@ async function handleAutoReply(
     number.workspace_id,
     "conversation_handed_off",
     "AI চ্যাটবট টেকনিক্যাল সমস্যায় পড়েছে",
+    "whatsapp",
     "কাস্টমারের মেসেজে AI সাড়া দিতে পারেনি (API key/quota/network সমস্যা) — Inbox এ গিয়ে দেখুন আর AI Chatbot সেটিংস চেক করুন।"
   );
 }

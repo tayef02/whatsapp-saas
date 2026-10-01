@@ -78,6 +78,18 @@
 ### ফেজ ৩ (স্কেলের সময়)
 Meta Cloud API, চ্যাটবট বিল্ডার, পাবলিক API + ওয়েবহুক, ড্রিপ ক্যাম্পেইন, অ্যানালিটিক্স, রিসেলার/হোয়াইট-লেবেল
 
+## চ্যানেল বিচ্ছিন্নতা (সব ফেজে বাধ্যতামূলক, নতুন প্রতিটা চ্যানেলেও প্রযোজ্য)
+
+**WhatsApp, Messenger, আর ভবিষ্যতের প্রতিটা নতুন চ্যানেল সম্পূর্ণ আলাদা সেকশন — ডেটা কখনো
+মিশবে না।** প্রতিটা চ্যানেলের নিজস্ব টেবিল, নিজস্ব পেজ/রুট, নিজস্ব server action, নিজস্ব AI
+সেটিংস/নলেজ বেস, নিজস্ব নোটিফিকেশন। শুধু **অ্যাকাউন্ট-লেভেল** জিনিস শেয়ার্ড থাকবে: লগইন/
+workspace, প্ল্যান ও বিলিং, পেমেন্ট, সেটিংস, অ্যাডমিন। কোনো নতুন ফিচার/চ্যানেল যোগ করার সময়
+এই নিয়ম মাথায় রাখা — একটা চ্যানেলের পেজে ভুলে অন্য চ্যানেলের ডেটা/কোয়েরি না ঢোকানো
+(Messenger Phase ১ এ orders/dashboard/notifications/AI-chatbot এ এই মিশে যাওয়া প্রথম ধরা
+পড়ে ঠিক করা হয়েছিল — `docs/messenger-plan.md` এর "Phase ১" সেকশনে বিস্তারিত)। নতুন চ্যানেল
+যোগ করার সময় `apps/web/app/dashboard/nav-config.ts`-এর `CHANNEL_REGISTRY`-তে একটা entry যোগ
+করলেই sidebar/pathname-detection কাজ করবে, কোনো ternary/if-branch এডিট করা লাগে না।
+
 ## Messenger চ্যানেল (নতুন, শুরু হয়েছে — `messenger` ব্রাঞ্চে)
 - পুরো কাজ `messenger` গিট ব্রাঞ্চে, `main` এ না — WhatsApp এর কোনো টেবিল/server action/worker প্রসেসর এই কাজে ছোঁয়া হয় না
 - **M0, M1 (পেজ কানেক্ট + webhook + টেক্সট ইনবক্স) ও M2 (AI রিপ্লাই + অর্ডার + মিডিয়া + Human Agent) সম্পন্ন**: `messenger_pages`/`messenger_conversations`/`messenger_messages` টেবিল (migration 0040-0043, আলাদা টেবিল, WhatsApp এর সাথে merge না — কারণ বিস্তারিত `docs/messenger-plan.md` তে), `packages/core/providers/messenger.ts` এ `MetaMessengerProvider` (Graph API v21.0, tag+typing সাপোর্ট সহ), Facebook OAuth দিয়ে পেজ কানেক্ট (`/dashboard/messenger/connect/*`, পেজ টোকেন Vault এ, প্রতি পেজে বট টগল), `/api/webhooks/messenger` (signature-verified, আলাদা BullMQ কিউ `messenger-webhook-events`/`messenger-jobs`), `/dashboard/messenger/inbox` (AI/এজেন্ট রিপ্লাই, মিডিয়া থাম্বনেইল, Human Agent মোড ৭ দিন পর্যন্ত), সাইডবার চ্যানেল সুইচার, `nav-config.ts` একমাত্র উৎস, ড্যাশবোর্ডে সব/WhatsApp/Messenger ট্যাব

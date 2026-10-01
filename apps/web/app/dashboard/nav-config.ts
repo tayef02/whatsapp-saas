@@ -54,9 +54,8 @@ const whatsappNavGroups: NavGroup[] = [
   { title: "বিক্রি", items: [{ href: "/dashboard/orders", label: "অর্ডার", icon: ShoppingCart }] },
 ];
 
-// Messenger চ্যানেল — Phase M0, সবগুলো পেজ এখনো "শীঘ্রই" খোলস (পেজ কানেক্ট ছাড়া)।
-// অর্ডার পেজ WhatsApp এর সাথে শেয়ার্ড (একই /dashboard/orders রুট, আলাদা পেজ না) —
-// channel ফিল্টার M3 এ orders.channel কলাম আসার পর যোগ হবে
+// Messenger চ্যানেল — প্রতিটা আইটেম এখন নিজস্ব রুট/ডেটার (WhatsApp এর সাথে কোনো শেয়ার্ড
+// পেজ/কোয়েরি নেই, orders পেজও নিজস্ব /dashboard/messenger/orders — Phase ১ এর নিয়ম)
 const messengerNavGroups: NavGroup[] = [
   {
     title: "Messenger",
@@ -74,7 +73,7 @@ const messengerNavGroups: NavGroup[] = [
       { href: "/dashboard/messenger/moderation", label: "মডারেশন", icon: ShieldAlert },
     ],
   },
-  { title: "বিক্রি", items: [{ href: "/dashboard/orders", label: "অর্ডার", icon: ShoppingCart }] },
+  { title: "বিক্রি", items: [{ href: "/dashboard/messenger/orders", label: "অর্ডার", icon: ShoppingCart }] },
 ];
 
 const accountNavGroup: NavGroup = {
@@ -90,16 +89,31 @@ export const adminNavGroup: NavGroup = {
   items: [{ href: "/dashboard/admin/payments", label: "পেমেন্ট রিভিউ", icon: ShieldCheck }],
 };
 
-// URL ভিত্তিক — /dashboard/messenger/... এ থাকলে Messenger, নাহলে WhatsApp। কোনো আলাদা
+// চ্যানেল-রেজিস্ট্রি — ভবিষ্যতে নতুন চ্যানেল (যেমন Instagram) যোগ করতে এখানে একটা entry আর
+// তার নিজস্ব navGroups অ্যারে যোগ করলেই হবে, getChannelFromPathname/getNavGroups এর ভেতরের
+// লজিক (ternary/if-branch) এডিট করা লাগে না — Channel ইউনিয়ন টাইপে নতুন চ্যানেল যোগ করলে
+// TypeScript নিজেই এই Record এ সেই key বসানো বাধ্যতামূলক করে দেবে
+type ChannelConfig = { pathPrefix: string | null; navGroups: NavGroup[] };
+const CHANNEL_REGISTRY: Record<Channel, ChannelConfig> = {
+  whatsapp: { pathPrefix: null, navGroups: whatsappNavGroups },
+  messenger: { pathPrefix: "/dashboard/messenger", navGroups: messengerNavGroups },
+};
+const DEFAULT_CHANNEL: Channel = "whatsapp";
+
+// URL ভিত্তিক — pathPrefix ম্যাচ করলে সেই চ্যানেল, নাহলে DEFAULT_CHANNEL। কোনো আলাদা
 // state/context লাগে না, sidebar আর topbar দুটোই pathname থেকে স্বাধীনভাবে বের করতে পারে
 export function getChannelFromPathname(pathname: string): Channel {
-  return pathname === "/dashboard/messenger" || pathname.startsWith("/dashboard/messenger/") ? "messenger" : "whatsapp";
+  for (const channel of Object.keys(CHANNEL_REGISTRY) as Channel[]) {
+    const prefix = CHANNEL_REGISTRY[channel].pathPrefix;
+    if (prefix && (pathname === prefix || pathname.startsWith(prefix + "/"))) return channel;
+  }
+  return DEFAULT_CHANNEL;
 }
 
 // Sidebar আর টপবারের "বর্তমান পেজের নাম" — দুটোই এই একই ফাংশন থেকে আসে, যাতে লেবেল
 // একবারই লেখা লাগে আর কোথাও অসামঞ্জস্য না হয়
 export function getNavGroups(channel: Channel, isSuperAdmin: boolean): NavGroup[] {
-  const channelGroups = channel === "messenger" ? messengerNavGroups : whatsappNavGroups;
+  const channelGroups = CHANNEL_REGISTRY[channel].navGroups;
   const groups = [overviewNavGroup, ...channelGroups, accountNavGroup];
   return isSuperAdmin ? [...groups, adminNavGroup] : groups;
 }

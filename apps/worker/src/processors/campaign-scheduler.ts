@@ -136,6 +136,7 @@ async function autoPauseHighFailureCampaigns() {
         campaign.workspace_id,
         "campaign_auto_paused",
         "ব্যর্থতার হার বেশি হওয়ায় ক্যাম্পেইন থামানো হয়েছে",
+        "whatsapp",
         `শেষ ${recent.length}টা মেসেজের মধ্যে ${failedCount}টা ফেল করেছে (${Math.round(rate * 100)}%)। চেক করে আবার চালু করুন।`
       );
     }

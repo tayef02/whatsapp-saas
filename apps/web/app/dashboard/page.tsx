@@ -10,6 +10,7 @@ import {
   MessageCircleWarning,
   ShieldCheck,
   MessageSquare,
+  Inbox,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Badge, EmptyState } from "@/components/ui";
@@ -37,37 +38,101 @@ const campaignStatusVariant: Record<string, "success" | "warning" | "danger" | "
   draft: "neutral",
 };
 
-type DayCount = { label: string; sent: number; delivered: number; failed: number };
+type ChartSeriesDef = { key: string; color: string; label: string };
+type ChartDay = { label: string } & Record<string, number | string>;
 
-const CHART_SERIES = [
-  { key: "sent" as const, color: "var(--color-info)", label: "পাঠানো" },
-  { key: "delivered" as const, color: "var(--color-success)", label: "ডেলিভার্ড" },
-  { key: "failed" as const, color: "var(--color-danger)", label: "ব্যর্থ" },
+const WHATSAPP_CHART_SERIES: ChartSeriesDef[] = [
+  { key: "sent", color: "var(--color-info)", label: "পাঠানো" },
+  { key: "delivered", color: "var(--color-success)", label: "ডেলিভার্ড" },
+  { key: "failed", color: "var(--color-danger)", label: "ব্যর্থ" },
 ];
 
+const MESSENGER_CHART_SERIES: ChartSeriesDef[] = [
+  { key: "inbound", color: "var(--color-info)", label: "কাস্টমারের মেসেজ" },
+  { key: "outbound", color: "var(--color-success)", label: "রিপ্লাই" },
+];
+
+// Phase ১ (চ্যানেল বিচ্ছিন্নতা): "সব" ট্যাব সরানো হয়েছে — আগে এটা আসলে কোনো cross-channel
+// aggregation করত না, শুধু WhatsApp ট্যাবের হুবহু একই কন্টেন্ট দেখাত। এখন প্রতিটা ট্যাব
+// (WhatsApp/Messenger) শুধু নিজের চ্যানেলের স্ট্যাট/চার্ট/কার্যক্রম কোয়েরি করে — কোনো কোয়েরিতেই
+// অন্য চ্যানেলের ডেটা মেশে না। "প্ল্যান ব্যবহার" কার্ড অ্যাকাউন্ট-লেভেল বলে ট্যাবের বাইরে, দুই
+// ট্যাবেই অভিন্নভাবে দেখায়।
 export default async function DashboardHome({ searchParams }: { searchParams: Promise<{ channel?: string }> }) {
-  // ফ্ল্যাগ বন্ধ থাকলে (ডিফল্ট) চ্যানেল ট্যাব দেখানোই হয় না, আর channel সবসময় "whatsapp" —
-  // নিচের কোনো Messenger কোয়েরি/কন্টেন্ট কখনো রেন্ডার হয় না, WhatsApp ড্যাশবোর্ড আগের মতোই
+  // ফ্ল্যাগ বন্ধ থাকলে (ডিফল্ট) চ্যানেল ট্যাব দেখানোই হয় না, channel সবসময় "whatsapp" —
+  // Messenger কোয়েরি/কন্টেন্ট কখনো রেন্ডার হয় না, WhatsApp ড্যাশবোর্ড আগের মতোই
   const rawChannel = MESSENGER_ENABLED ? (await searchParams).channel : undefined;
-  const channel: "all" | "whatsapp" | "messenger" = !MESSENGER_ENABLED
-    ? "whatsapp"
-    : rawChannel === "messenger"
-      ? "messenger"
-      : rawChannel === "whatsapp"
-        ? "whatsapp"
-        : "all";
+  const channel: "whatsapp" | "messenger" = MESSENGER_ENABLED && rawChannel === "messenger" ? "messenger" : "whatsapp";
 
   const channelTabs = MESSENGER_ENABLED && (
     <div className="flex w-fit gap-1 rounded-lg border border-border bg-card p-1">
-      <ChannelTab href="/dashboard" active={channel === "all"} label="সব" />
-      <ChannelTab href="/dashboard?channel=whatsapp" active={channel === "whatsapp"} label="WhatsApp" />
+      <ChannelTab href="/dashboard" active={channel === "whatsapp"} label="WhatsApp" />
       <ChannelTab href="/dashboard?channel=messenger" active={channel === "messenger"} label="Messenger" />
     </div>
   );
 
-  if (channel === "messenger") {
-    const supabase = await createClient();
+  const supabase = await createClient();
 
+  // অ্যাকাউন্ট-লেভেল — চ্যানেল যা-ই হোক একবারই কোয়েরি হয়, দুই ট্যাবেই একই কার্ড/লিংক দেখা যাবে
+  const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("workspace_id, workspaces(daily_message_limit, messages_used_this_cycle, plans(name, monthly_message_limit))")
+    .limit(1)
+    .maybeSingle();
+
+  const workspace = membership?.workspaces as unknown as {
+    daily_message_limit: number;
+    messages_used_this_cycle: number;
+    plans: { name: string; monthly_message_limit: number } | null;
+  } | null;
+
+  const monthlyLimit = workspace?.plans?.monthly_message_limit ?? 0;
+  const usedThisCycle = workspace?.messages_used_this_cycle ?? 0;
+  // rawPct রাউন্ড করার আগেই রাখা হচ্ছে — নাহলে 46/30000 এর মতো ছোট ব্যবহার Math.round এ 0% দেখাত,
+  // যেটা "কিছুই ব্যবহার হয়নি" মনে হতে পারত
+  const rawUsagePct = monthlyLimit > 0 ? (usedThisCycle / monthlyLimit) * 100 : 0;
+  const monthlyUsagePct = Math.min(100, Math.round(rawUsagePct));
+  const usagePctLabel = usedThisCycle > 0 && rawUsagePct < 1 ? "<১%" : `${monthlyUsagePct}%`;
+  const usageBarWidthPct = usedThisCycle > 0 ? Math.max(rawUsagePct, 1) : 0;
+
+  // ⚠️ এই কাউন্ট এখন পর্যন্ত শুধু WhatsApp ক্যাম্পেইন/ওয়েবহুক কোড ইনক্রিমেন্ট করে
+  // (apply_message_status RPC) — Messenger এর কোনো মেসেজ এখনো এই কোটায় গোনা হয় না (জানা
+  // সীমাবদ্ধতা, docs/messenger-plan.md এর Phase ১ সেকশনে বিস্তারিত)
+  const planUsageCard = (
+    <Card className="self-start">
+      <p className="mb-3 text-sm font-semibold text-text">প্ল্যান ব্যবহার</p>
+      {workspace?.plans ? (
+        <>
+          <div className="mb-1.5 flex items-center justify-between text-xs text-text-muted">
+            <span>{workspace.plans.name}</span>
+            <span>
+              {usedThisCycle} / {monthlyLimit} মেসেজ
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className={`h-full rounded-full ${monthlyUsagePct >= 90 ? "bg-danger" : monthlyUsagePct >= 70 ? "bg-warning" : "bg-primary"}`}
+              style={{ width: `${usageBarWidthPct}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-text-muted">{usagePctLabel} ব্যবহার হয়েছে এই সাইকেলে (এখন শুধু WhatsApp মেসেজ গোনা হয়)</p>
+          <Link href="/dashboard/billing" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+            প্ল্যান দেখুন <ArrowRight className="h-3 w-3" />
+          </Link>
+        </>
+      ) : (
+        <p className="text-sm text-text-muted">কোনো active প্ল্যান নেই।</p>
+      )}
+    </Card>
+  );
+
+  const adminLink = isSuperAdmin && (
+    <Link href="/dashboard/admin/payments" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+      🔑 অ্যাডমিন: পেমেন্ট রিভিউ <ArrowRight className="h-3.5 w-3.5" />
+    </Link>
+  );
+
+  if (channel === "messenger") {
     const { count: pagesCount } = await supabase.from("messenger_pages").select("id", { count: "exact", head: true }).eq("status", "active");
 
     // এখনো কোনো পেজ কানেক্ট করা না থাকলে কোনো conversations/messages কোয়েরি চালানোর
@@ -94,6 +159,10 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
     }
 
     const { count: conversationsCount } = await supabase.from("messenger_conversations").select("id", { count: "exact", head: true });
+    const { count: handedOffCount } = await supabase
+      .from("messenger_conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "handed_off");
 
     const { startIso: todayStart } = getDhakaDayBoundariesUtc(0);
     const { count: todayMessagesCount } = await supabase
@@ -101,42 +170,100 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
       .select("id", { count: "exact", head: true })
       .gte("created_at", todayStart);
 
+    const { count: pendingMessengerOrderCount } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("channel", "messenger")
+      .eq("status", "pending");
+
+    const { data: handedOffConversations } = await supabase
+      .from("messenger_conversations")
+      .select("id, customer_name, psid, last_message_at")
+      .eq("status", "handed_off")
+      .order("last_message_at", { ascending: false })
+      .limit(3);
+
+    // গত ৭ দিনের ইনবাউন্ড/আউটবাউন্ড মেসেজ — WhatsApp এর একই bucket-by-day প্যাটার্ন
+    const { startIso: weekStart } = getDhakaDayBoundariesUtc(6);
+    const { data: weekMessages } = await supabase
+      .from("messenger_messages")
+      .select("direction, created_at")
+      .gte("created_at", weekStart)
+      .order("created_at", { ascending: true });
+
+    const chartData: ChartDay[] = Array.from({ length: 7 }, (_, i) => {
+      const daysAgo = 6 - i;
+      const { startIso, endIso } = getDhakaDayBoundariesUtc(daysAgo);
+      const dayMessages = (weekMessages ?? []).filter((m) => m.created_at >= startIso && m.created_at < endIso);
+      return {
+        label: new Date(startIso).toLocaleDateString("bn-BD", { weekday: "short", timeZone: "Asia/Dhaka" }),
+        inbound: dayMessages.filter((m) => m.direction === "inbound").length,
+        outbound: dayMessages.filter((m) => m.direction === "outbound").length,
+      };
+    });
+
     return (
       <div className="flex flex-col gap-6">
         {channelTabs}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard icon={<MessageSquare className="h-5 w-5" />} label="কানেক্টেড পেজ" value={`${pagesCount ?? 0}`} />
           <StatCard icon={<Users className="h-5 w-5" />} label="মোট কথোপকথন" value={`${conversationsCount ?? 0}`} />
           <StatCard icon={<Send className="h-5 w-5" />} label="আজকের মেসেজ" value={`${todayMessagesCount ?? 0}`} />
+          <StatCard icon={<MessageCircleWarning className="h-5 w-5" />} label="এজেন্ট দরকার" value={`${handedOffCount ?? 0}`} />
         </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <p className="mb-4 text-sm font-semibold text-text">গত ৭ দিনের মেসেজ</p>
+            <WeeklyBarChart data={chartData} series={MESSENGER_CHART_SERIES} />
+          </Card>
+          {planUsageCard}
+        </div>
+
+        <Card>
+          <p className="mb-3 text-sm font-semibold text-text">সাম্প্রতিক কার্যক্রম</p>
+          <div className="flex flex-col divide-y divide-border">
+            {(handedOffConversations ?? []).map((c) => (
+              <Link key={c.id} href={`/dashboard/messenger/inbox/${c.id}`} className="flex items-center justify-between gap-3 py-3 first:pt-0">
+                <div className="flex min-w-0 items-center gap-2.5 text-sm text-text">
+                  <MessageCircleWarning className="h-4 w-4 shrink-0 text-danger" />
+                  <span className="truncate">
+                    এজেন্ট দরকার: <strong className="font-medium">{c.customer_name || c.psid}</strong>
+                  </span>
+                </div>
+                <span className="shrink-0 text-xs whitespace-nowrap text-text-muted">{formatDhakaDateTime(c.last_message_at)}</span>
+              </Link>
+            ))}
+
+            {(pendingMessengerOrderCount ?? 0) > 0 && (
+              <Link href="/dashboard/messenger/orders" className="flex items-center justify-between gap-3 py-3 first:pt-0">
+                <div className="flex min-w-0 items-center gap-2.5 text-sm text-text">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-text-muted" />
+                  <span className="truncate">নতুন অর্ডার অপেক্ষমান</span>
+                </div>
+                <Badge variant="warning" className="shrink-0">
+                  {pendingMessengerOrderCount}টা
+                </Badge>
+              </Link>
+            )}
+
+            {(handedOffConversations ?? []).length === 0 && (pendingMessengerOrderCount ?? 0) === 0 && (
+              <p className="py-3 text-sm text-text-muted">এখনো কোনো কার্যক্রম নেই।</p>
+            )}
+          </div>
+        </Card>
+
         <Link href="/dashboard/messenger/inbox" className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-          ইনবক্সে যান <ArrowRight className="h-3.5 w-3.5" />
+          <Inbox className="h-3.5 w-3.5" /> ইনবক্সে যান
         </Link>
+
+        {adminLink}
       </div>
     );
   }
 
-  const supabase = await createClient();
-
-  const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
-
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select(
-      "workspace_id, workspaces(daily_message_limit, messages_used_this_cycle, plans(name, monthly_message_limit))"
-    )
-    .limit(1)
-    .maybeSingle();
-
-  const workspace = membership?.workspaces as unknown as {
-    daily_message_limit: number;
-    messages_used_this_cycle: number;
-    plans: { name: string; monthly_message_limit: number } | null;
-  } | null;
-
-  const { count: totalNumbersCount } = await supabase
-    .from("whatsapp_numbers")
-    .select("id", { count: "exact", head: true });
+  const { count: totalNumbersCount } = await supabase.from("whatsapp_numbers").select("id", { count: "exact", head: true });
   const { count: onlineNumbersCount } = await supabase
     .from("whatsapp_numbers")
     .select("id", { count: "exact", head: true })
@@ -162,9 +289,11 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
     .order("last_message_at", { ascending: false })
     .limit(3);
 
+  // channel ফিল্টার যোগ হয়েছে — আগে Messenger এর pending অর্ডারও এখানে ভুলে গোনা হতো
   const { count: pendingOrderCount } = await supabase
     .from("orders")
     .select("id", { count: "exact", head: true })
+    .eq("channel", "whatsapp")
     .eq("status", "pending");
 
   // আজকের পাঠানো মেসেজ — Dhaka দিনের সীমানা, worker এর SQL ফাংশনের সাথে একই কনভেনশন
@@ -183,7 +312,7 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
     .gte("created_at", weekStart)
     .order("created_at", { ascending: true });
 
-  const chartData: DayCount[] = Array.from({ length: 7 }, (_, i) => {
+  const chartData: ChartDay[] = Array.from({ length: 7 }, (_, i) => {
     const daysAgo = 6 - i;
     const { startIso, endIso } = getDhakaDayBoundariesUtc(daysAgo);
     const dayMessages = (weekMessages ?? []).filter((m) => m.created_at >= startIso && m.created_at < endIso);
@@ -196,15 +325,6 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   });
 
   const dailyLimit = workspace?.daily_message_limit ?? 0;
-  const monthlyLimit = workspace?.plans?.monthly_message_limit ?? 0;
-  const usedThisCycle = workspace?.messages_used_this_cycle ?? 0;
-  // rawPct রাউন্ড করার আগেই রাখা হচ্ছে — নাহলে 46/30000 এর মতো ছোট ব্যবহার Math.round এ 0% দেখাত,
-  // যেটা "কিছুই ব্যবহার হয়নি" মনে হতে পারত
-  const rawUsagePct = monthlyLimit > 0 ? (usedThisCycle / monthlyLimit) * 100 : 0;
-  const monthlyUsagePct = Math.min(100, Math.round(rawUsagePct));
-  const usagePctLabel = usedThisCycle > 0 && rawUsagePct < 1 ? "<১%" : `${monthlyUsagePct}%`;
-  const usageBarWidthPct = usedThisCycle > 0 ? Math.max(rawUsagePct, 1) : 0;
-
   const hasNoNumbers = (totalNumbersCount ?? 0) === 0;
 
   return (
@@ -242,47 +362,17 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
           value={`${todaySentCount ?? 0}`}
           sub={dailyLimit > 0 ? `দৈনিক লিমিট ${dailyLimit}` : undefined}
         />
-        <StatCard
-          icon={<Megaphone className="h-5 w-5" />}
-          label="চলমান ক্যাম্পেইন"
-          value={`${activeCampaignsCount ?? 0}`}
-        />
+        <StatCard icon={<Megaphone className="h-5 w-5" />} label="চলমান ক্যাম্পেইন" value={`${activeCampaignsCount ?? 0}`} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* গত ৭ দিনের মেসেজ চার্ট */}
         <Card className="lg:col-span-2">
           <p className="mb-4 text-sm font-semibold text-text">গত ৭ দিনের মেসেজ</p>
-          <WeeklyMessageChart data={chartData} />
+          <WeeklyBarChart data={chartData} series={WHATSAPP_CHART_SERIES} />
         </Card>
 
-        {/* প্ল্যান ব্যবহার — self-start যাতে পাশের (লম্বা) চার্ট কার্ডের উচ্চতায় স্ট্রেচ না হয়ে
-            নিজের কন্টেন্ট অনুযায়ী উচ্চতা নেয় */}
-        <Card className="self-start">
-          <p className="mb-3 text-sm font-semibold text-text">প্ল্যান ব্যবহার</p>
-          {workspace?.plans ? (
-            <>
-              <div className="mb-1.5 flex items-center justify-between text-xs text-text-muted">
-                <span>{workspace.plans.name}</span>
-                <span>
-                  {usedThisCycle} / {monthlyLimit} মেসেজ
-                </span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                <div
-                  className={`h-full rounded-full ${monthlyUsagePct >= 90 ? "bg-danger" : monthlyUsagePct >= 70 ? "bg-warning" : "bg-primary"}`}
-                  style={{ width: `${usageBarWidthPct}%` }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-text-muted">{usagePctLabel} ব্যবহার হয়েছে এই সাইকেলে</p>
-              <Link href="/dashboard/billing" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                প্ল্যান দেখুন <ArrowRight className="h-3 w-3" />
-              </Link>
-            </>
-          ) : (
-            <p className="text-sm text-text-muted">কোনো active প্ল্যান নেই।</p>
-          )}
-        </Card>
+        {planUsageCard}
       </div>
 
       {/* দ্রুত কাজ */}
@@ -351,11 +441,7 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
         </div>
       </Card>
 
-      {isSuperAdmin && (
-        <Link href="/dashboard/admin/payments" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-          🔑 অ্যাডমিন: পেমেন্ট রিভিউ <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      )}
+      {adminLink}
     </div>
   );
 }
@@ -398,25 +484,27 @@ function QuickAction({ href, icon, label }: { href: string; icon: React.ReactNod
   );
 }
 
-function WeeklyMessageChart({ data }: { data: DayCount[] }) {
-  const allZero = data.every((d) => d.sent === 0 && d.delivered === 0 && d.failed === 0);
+// WhatsApp এর sent/delivered/failed আর Messenger এর inbound/outbound — দুই সেট ভিন্ন সিরিজ,
+// তাই series এখন prop (আগে module-level constant ছিল, শুধু WhatsApp এর জন্য হার্ডকোডেড)
+function WeeklyBarChart({ data, series }: { data: ChartDay[]; series: ChartSeriesDef[] }) {
+  const allZero = data.every((d) => series.every((s) => Number(d[s.key] ?? 0) === 0));
 
   if (allZero) {
-    return <p className="py-10 text-center text-sm text-text-muted">এই সপ্তাহে এখনো কোনো মেসেজ পাঠানো হয়নি।</p>;
+    return <p className="py-10 text-center text-sm text-text-muted">এই সপ্তাহে এখনো কোনো মেসেজ হয়নি।</p>;
   }
 
-  const max = Math.max(1, ...data.flatMap((d) => [d.sent, d.delivered, d.failed]));
+  const max = Math.max(1, ...data.flatMap((d) => series.map((s) => Number(d[s.key] ?? 0))));
   const chartHeight = 200;
   const barWidth = 6;
   const barGap = 2;
-  const groupWidth = CHART_SERIES.length * barWidth + (CHART_SERIES.length - 1) * barGap;
+  const groupWidth = series.length * barWidth + (series.length - 1) * barGap;
   const groupGap = 16;
   const totalWidth = data.length * groupWidth + (data.length - 1) * groupGap;
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-4">
-        {CHART_SERIES.map((s) => (
+        {series.map((s) => (
           <div key={s.key} className="flex items-center gap-1.5 text-xs text-text-muted">
             <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
             {s.label}
@@ -432,8 +520,8 @@ function WeeklyMessageChart({ data }: { data: DayCount[] }) {
           const groupX = i * (groupWidth + groupGap);
           return (
             <g key={i}>
-              {CHART_SERIES.map((s, si) => {
-                const value = d[s.key];
+              {series.map((s, si) => {
+                const value = Number(d[s.key] ?? 0);
                 const barHeight = Math.max((value / max) * chartHeight, value > 0 ? 2 : 0);
                 const x = groupX + si * (barWidth + barGap);
                 const y = chartHeight - barHeight;
