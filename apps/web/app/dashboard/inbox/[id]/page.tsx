@@ -12,7 +12,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
 
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("id, status, contacts(name, phone), whatsapp_numbers(display_name)")
+    .select("id, status, contacts(name, phone), whatsapp_numbers(display_name, bot_enabled)")
     .eq("id", id)
     .maybeSingle();
 
@@ -50,6 +50,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
       status={conversation.status}
       contactLabel={contact?.name || contact?.phone || "(অজানা)"}
       numberLabel={number?.display_name ?? ""}
+      botEnabled={number?.bot_enabled ?? true}
       messages={messagesWithMediaUrl}
     />
   );

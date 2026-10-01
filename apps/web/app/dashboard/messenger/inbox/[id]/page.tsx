@@ -14,7 +14,7 @@ export default async function MessengerConversationPage({ params }: { params: Pr
 
   const { data: conversation } = await supabase
     .from("messenger_conversations")
-    .select("id, status, customer_name, psid, last_user_message_at, messenger_pages(page_name)")
+    .select("id, status, customer_name, psid, last_user_message_at, messenger_pages(page_name, bot_enabled)")
     .eq("id", id)
     .maybeSingle();
 
@@ -61,6 +61,7 @@ export default async function MessengerConversationPage({ params }: { params: Pr
       status={conversation.status}
       contactLabel={conversation.customer_name || conversation.psid}
       pageLabel={page?.page_name ?? ""}
+      botEnabled={page?.bot_enabled ?? true}
       windowHoursLeft={windowHoursLeft}
       humanAgentHoursLeft={humanAgentHoursLeft}
       messages={messagesWithMediaUrl}

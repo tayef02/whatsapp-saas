@@ -53,6 +53,7 @@ export default function ConversationThread({
   status,
   contactLabel,
   pageLabel,
+  botEnabled,
   windowHoursLeft,
   humanAgentHoursLeft,
   messages,
@@ -61,6 +62,7 @@ export default function ConversationThread({
   status: string;
   contactLabel: string;
   pageLabel: string;
+  botEnabled: boolean;
   windowHoursLeft: number;
   humanAgentHoursLeft: number;
   messages: Message[];
@@ -112,6 +114,7 @@ export default function ConversationThread({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {!botEnabled && <Badge variant="neutral">বট বন্ধ</Badge>}
           <Badge variant={statusVariant[status] ?? "neutral"}>{statusLabel[status] ?? status}</Badge>
           <Badge variant={windowOpen ? "success" : humanAgentWindowOpen ? "warning" : "neutral"}>
             <Clock className="h-3 w-3" />
@@ -123,6 +126,12 @@ export default function ConversationThread({
           </Badge>
         </div>
       </div>
+
+      {!botEnabled && (
+        <p className="shrink-0 bg-app-bg px-3 py-2 text-xs text-text-muted">
+          এই পেজের বট বন্ধ আছে — কাস্টমারের মেসেজ সেভ হচ্ছে, কিন্তু AI অটো-রিপ্লাই পাঠাচ্ছে না। Messenger পেজ থেকে বট আবার চালু করতে পারেন।
+        </p>
+      )}
 
       <div className="flex shrink-0 flex-wrap gap-2 border-b border-border p-3">
         {status === "handed_off" && (

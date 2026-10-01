@@ -55,12 +55,14 @@ export default function ConversationThread({
   status,
   contactLabel,
   numberLabel,
+  botEnabled,
   messages,
 }: {
   conversationId: string;
   status: string;
   contactLabel: string;
   numberLabel: string;
+  botEnabled: boolean;
   messages: Message[];
 }) {
   const router = useRouter();
@@ -98,10 +100,17 @@ export default function ConversationThread({
             <p className="truncate text-xs text-text-muted">{numberLabel}</p>
           </div>
         </div>
-        <Badge variant={statusVariant[status] ?? "neutral"} className="shrink-0">
-          {statusLabel[status] ?? status}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!botEnabled && <Badge variant="neutral">বট বন্ধ</Badge>}
+          <Badge variant={statusVariant[status] ?? "neutral"}>{statusLabel[status] ?? status}</Badge>
+        </div>
       </div>
+
+      {!botEnabled && (
+        <p className="shrink-0 bg-app-bg px-3 py-2 text-xs text-text-muted">
+          এই নাম্বারের বট বন্ধ আছে — কাস্টমারের মেসেজ সেভ হচ্ছে, কিন্তু AI অটো-রিপ্লাই পাঠাচ্ছে না। নাম্বার পেজ থেকে বট আবার চালু করতে পারেন।
+        </p>
+      )}
 
       <div className="flex shrink-0 flex-wrap gap-2 border-b border-border p-3">
         {status === "handed_off" && (
