@@ -7,14 +7,15 @@ export default async function OrdersPage() {
   const { data: orders } = await supabase
     .from("orders")
     .select(
-      "id, order_number, contact_phone, product_name, quantity, delivery_name, delivery_phone, delivery_address, status, cancel_reason, raw_summary, created_at, groups(name)"
+      "id, order_number, contact_phone, product_name, quantity, delivery_name, delivery_phone, delivery_address, status, cancel_reason, raw_summary, created_at, channel, groups(name), messenger_pages(page_name)"
     )
     .order("created_at", { ascending: false })
     .limit(200);
 
   const ordersWithGroupName = (orders ?? []).map((o) => {
     const group = Array.isArray(o.groups) ? o.groups[0] : o.groups;
-    return { ...o, group_name: group?.name ?? null };
+    const messengerPage = Array.isArray(o.messenger_pages) ? o.messenger_pages[0] : o.messenger_pages;
+    return { ...o, group_name: group?.name ?? null, messenger_page_name: messengerPage?.page_name ?? null };
   });
 
   return (

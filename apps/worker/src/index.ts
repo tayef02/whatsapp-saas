@@ -40,6 +40,7 @@ import { MESSENGER_WEBHOOK_QUEUE_NAME } from "./queues/messenger-webhook-queue";
 import { processMessengerWebhookEvent } from "./processors/process-messenger-webhook";
 import { MESSENGER_JOBS_QUEUE_NAME } from "./queues/messenger-jobs-queue";
 import { processMessengerReply } from "./processors/process-messenger-reply";
+import { processDownloadMessengerMedia } from "./processors/process-messenger-media";
 
 const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
@@ -216,13 +217,16 @@ messengerWebhookWorker.on("failed", (job, err) => {
   console.error(`[messenger-webhook-worker] job ${job?.id} ব্যর্থ:`, err.message);
 });
 
-// Messenger এর আউটগোয়িং job — এখন শুধু "reply" (ইনবক্স থেকে এজেন্টের উত্তর), M2+ এ আরও
-// job type যোগ হবে (WhatsApp এর chatbot-autoreply queue এর প্যাটার্নে, কিন্তু আলাদা queue তে)
+// Messenger এর আউটগোয়িং job — "reply" (ইনবক্স/AI বট/অর্ডার-নোটিফিকেশন, তিনটাই একই "reply"
+// job) আর "download-media" (ইনকামিং ছবি/ফাইল ডাউনলোড), WhatsApp এর chatbot-autoreply queue এর
+// প্যাটার্নে কিন্তু সম্পূর্ণ আলাদা queue তে
 const messengerJobsWorker = new Worker(
   MESSENGER_JOBS_QUEUE_NAME,
   async (job) => {
     if (job.name === "reply") {
       await processMessengerReply(job.data);
+    } else if (job.name === "download-media") {
+      await processDownloadMessengerMedia(job.data);
     }
   },
   { connection }

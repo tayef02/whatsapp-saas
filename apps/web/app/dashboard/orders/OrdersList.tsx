@@ -30,7 +30,9 @@ type Order = {
   cancel_reason: string | null;
   raw_summary: string | null;
   created_at: string;
+  channel: string;
   group_name: string | null;
+  messenger_page_name: string | null;
 };
 
 type HistoryRow = { from_status: string | null; to_status: string; reason: string | null; created_at: string };
@@ -56,11 +58,13 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [historyByOrder, setHistoryByOrder] = useState<Record<string, HistoryRow[]>>({});
   const [statusFilter, setStatusFilter] = useState("");
+  const [channelFilter, setChannelFilter] = useState("");
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
     return orders.filter((o) => {
       if (statusFilter && o.status !== statusFilter) return false;
+      if (channelFilter && o.channel !== channelFilter) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         const haystack = [
@@ -70,6 +74,7 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
           o.delivery_phone,
           o.product_name,
           o.group_name,
+          o.messenger_page_name,
         ]
           .filter(Boolean)
           .join(" ")
@@ -78,7 +83,7 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
       }
       return true;
     });
-  }, [orders, statusFilter, search]);
+  }, [orders, statusFilter, channelFilter, search]);
 
   async function handleStatusChange(order: Order, status: string) {
     if (status === order.status) return;
@@ -139,6 +144,11 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
             </option>
           ))}
         </Select>
+        <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="w-40">
+          <option value="">সব চ্যানেল</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="messenger">Messenger</option>
+        </Select>
       </div>
 
       {filtered.length === 0 ? (
@@ -163,6 +173,11 @@ export default function OrdersList({ orders }: { orders: Order[] }) {
                   <TableCell className="whitespace-nowrap">{o.delivery_name || "(নাম নেই)"}</TableCell>
                   <TableCell className="whitespace-nowrap text-text-muted">
                     {o.contact_phone}
+                    {o.channel === "messenger" && (
+                      <Badge variant="info" className="ml-1.5">
+                        Messenger{o.messenger_page_name ? ` · ${o.messenger_page_name}` : ""}
+                      </Badge>
+                    )}
                     {o.group_name && (
                       <Badge variant="info" className="ml-1.5">
                         {o.group_name}

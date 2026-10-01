@@ -118,3 +118,30 @@ export async function disconnectPage(pageId: string) {
   revalidatePath("/dashboard/messenger");
   return { error: null };
 }
+
+// পেজ কার্ডে "বট অন/অফ" টগল — messenger_pages.bot_enabled কলাম আপডেট করে (migration 0040 এ
+// ডিফল্ট true দিয়ে যোগ করা হয়েছিল)। WhatsApp numbers/actions.ts এর toggleBot এর ঠিক একই প্যাটার্ন —
+// worker এর process-messenger-webhook.ts সরাসরি এই কলাম চেক করে
+export async function toggleMessengerPageBot(pageId: string, botEnabled: boolean) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "লগইন করা নেই" };
+
+  // এই সিলেক্ট RLS এর মধ্য দিয়েই যায় — পেজটা এই ইউজারের workspace এর না হলে এখানেই
+  // "পাওয়া যায়নি" ফেরত যাবে, আপডেট পর্যন্ত যাবে না
+  const { data: page } = await supabase.from("messenger_pages").select("id").eq("id", pageId).maybeSingle();
+  if (!page) return { error: "পেজ পাওয়া যায়নি" };
+
+  const { error } = await supabase.from("messenger_pages").update({ bot_enabled: botEnabled }).eq("id", pageId);
+
+  if (error) {
+    console.error(`[toggleMessengerPageBot] page=${pageId} bot_enabled আপডেট ব্যর্থ: ${error.message}`);
+    return { error: "বট টগল সেভ করা যায়নি, একটু পর আবার চেষ্টা করুন" };
+  }
+
+  revalidatePath("/dashboard/messenger");
+  return { error: null };
+}

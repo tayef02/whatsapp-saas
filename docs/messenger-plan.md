@@ -119,27 +119,70 @@ alter table public.orders
 
 ---
 
-## M2 — ইনবক্স ও AI
+## M2 — ইনবক্স, AI, অর্ডার, মিডিয়া, Human Agent (সম্পন্ন)
 
-**লক্ষ্য**: কাস্টমার মেসেজ পেলে `messenger_messages` এ সেভ, `tryAiReply()` (generalized,
-উপরে দেখুন) দিয়ে রিপ্লাই, ইনবক্স UI (WhatsApp ইনবক্সের প্যাটার্নে)।
+**লক্ষ্য**: কাস্টমার মেসেজ পেলে `messenger_messages` এ সেভ + `tryAiReply()` দিয়ে AI রিপ্লাই,
+অর্ডার (channel-aware), ইনকামিং মিডিয়া ডাউনলোড, আর ২৪-ঘণ্টা উইন্ডোর বাইরে Human Agent ট্যাগ
+দিয়ে ইনবক্স রিপ্লাই।
 
-**২৪-ঘণ্টা মেসেজিং উইন্ডো** ([Meta পলিসি ডকুমেন্টেশন](https://developers.facebook.com/documentation/business-messaging/messenger-platform/policy)):
-- কাস্টমার মেসেজ পাঠালে ২৪ ঘণ্টার একটা উইন্ডো খোলে — এর মধ্যে যেকোনো কনটেন্ট (প্রমোশনালসহ)
-  পাঠানো যায়। প্রতিবার কাস্টমার আবার মেসেজ করলে উইন্ডো রিসেট হয়। এই টাইমস্ট্যাম্প
-  `messenger_conversations.last_user_message_at` এ ট্র্যাক করা হয় (M0 তেই কলাম রাখা আছে)।
-- উইন্ডোর বাইরে **শুধু non-promotional** মেসেজ পাঠানো যায়, আর তখন একটা **message tag**
-  লাগবে (promotional content — ডিসকাউন্ট কোড, সেল, অফার — tag দিয়েও পাঠানো যায় না)।
-- **human_agent tag**: কোনো এজেন্ট একটা সমস্যা সমাধান করার চেষ্টা করলে উইন্ডো ৭ দিন পর্যন্ত
-  বাড়ানো যায় — ইনবক্সে "hand off" হওয়া কথোপকথনের জন্য প্রাসঙ্গিক (WhatsApp এর
-  `handed_off` স্ট্যাটাসের সমান্তরাল ধারণা)।
-- **One-time notification**: ২৪ ঘণ্টা শেষ হওয়ার পর কাস্টমারকে একটা ফলো-আপ মেসেজ পাঠানোর
-  অনুরোধ করা যায় (এটা Instagram এ নেই, শুধু Messenger এ)।
+### `tryAiReply()` জেনেরিক হলো
 
-**কাজ**: `handleIncomingMessage`-এর Messenger সংস্করণ (নতুন ফাইল, WhatsApp এর
-`process-webhook.ts` স্পর্শ না করে), dedup (`messenger_messages_provider_msg_idx`, M0 তেই
-আছে), উইন্ডো-চেক লজিক (send করার আগে `last_user_message_at` দেখে ২৪ ঘণ্টা পার হয়েছে
-কিনা, হলে message tag লাগবে)।
+`apps/worker/src/processors/process-webhook.ts` এর ভেতরের প্রাইভেট ফাংশন ছিল (M0-M1 পর্যন্ত),
+এখন `apps/worker/src/lib/ai-reply.ts` এ এক্সট্র্যাক্ট করা হয়েছে (সাথে `saveOrder`/
+`buildOrderContext`/`buildChunkContext`, সবগুলো শুধু `tryAiReply` এর ভেতরেই ব্যবহার হতো)।
+WhatsApp আর Messenger দুটোই এখন এটাই import করে।
+
+সিগনেচার: `whatsappNumberId: string | null` আর নতুন `messengerPageId: string | null` — আগের
+পরিকল্পনায় (এই ডকের পুরনো সংস্করণে) একটা tagged-union `channel` প্যারামিটার প্রস্তাব করা
+হয়েছিল, কিন্তু শেষ পর্যন্ত সহজ nullable-প্যারামিটার পদ্ধতি বেছে নেওয়া হয়েছে — কম
+কল-সাইট-পরিবর্তন লাগে, আর channel ফাংশনের ভেতরেই গণনা হয় (`whatsappNumberId ? "whatsapp" :
+"messenger"`)। WhatsApp এর দুই কল-সাইটে (গ্রুপ ও ১:১) শুধু `null` যোগ হয়েছে, আচরণ অপরিবর্তিত।
+
+### অর্ডার — `orders.channel`/`messenger_page_id` (migration 0043)
+
+`orders.conversation_id` ফিল্ড শুধু `public.conversations` (WhatsApp) রেফার করে — Messenger
+কথোপকথনের id এখানে বসালে FK ভায়োলেশন হতো, তাই **Messenger অর্ডারে `conversation_id` সবসময়
+`null`**। কাস্টমার শনাক্ত হয় বিদ্যমান `contact_phone` কলামে psid বসিয়ে (নতুন কলাম ছাড়াই reuse) +
+`channel`/`messenger_page_id` দিয়ে। `buildOrderContext()` এখন `channel` দিয়েও ফিল্টার করে, যাতে
+একই workspace এ WhatsApp phone আর Messenger psid কখনো একে অপরের অর্ডার-কনটেক্সটে মিশে না যায়।
+
+অর্ডার পেজে চ্যানেল ফিল্টার (সব/WhatsApp/Messenger) + Messenger অর্ডারে পেজ-নাম ব্যাজ যোগ হয়েছে।
+অর্ডার status বদলালে (`orders/actions.ts`): Messenger হলে `messenger_conversations` এ
+(page_id, psid) দিয়ে খুঁজে ২৪-ঘণ্টা উইন্ডো চেক হয় — **ভেতরে হলে পাঠানো হয়, বাইরে হলে
+"বার্তা পাঠানো যায়নি: উইন্ডো শেষ" ওয়ার্নিং দেখানো হয় (toast), কোনো message tag ব্যবহার হয় না**
+(POST_PURCHASE_UPDATE ট্যাগ Meta ২০২৬-০২-১০ থেকে বন্ধ হয়ে যাচ্ছে বলে এড়ানো হয়েছে)।
+
+### মিডিয়া
+
+একই `inbox-media` bucket reuse (নতুন bucket/migration লাগেনি), পাথ
+`messenger/{workspace_id}/{conversation_id}/{message_id}.{ext}` — WhatsApp এর পাথ থেকে
+"messenger/" প্রিফিক্স দিয়ে আলাদা। Graph এর attachment URL এর মেয়াদ ছোট বলে webhook প্রসেসিং এর
+সময়ই (job data তে) ধরে রাখা হয়, ডাউনলোড job পরে আবার Graph API কল করে না — সরাসরি
+`fetch(url)`। ব্যর্থ হলে শুধু লগ (throw না), মূল মেসেজ (প্লেসহোল্ডার টেক্সট) ততক্ষণে আগেই সেভ
+হয়ে থাকে।
+
+**M1 এর একটা বাগও এখানে ধরা পড়ে ঠিক হয়েছে**: Meta এর attachment `type` এ "file" আসে, কিন্তু
+`messenger_messages.media_type` কলামের CHECK constraint শুধু "document" মানে — M1 এ সরাসরি
+`attachment.type` বসানো হচ্ছিল, যেটা ফাইল attachment এলে insert ব্যর্থ করত।
+
+### Human Agent ট্যাগ — শুধু ইনবক্সের ম্যানুয়াল এজেন্ট রিপ্লাইয়ে
+
+`MessengerReplyJobData` এ নতুন `allowHumanAgentTag: boolean`:
+- **ইনবক্স ম্যানুয়াল এজেন্ট রিপ্লাই** (`sendAgentReply`): `true` — ২৪ ঘণ্টা পার হলেও (কাস্টমারের
+  সর্বশেষ মেসেজের ৭ দিনের মধ্যে) `MESSAGE_TAG` + `HUMAN_AGENT` ট্যাগ দিয়ে পাঠানোর চেষ্টা হয়,
+  ইনবক্সে "Human Agent মোড (৭ দিন পর্যন্ত, প্রোমোশন ছাড়া)" নোট দেখানো হয়। ৭ দিন পার হলে
+  রিপ্লাই বক্স বন্ধ হয়ে যায়।
+- **AI বট রিপ্লাই আর অর্ডার-স্ট্যাটাস নোটিফিকেশন**: `false` — ২৪ ঘণ্টার উইন্ডো শেষ হলে চুপচাপ
+  পাঠানো বন্ধ থাকে, কোনো ট্যাগ ব্যবহার হয় না।
+
+প্রকৃত send-time window-check `process-messenger-reply.ts` এ হয় (caller এর pre-check এর উপর
+ভরসা না করে — queue তে backlog থাকলে ততক্ষণে উইন্ডো বদলে যেতে পারে)।
+
+Meta App Review `HUMAN_AGENT` ট্যাগ এখনো approve না করলে Graph API একটা permission/tag-সংক্রান্ত
+এরর দেয় — Meta এর exact এরর টেক্সট ডকুমেন্টেড না, তাই heuristic দিয়ে ধরা হয় (Graph এরর কোড
+১০, বা মেসেজে "tag"/"permission" শব্দ) আর ধরা পড়লে workspace কে in-app নোটিফিকেশনে বাংলায়
+বুঝিয়ে দেওয়া হয় (raw এরর worker লগেও থাকে)। **এই heuristic সঠিক কিনা লাইভে যাচাই করা হয়নি** —
+Meta যদি অন্য কোনো টেক্সট দেয়, নোটিফিকেশন নাও আসতে পারে (raw এরর তখনও লগে থাকবে)।
 
 ---
 
@@ -386,6 +429,67 @@ docker compose --env-file .env.production -f docker-compose.production.yml up -d
 যেহেতু `NEXT_PUBLIC_MESSENGER_ENABLED=false` ডিফল্ট, `main`-এ যদি ভুলবশত `messenger` ব্রাঞ্চের
 কোড merge ও হয়ে যায় (ভবিষ্যতে), ফ্ল্যাগ অফ থাকা অবস্থায় Messenger এর কোনো UI/রুট দেখা যাবে
 না (route handler গুলোও এখন ফ্ল্যাগ চেক করে `/dashboard` এ রিডাইরেক্ট করে দেয়)।
+
+---
+
+## M2 টেস্ট করার ধাপ
+
+### ১. Migration চালানোর ক্রম
+
+M1 এর ৩টার (0040→0041→0042) পরে শুধু একটা নতুন:
+
+4. `0043_orders_channel.sql`
+
+⚠️ `orders` লাইভ টেবিল — কম-ট্রাফিকের সময় চালানোর পরামর্শ (migration ফাইলের কমেন্টেও লেখা
+আছে)। দুটো কলামই additive/DEFAULT-সহ, তাই দ্রুত শেষ হওয়ার কথা।
+
+### ২. AI রিপ্লাই টেস্ট
+
+1. Messenger পেজে "বট চালু" আছে কিনা `/dashboard/messenger` এ চেক করুন (ডিফল্ট চালু থাকে)।
+2. AI Chatbot সেটিংস (`/dashboard/ai-chatbot`) এ LLM provider/API key/system prompt সেট করা
+   আছে কিনা দেখুন — এটা WhatsApp আর Messenger দুই চ্যানেলেই শেয়ার্ড, আলাদা করে কিছু বসাতে হবে না।
+3. পেজে একটা মেসেজ পাঠান, কয়েক সেকেন্ডের মধ্যে AI রিপ্লাই আসা উচিত। worker এর লগে
+   `[messenger-webhook]`/`[messenger-reply]` প্রিফিক্সের লাইন দেখুন।
+4. এমন একটা প্রশ্ন করুন যেটার উত্তর knowledge base এ নেই — কথোপকথন `handed_off` হয়ে যাওয়া
+   উচিত (ইনবক্সে ব্যাজ দেখুন), আর dashboard এ একটা নোটিফিকেশন আসা উচিত।
+5. "বট বন্ধ" করে আবার একটা মেসেজ পাঠান — কোনো রিপ্লাই আসা উচিত না (মেসেজও সেভ হবে না, এটা
+   WhatsApp এর bot_enabled বন্ধ থাকলে একই আচরণ — ইচ্ছাকৃত, docs/messenger-plan.md এর M2
+   সেকশনে কারণ লেখা আছে)।
+
+### ৩. অর্ডার টেস্ট
+
+1. চ্যাটবটের সাথে কথা বলে একটা অর্ডার কনফার্ম করুন (system prompt এ অর্ডার নেওয়ার নির্দেশ
+   থাকতে হবে — WhatsApp এর AI Chatbot সেটিংসেই লেখা, শেয়ার্ড)।
+2. `/dashboard/orders` এ অর্ডারটা দেখা উচিত, "Messenger" ব্যাজ + পেজের নাম সহ। চ্যানেল
+   ফিল্টার দিয়ে শুধু Messenger অর্ডার আলাদা করে দেখুন।
+3. স্ট্যাটাস বদলান (যেমন pending → confirmed) — কাস্টমারকে Messenger এ একটা আপডেট মেসেজ
+   যাওয়া উচিত (২৪ ঘণ্টার মধ্যে মেসেজ করা থাকলে)।
+4. উইন্ডো-শেষ কেস টেস্ট করতে: Supabase SQL Editor এ ম্যানুয়ালি
+   `update messenger_conversations set last_user_message_at = now() - interval '2 days' where id = '...'`
+   চালিয়ে তারপর স্ট্যাটাস বদলান — "বার্তা পাঠানো যায়নি: উইন্ডো শেষ" ওয়ার্নিং (toast) আসা উচিত,
+   কোনো মেসেজ না গিয়ে।
+
+### ৪. মিডিয়া টেস্ট
+
+1. পেজে একটা ছবি পাঠান — কয়েক সেকেন্ডের মধ্যে ইনবক্সে থাম্বনেইল আসা উচিত (প্রথমে
+   "ডাউনলোড হচ্ছে..." দেখাবে, তারপর রিফ্রেশে/কয়েক সেকেন্ড পর ছবি)।
+2. থাম্বনেইলে ক্লিক করে বড় করে দেখুন (lightbox)।
+3. একটা PDF/ভিডিও/অডিও পাঠিয়ে ডকুমেন্ট/ভিডিও/অডিও আইকন + "ডাউনলোড" লিংক কাজ করে কিনা দেখুন।
+
+### ৫. Human Agent মোড টেস্ট (৭ দিন অপেক্ষা না করে)
+
+Supabase SQL Editor এ ম্যানুয়ালি একটা কথোপকথনের `last_user_message_at` ২৪ ঘণ্টার বেশি পেছনে
+সরিয়ে দিন (উপরের অর্ডার টেস্টের কমান্ডের মতোই), তারপর:
+
+1. ইনবক্সে সেই কথোপকথনে যান — ব্যাজে "Human Agent: X দিন বাকি" দেখা উচিত, রিপ্লাই বক্স খোলা
+   থাকা উচিত (বন্ধ না), আর একটা হলুদ নোট "Human Agent মোড..." দেখা উচিত।
+2. একটা রিপ্লাই পাঠান। দুটো সম্ভাবনা:
+   - **Meta App Review এ `HUMAN_AGENT` ট্যাগ অনুমোদিত থাকলে**: রিপ্লাই পৌঁছাবে।
+   - **অনুমোদিত না থাকলে** (Development mode এ বেশিরভাগ সময় এটাই হবে): পাঠানো ব্যর্থ হবে,
+     dashboard এ "Messenger এ রিপ্লাই পাঠানো যায়নি" নোটিফিকেশন আসা উচিত বাংলা ব্যাখ্যাসহ।
+     worker লগে `tagError=true` দেখুন।
+3. `last_user_message_at` আরও পেছনে (৮ দিন+) সরিয়ে আবার চেক করুন — এবার রিপ্লাই বক্স বন্ধ
+   হয়ে যাওয়া উচিত।
 
 ---
 

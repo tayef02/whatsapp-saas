@@ -97,27 +97,61 @@ export class MetaMessengerProvider implements MessengerProvider {
     if (!res.ok) throw new Error(`Webhook আনসাবস্ক্রাইব ব্যর্থ: ${await parseGraphError(res)}`);
   }
 
-  async sendMessage(pageAccessToken: string, psid: string, text: string, messagingType: "RESPONSE"): Promise<{ messageId: string }> {
+  async sendMessage(
+    pageAccessToken: string,
+    psid: string,
+    text: string,
+    messagingType: "RESPONSE" | "MESSAGE_TAG",
+    tag?: "HUMAN_AGENT"
+  ): Promise<{ messageId: string }> {
     const params = new URLSearchParams({ access_token: pageAccessToken });
+    const body: Record<string, unknown> = {
+      recipient: { id: psid },
+      messaging_type: messagingType,
+      message: { text },
+    };
+    if (messagingType === "MESSAGE_TAG" && tag) body.tag = tag;
+
     const res = await safeFetch(`${GRAPH_API_BASE}/me/messages?${params.toString()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        recipient: { id: psid },
-        messaging_type: messagingType,
-        message: { text },
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const message = await parseGraphError(res);
-      const err = new Error(`Messenger এ মেসেজ পাঠানো ব্যর্থ: ${message}`) as Error & { isAuthError?: boolean };
+      const err = new Error(`Messenger এ মেসেজ পাঠানো ব্যর্থ: ${message}`) as Error & { isAuthError?: boolean; isTagError?: boolean };
       // OAuthException (code 190) বা "Error validating access token" — এই দুইটাই মূলত token
       // মেয়াদ শেষ/রিভোক হওয়ার সংকেত, ডাটাবেসে status="token_expired" সেট করার জন্য এটা flag করা
       err.isAuthError = res.status === 401 || message.includes("OAuthException");
+      // HUMAN_AGENT ট্যাগ Meta App Review approve না করলে একটা permission/tag-সংক্রান্ত এরর
+      // আসে — Meta এর exact এরর টেক্সট ডকুমেন্টেড না, তাই heuristic (code 10, বা মেসেজে
+      // "tag"/"permission" শব্দ) দিয়ে ধরা হচ্ছে (process-messenger-reply.ts এই ফ্ল্যাগ দেখে
+      // ইউজারকে বাংলায় বুঝিয়ে নোটিফিকেশন দেয়, raw এরর সবসময় লগ হয়)
+      if (messagingType === "MESSAGE_TAG") {
+        const lower = message.toLowerCase();
+        err.isTagError = message.includes("code=10") || lower.includes("tag") || lower.includes("permission");
+      }
       throw err;
     }
     const data = (await res.json()) as { message_id: string };
     return { messageId: data.message_id };
+  }
+
+  async sendTypingOn(pageAccessToken: string, psid: string): Promise<void> {
+    try {
+      const params = new URLSearchParams({ access_token: pageAccessToken });
+      await safeFetch(
+        `${GRAPH_API_BASE}/me/messages?${params.toString()}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipient: { id: psid }, sender_action: "typing_on" }),
+        },
+        8_000
+      );
+    } catch {
+      // কসমেটিক — ব্যর্থ হলেও মূল মেসেজ পাঠানো আটকানো উচিত না
+    }
   }
 
   async getUserProfile(pageAccessToken: string, psid: string): Promise<{ name: string | null }> {

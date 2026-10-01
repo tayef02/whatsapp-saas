@@ -3,6 +3,7 @@
 // implement করার দরকার নেই।
 //
 // Phase M1: পেজ কানেক্ট (OAuth) + ইনবক্স (টেক্সট পাঠানো, প্রোফাইল নাম আনা) বাস্তবায়িত।
+// Phase M2: sendMessage এ tag (HUMAN_AGENT) সাপোর্ট + typing indicator যোগ হয়েছে।
 // কমেন্ট/পোস্ট মেথড এখনো নেই (M3/M4 এ আসবে)।
 
 export interface MessengerPageInfo {
@@ -27,9 +28,22 @@ export interface MessengerProvider {
   subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void>;
   unsubscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void>;
 
-  // ইনবক্স (M1: টেক্সট, M2 এ media/tag যোগ হবে) — messagingType "RESPONSE" (২৪ ঘণ্টা
-  // উইন্ডোর ভেতরে) M1 এ একমাত্র সাপোর্টেড টাইপ, উইন্ডোর বাইরে পাঠানো UI লেভেলেই আটকানো হয়
-  sendMessage(pageAccessToken: string, psid: string, text: string, messagingType: "RESPONSE"): Promise<{ messageId: string }>;
+  // ইনবক্স — "RESPONSE" ২৪ ঘণ্টা উইন্ডোর ভেতরে (কোনো tag লাগে না)। "MESSAGE_TAG" + tag
+  // "HUMAN_AGENT" উইন্ডোর বাইরে কিন্তু কাস্টমারের সর্বশেষ মেসেজের ৭ দিনের মধ্যে (শুধু ইনবক্সের
+  // ম্যানুয়াল এজেন্ট রিপ্লাইয়ে ব্যবহার হয়, AI বট/অর্ডার-নোটিফিকেশনে না — প্রোমোশনাল কনটেন্ট
+  // কখনোই tag দিয়ে পাঠানো যায় না, Meta নিজেই রিজেক্ট করবে)। App Review approve না হলে Meta
+  // একটা permission/tag-সংক্রান্ত এরর দেয় (process-messenger-reply.ts দেখুন)।
+  sendMessage(
+    pageAccessToken: string,
+    psid: string,
+    text: string,
+    messagingType: "RESPONSE" | "MESSAGE_TAG",
+    tag?: "HUMAN_AGENT"
+  ): Promise<{ messageId: string }>;
+
+  // রিপ্লাইয়ের ঠিক আগে "টাইপ করছে..." দেখানো — মানুষ-এজেন্টের মতো অনুভূতি দিতে (M2)।
+  // কসমেটিক, ব্যর্থ হলেও মূল sendMessage আটকানো উচিত না — তাই এই মেথড কখনো throw করে না
+  sendTypingOn(pageAccessToken: string, psid: string): Promise<void>;
 
   // কাস্টমারের Facebook প্রোফাইল নাম আনা (PSID থেকে) — ব্যর্থ হলে null (M1)
   getUserProfile(pageAccessToken: string, psid: string): Promise<{ name: string | null }>;
