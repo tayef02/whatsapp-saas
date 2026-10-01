@@ -38,15 +38,20 @@ export class MetaMessengerProvider implements MessengerProvider {
 
   getOAuthDialogUrl(redirectUri: string, state: string): string {
     // pages_manage_engagement — M3 তে কমেন্ট রিপ্লাই করতে লাগে (পরে M5 তে হাইড/ডিলিটেও লাগবে)।
-    // ⚠️ এই permission গুলো আসলেই যথেষ্ট কিনা Meta App Review submission এর সময় Meta এর
-    // সর্বশেষ ডকুমেন্টেশনের সাথে মিলিয়ে একবার যাচাই করে নেওয়া ভালো — webhook এর "feed" field
-    // সাবস্ক্রাইব করতে অতিরিক্ত কোনো scope লাগে কিনা সেটা নিশ্চিতভাবে জানা নেই।
+    // pages_read_user_content — কমেন্ট/রিভিউ এর মতো অন্য ইউজারের (পেজ নিজে নয়) পোস্ট করা কনটেন্ট
+    // পড়তে লাগে, যা ছাড়া webhook এর "feed" ইভেন্টে কমেন্টের লেখা/from অসম্পূর্ণ বা অনুপস্থিত
+    // থাকতে পারে। ⚠️ এই permission গুলো আসলেই যথেষ্ট কিনা Meta App Review submission এর সময়
+    // Meta এর সর্বশেষ ডকুমেন্টেশনের সাথে মিলিয়ে একবার যাচাই করে নেওয়া ভালো।
+    // নোট: scope বদলালে আগে-কানেক্ট-করা পেজের token পুরনো permission দিয়েই ইস্যু করা থাকে —
+    // নতুন scope কার্যকর হতে সেই পেজ আবার কানেক্ট (ডিসকানেক্ট করে OAuth আবার) করতে হবে, শুধু
+    // webhook রিফ্রেশ যথেষ্ট না।
     const scope = [
       "pages_show_list",
       "pages_manage_metadata",
       "pages_messaging",
       "pages_read_engagement",
       "pages_manage_engagement",
+      "pages_read_user_content",
       "business_management",
     ].join(",");
     const params = new URLSearchParams({
@@ -109,6 +114,23 @@ export class MetaMessengerProvider implements MessengerProvider {
     const params = new URLSearchParams({ access_token: pageAccessToken });
     const res = await safeFetch(`${GRAPH_API_BASE}/${pageId}/subscribed_apps?${params.toString()}`, { method: "DELETE" });
     if (!res.ok) throw new Error(`Webhook আনসাবস্ক্রাইব ব্যর্থ: ${await parseGraphError(res)}`);
+  }
+
+  // GET /{page-id}/subscribed_apps — Meta আসলে কোন ফিল্ডে এই পেজের জন্য আমাদের App কে
+  // সাবস্ক্রাইব করে রেখেছে তার সত্যিকারের অবস্থা (subscribePageWebhook() এর POST কল সফল
+  // হওয়া শুধু বোঝায় রিকোয়েস্ট গ্রহণ হয়েছে, Meta আসলে কী রেখেছে সেটা না)। একাধিক App
+  // সাবস্ক্রাইব থাকলেও (সাধারণত থাকে না, এই page token শুধু আমাদের App এর) সব এন্ট্রির
+  // fields মিলিয়ে ডিডুপ করা হচ্ছে, যাতে কোনো ফিল্ড মিস না হয়ে যায়
+  async getSubscribedFields(pageId: string, pageAccessToken: string): Promise<string[]> {
+    const params = new URLSearchParams({ access_token: pageAccessToken });
+    const res = await safeFetch(`${GRAPH_API_BASE}/${pageId}/subscribed_apps?${params.toString()}`, { method: "GET" });
+    if (!res.ok) throw new Error(`সাবস্ক্রিপশন তথ্য আনা ব্যর্থ: ${await parseGraphError(res)}`);
+    const data = (await res.json()) as { data?: Array<{ subscribed_fields?: string[] }> };
+    const fields = new Set<string>();
+    for (const entry of data.data ?? []) {
+      for (const field of entry.subscribed_fields ?? []) fields.add(field);
+    }
+    return Array.from(fields);
   }
 
   async sendMessage(

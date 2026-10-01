@@ -28,6 +28,11 @@ export interface MessengerProvider {
   subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void>;
   unsubscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void>;
 
+  // subscribePageWebhook() কল সফল হওয়া মানেই না যে Meta আসলে প্রতিটা ফিল্ড গ্রহণ করেছে
+  // (permission/App Review সীমাবদ্ধতায় কোনো field silently বাদ পড়তে পারে) — এটা Meta কে সরাসরি
+  // GET করে আসল অবস্থা ফেরত দেয়, তাই দেখা যায় "feed" সত্যিই আছে কিনা (M3 ফলো-আপ)
+  getSubscribedFields(pageId: string, pageAccessToken: string): Promise<string[]>;
+
   // ইনবক্স — "RESPONSE" ২৪ ঘণ্টা উইন্ডোর ভেতরে (কোনো tag লাগে না)। "MESSAGE_TAG" + tag
   // "HUMAN_AGENT" উইন্ডোর বাইরে কিন্তু কাস্টমারের সর্বশেষ মেসেজের ৭ দিনের মধ্যে (শুধু ইনবক্সের
   // ম্যানুয়াল এজেন্ট রিপ্লাইয়ে ব্যবহার হয়, AI বট/অর্ডার-নোটিফিকেশনে না — প্রোমোশনাল কনটেন্ট

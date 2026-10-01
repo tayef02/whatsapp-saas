@@ -152,6 +152,37 @@ export async function refreshMessengerWebhook(pageId: string) {
   return { error: null };
 }
 
+// subscribePageWebhook()/refreshMessengerWebhook() সফল হওয়া মানেই না যে Meta আসলে "feed"
+// ফিল্ড গ্রহণ করেছে (permission/App Review সীমাবদ্ধতায় silently বাদ পড়তে পারে) — এটা Meta
+// কে সরাসরি GET করে আসল অবস্থা ফেরত দেয়, token কখনো log হয় না
+export async function checkMessengerSubscription(pageId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "লগইন করা নেই", fields: null };
+
+  const { data: page } = await supabase.from("messenger_pages").select("id, page_id").eq("id", pageId).maybeSingle();
+  if (!page) return { error: "পেজ পাওয়া যায়নি", fields: null };
+
+  const admin = createAdminClient();
+  const { data: token } = await admin.rpc("get_messenger_page_token", { p_page_id: pageId });
+  if (!token) return { error: "টোকেন পাওয়া যায়নি — পেজটা আবার কানেক্ট করুন", fields: null };
+
+  const appId = process.env.MESSENGER_APP_ID;
+  const appSecret = process.env.MESSENGER_APP_SECRET;
+  if (!appId || !appSecret) return { error: "সার্ভার সেটআপ অসম্পূর্ণ", fields: null };
+
+  try {
+    const provider = new MetaMessengerProvider({ appId, appSecret });
+    const fields = await provider.getSubscribedFields(page.page_id, token);
+    return { error: null, fields };
+  } catch (err) {
+    console.error(`[messenger subscription check] ব্যর্থ (page=${page.page_id}):`, err instanceof Error ? err.message : err);
+    return { error: "সাবস্ক্রিপশন তথ্য আনা যায়নি, একটু পর আবার চেষ্টা করুন", fields: null };
+  }
+}
+
 // পেজ কার্ডে "বট অন/অফ" টগল — messenger_pages.bot_enabled কলাম আপডেট করে (migration 0040 এ
 // ডিফল্ট true দিয়ে যোগ করা হয়েছিল)। WhatsApp numbers/actions.ts এর toggleBot এর ঠিক একই প্যাটার্ন —
 // worker এর process-messenger-webhook.ts সরাসরি এই কলাম চেক করে

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MessageSquare, PowerOff, Bot, RefreshCw } from "lucide-react";
+import { MessageSquare, PowerOff, Bot, RefreshCw, ShieldCheck } from "lucide-react";
 import { Card, Badge, useToast } from "@/components/ui";
-import { disconnectPage, toggleMessengerPageBot, refreshMessengerWebhook } from "./connect/actions";
+import { disconnectPage, toggleMessengerPageBot, refreshMessengerWebhook, checkMessengerSubscription } from "./connect/actions";
 
 type MessengerPage = { id: string; page_name: string | null; status: string; connected_at: string | null; bot_enabled: boolean };
 
@@ -25,6 +25,7 @@ export default function PageCard({ page }: { page: MessengerPage }) {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [botActive, setBotActive] = useState(page.bot_enabled);
+  const [subscribedFields, setSubscribedFields] = useState<string[] | null>(null);
 
   async function handleDisconnect() {
     if (!confirm(`"${page.page_name}" ডিসকানেক্ট করবেন? Messenger ইনবক্স আর কাজ করবে না।`)) return;
@@ -62,6 +63,18 @@ export default function PageCard({ page }: { page: MessengerPage }) {
       return;
     }
     showToast("success", "ওয়েবহুক রিফ্রেশ করা হয়েছে");
+  }
+
+  async function handleCheckSubscription() {
+    setBusy(true);
+    const res = await checkMessengerSubscription(page.id);
+    setBusy(false);
+    if (res.error) {
+      setSubscribedFields(null);
+      showToast("error", res.error);
+      return;
+    }
+    setSubscribedFields(res.fields ?? []);
   }
 
   return (
@@ -103,14 +116,44 @@ export default function PageCard({ page }: { page: MessengerPage }) {
       )}
 
       {page.status !== "disconnected" && (
-        <button
-          onClick={handleRefreshWebhook}
-          disabled={busy}
-          title="নতুন ইভেন্ট টাইপ (যেমন কমেন্ট অটোমেশন) যোগ হলে আগের কানেক্ট করা পেজে এটা চাপতে হয়"
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted hover:bg-gray-50 disabled:opacity-60"
+        <div className="flex gap-2">
+          <button
+            onClick={handleRefreshWebhook}
+            disabled={busy}
+            title="নতুন ইভেন্ট টাইপ (যেমন কমেন্ট অটোমেশন) যোগ হলে আগের কানেক্ট করা পেজে এটা চাপতে হয়"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted hover:bg-gray-50 disabled:opacity-60"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> ওয়েবহুক রিফ্রেশ করুন
+          </button>
+          <button
+            onClick={handleCheckSubscription}
+            disabled={busy}
+            title="Meta কে সরাসরি জিজ্ঞাসা করে দেখায় এই পেজ আসলে কোন ইভেন্ট ফিল্ডে সাবস্ক্রাইব করা আছে"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted hover:bg-gray-50 disabled:opacity-60"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" /> সাবস্ক্রিপশন যাচাই করুন
+          </button>
+        </div>
+      )}
+
+      {subscribedFields && (
+        <div
+          className={`rounded-lg border px-3 py-2 text-xs ${
+            subscribedFields.includes("feed") ? "border-border bg-gray-50 text-text-muted" : "border-danger-light bg-danger-light text-danger"
+          }`}
         >
-          <RefreshCw className="h-3.5 w-3.5" /> ওয়েবহুক রিফ্রেশ করুন
-        </button>
+          {subscribedFields.length === 0 ? (
+            <p>কোনো ফিল্ডে সাবস্ক্রাইব করা নেই।</p>
+          ) : (
+            <p>সাবস্ক্রাইবড ফিল্ড: {subscribedFields.join(", ")}</p>
+          )}
+          {!subscribedFields.includes("feed") && (
+            <p className="mt-1 font-medium">
+              ⚠️ &quot;feed&quot; নেই — কমেন্ট ইভেন্ট আসবে না। প্রথমে &quot;ওয়েবহুক রিফ্রেশ করুন&quot; চাপুন; তাতেও না
+              ঠিক হলে পেজটা ডিসকানেক্ট করে আবার কানেক্ট করুন (নতুন permission consent লাগতে পারে)।
+            </p>
+          )}
+        </div>
       )}
     </Card>
   );
