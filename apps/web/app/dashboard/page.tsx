@@ -11,10 +11,12 @@ import {
   ShieldCheck,
   MessageSquare,
   Inbox,
+  AlertTriangle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, Badge, EmptyState } from "@/components/ui";
 import { formatDhakaDateTime, getDhakaDayBoundariesUtc } from "@/lib/format-date";
+import OnboardingChecklist from "./OnboardingChecklist";
 
 const MESSENGER_ENABLED = process.env.NEXT_PUBLIC_MESSENGER_ENABLED === "true";
 
@@ -76,13 +78,16 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
   const { data: membership } = await supabase
     .from("workspace_members")
-    .select("workspace_id, workspaces(daily_message_limit, messages_used_this_cycle, plans(name, monthly_message_limit))")
+    .select(
+      "workspace_id, workspaces(daily_message_limit, messages_used_this_cycle, subscription_expires_at, plans(name, monthly_message_limit))"
+    )
     .limit(1)
     .maybeSingle();
 
   const workspace = membership?.workspaces as unknown as {
     daily_message_limit: number;
     messages_used_this_cycle: number;
+    subscription_expires_at: string | null;
     plans: { name: string; monthly_message_limit: number } | null;
   } | null;
 
@@ -94,6 +99,32 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   const monthlyUsagePct = Math.min(100, Math.round(rawUsagePct));
   const usagePctLabel = usedThisCycle > 0 && rawUsagePct < 1 ? "<১%" : `${monthlyUsagePct}%`;
   const usageBarWidthPct = usedThisCycle > 0 ? Math.max(rawUsagePct, 1) : 0;
+
+  // হলুদ ব্যানার — প্ল্যানের মেয়াদ ৭ দিনের কম বাকি, বা এই মাসের মেসেজ কোটা ৮০%+ ব্যবহার হয়ে
+  // গেছে (দুটোই বিদ্যমান ডেটা থেকে, কোনো নতুন কলাম/ক্রন লাগেনি — subscription-maintenance.ts
+  // এ ইতিমধ্যে ব্যবহৃত subscription_expires_at কলামই এখানেও reuse হচ্ছে)
+  const daysUntilExpiry = workspace?.subscription_expires_at
+    ? Math.ceil((new Date(workspace.subscription_expires_at).getTime() - Date.now()) / (24 * 3_600_000))
+    : null;
+  const expiringSoon = daysUntilExpiry !== null && daysUntilExpiry <= 7;
+  const usageHigh = monthlyLimit > 0 && monthlyUsagePct >= 80;
+
+  const usageBanner = (expiringSoon || usageHigh) && (
+    <div className="flex items-center gap-3 rounded-lg bg-warning-light px-4 py-3 text-sm text-warning">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <p className="flex-1">
+        {expiringSoon &&
+          (daysUntilExpiry !== null && daysUntilExpiry <= 0
+            ? "আপনার প্ল্যানের মেয়াদ শেষ হয়ে গেছে। "
+            : `আপনার প্ল্যানের মেয়াদ আর ${(daysUntilExpiry ?? 0).toLocaleString("bn-BD")} দিন বাকি। `)}
+        {usageHigh && `এই মাসের মেসেজ কোটার ${usagePctLabel} ব্যবহার হয়ে গেছে। `}
+        রিনিউ/আপগ্রেড করতে প্ল্যান পেজে যান।
+      </p>
+      <Link href="/dashboard/billing" className="shrink-0 font-medium underline">
+        প্ল্যান দেখুন
+      </Link>
+    </div>
+  );
 
   // ⚠️ এই কাউন্ট এখন পর্যন্ত শুধু WhatsApp ক্যাম্পেইন/ওয়েবহুক কোড ইনক্রিমেন্ট করে
   // (apply_message_status RPC) — Messenger এর কোনো মেসেজ এখনো এই কোটায় গোনা হয় না (জানা
@@ -141,6 +172,7 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
       return (
         <div className="flex flex-col gap-6">
           {channelTabs}
+          {usageBanner}
           <EmptyState
             icon={<MessageSquare className="h-10 w-10" />}
             title="এখনো কোনো Facebook পেজ কানেক্ট করা হয়নি"
@@ -176,6 +208,24 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
       .eq("channel", "messenger")
       .eq("status", "pending");
 
+    // অনবোর্ডিং চেকলিস্ট — Messenger এর নিজস্ব AI সেটিংস টেবিল (Phase ১, migration 0045)
+    const { data: messengerAiSettings } = await supabase
+      .from("messenger_ai_settings")
+      .select("llm_provider, api_key_secret_id")
+      .maybeSingle();
+    const messengerBotSetup = Boolean(messengerAiSettings?.llm_provider && messengerAiSettings?.api_key_secret_id);
+
+    const messengerChecklist = (
+      <OnboardingChecklist
+        title="Messenger শুরু করার ধাপ"
+        items={[
+          { label: "প্রথম Facebook পেজ কানেক্ট", done: true },
+          { label: "বট সেটআপ (AI চ্যাটবট, provider + API key)", done: messengerBotSetup, href: "/dashboard/messenger/ai-chatbot" },
+          { label: "প্রথম কমেন্ট রুল", done: false, note: "(কমেন্ট অটোমেশন শীঘ্রই আসছে)" },
+        ]}
+      />
+    );
+
     const { data: handedOffConversations } = await supabase
       .from("messenger_conversations")
       .select("id, customer_name, psid, last_message_at")
@@ -205,6 +255,8 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
     return (
       <div className="flex flex-col gap-6">
         {channelTabs}
+        {usageBanner}
+        {messengerChecklist}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard icon={<MessageSquare className="h-5 w-5" />} label="কানেক্টেড পেজ" value={`${pagesCount ?? 0}`} />
@@ -276,6 +328,11 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
     .select("id", { count: "exact", head: true })
     .in("status", ["scheduled", "sending"]);
 
+  // অনবোর্ডিং চেকলিস্ট — "প্রথম ক্যাম্পেইন" মানে status যাই হোক, অন্তত একটা তৈরি হয়েছে
+  const { count: totalCampaignsCount } = await supabase.from("campaigns").select("id", { count: "exact", head: true });
+  const { data: whatsappAiSettings } = await supabase.from("workspace_ai_settings").select("llm_provider, api_key_secret_id").maybeSingle();
+  const whatsappBotSetup = Boolean(whatsappAiSettings?.llm_provider && whatsappAiSettings?.api_key_secret_id);
+
   const { data: lastCampaign } = await supabase
     .from("campaigns")
     .select("id, name, status, created_at")
@@ -327,9 +384,23 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   const dailyLimit = workspace?.daily_message_limit ?? 0;
   const hasNoNumbers = (totalNumbersCount ?? 0) === 0;
 
+  const whatsappChecklist = (
+    <OnboardingChecklist
+      title="WhatsApp শুরু করার ধাপ"
+      items={[
+        { label: "WhatsApp নাম্বার কানেক্ট", done: !hasNoNumbers, href: "/dashboard/numbers/new" },
+        { label: "বট সেটআপ (AI চ্যাটবট, provider + API key)", done: whatsappBotSetup, href: "/dashboard/ai-chatbot" },
+        { label: "প্রথম কন্টাক্ট যোগ", done: (contactsCount ?? 0) > 0, href: "/dashboard/contacts/new" },
+        { label: "প্রথম ক্যাম্পেইন তৈরি", done: (totalCampaignsCount ?? 0) > 0, href: "/dashboard/campaigns/new" },
+      ]}
+    />
+  );
+
   return (
     <div className="flex flex-col gap-6">
       {channelTabs}
+      {usageBanner}
+      {whatsappChecklist}
 
       {hasNoNumbers && (
         <EmptyState

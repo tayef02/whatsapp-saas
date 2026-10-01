@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X, MessageCircle, MessageSquare } from "lucide-react";
+import { X, MessageCircle, MessageSquare, LifeBuoy } from "lucide-react";
 import { getNavGroups, isNavItemActive, getChannelFromPathname, type Channel } from "./nav-config";
 
 // ফ্ল্যাগ বন্ধ থাকলে (ডিফল্ট) চ্যানেল সুইচার সম্পূর্ণ লুকানো, সবসময় WhatsApp — বিটা ইউজার
 // আধাখেচড়া Messenger ফিচার দেখবে না। build-time এ inline হয়ে যায় (NEXT_PUBLIC_ প্রিফিক্স)
 const MESSENGER_ENABLED = process.env.NEXT_PUBLIC_MESSENGER_ENABLED === "true";
+
+// সহায়তা লিংক — সেট করা না থাকলে পুরো লিংকটাই লুকানো থাকে (ভাঙা লিংকের বদলে)
+const SUPPORT_WHATSAPP = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP;
 
 // isSuperAdmin=true হলে শুধু তখনই "অ্যাডমিন" গ্রুপ দেখানো হয় (dashboard/layout.tsx এর
 // existing is_super_admin RPC কল থেকে পাস হয়ে আসে — নতুন কোনো লজিক না)
@@ -99,6 +102,20 @@ export default function Sidebar({
             </div>
           ))}
         </nav>
+
+        {SUPPORT_WHATSAPP && (
+          <div className="border-t border-border p-3">
+            <a
+              href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-text-muted hover:bg-gray-100"
+            >
+              <LifeBuoy className="h-4 w-4 shrink-0" />
+              সহায়তা
+            </a>
+          </div>
+        )}
       </aside>
     </>
   );

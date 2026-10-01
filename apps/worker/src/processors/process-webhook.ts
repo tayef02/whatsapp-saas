@@ -546,7 +546,10 @@ async function handleGroupMessage(
     const normalizedPhone = structuredOrder.phone ? normalizeBangladeshiPhone(structuredOrder.phone) : null;
 
     if (!structuredOrder.name || !normalizedPhone) {
-      // অসম্পূর্ণ/ভুল ফরম্যাট — silent fail না করে raw_summary হিসেবে সেভ করা হয়, ডাটা হারায় না
+      // অসম্পূর্ণ/ভুল ফরম্যাট — silent fail না করে raw_summary হিসেবে সেভ করা হয়, ডাটা হারায় না।
+      // provider_message_id (key.id) দিয়ে dedup — BullMQ job retry হলে (attempts:3) এই পুরো
+      // ফাংশন আবার চলে, এই কলাম/unique index (migration 0046) ছাড়া প্রতি retry এ আবার একটা
+      // নতুন "malformed" অর্ডার insert হয়ে যেত
       console.error(`[group-order-capture] malformed structured order in group=${groupJid}: "${text}"`);
       const { data: order, error: rawOrderError } = await supabase
         .from("orders")
@@ -556,10 +559,15 @@ async function handleGroupMessage(
           whatsapp_number_id: number.id,
           contact_phone: senderPhone,
           raw_summary: text,
+          provider_message_id: key.id,
         })
         .select("id, order_number")
         .maybeSingle();
       if (rawOrderError) {
+        if (rawOrderError.code === "23505") {
+          console.log(`[group-order-capture] duplicate (malformed) order ignored, already captured — group=${groupJid} messageId=${key.id}`);
+          return;
+        }
         console.error(`[group-order-capture] failed to save malformed order (raw_summary) in group=${groupJid}: ${rawOrderError.message}`);
       }
       await createNotification(
@@ -584,11 +592,16 @@ async function handleGroupMessage(
         delivery_name: structuredOrder.name,
         delivery_phone: normalizedPhone,
         raw_summary: text,
+        provider_message_id: key.id,
       })
       .select("id, order_number")
       .maybeSingle();
 
     if (error || !order) {
+      if (error?.code === "23505") {
+        console.log(`[group-order-capture] duplicate order ignored, already captured — group=${groupJid} messageId=${key.id}`);
+        return;
+      }
       console.error(`[group-order-capture] failed to save order in group=${groupJid}:`, error?.message);
       return;
     }

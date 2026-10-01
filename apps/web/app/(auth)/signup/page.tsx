@@ -93,6 +93,20 @@ export default function SignupPage() {
             </p>
           </Card>
         )}
+
+        {!done && (
+          <p className="mt-4 text-center text-xs text-text-muted">
+            সাইনআপ করলে আপনি আমাদের{" "}
+            <Link href="/terms" className="underline hover:text-text">
+              শর্তাবলী
+            </Link>{" "}
+            ও{" "}
+            <Link href="/privacy" className="underline hover:text-text">
+              গোপনীয়তা নীতি
+            </Link>{" "}
+            মেনে নিচ্ছেন।
+          </p>
+        )}
       </div>
     </div>
   );

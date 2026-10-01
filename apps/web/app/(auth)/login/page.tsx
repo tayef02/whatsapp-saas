@@ -63,7 +63,12 @@ export default function LoginPage() {
             />
 
             <label className="block text-sm">
-              <span className="mb-1.5 block font-medium text-text">পাসওয়ার্ড</span>
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="font-medium text-text">পাসওয়ার্ড</span>
+                <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">
+                  পাসওয়ার্ড ভুলে গেছেন?
+                </Link>
+              </div>
               <div className="relative">
                 <input
                   id="password"
@@ -95,6 +100,18 @@ export default function LoginPage() {
             </Link>
           </p>
         </Card>
+
+        <p className="mt-4 text-center text-xs text-text-muted">
+          লগইন করলে আপনি আমাদের{" "}
+          <Link href="/terms" className="underline hover:text-text">
+            শর্তাবলী
+          </Link>{" "}
+          ও{" "}
+          <Link href="/privacy" className="underline hover:text-text">
+            গোপনীয়তা নীতি
+          </Link>{" "}
+          মেনে নিচ্ছেন।
+        </p>
       </div>
     </div>
   );

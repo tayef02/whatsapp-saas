@@ -33,12 +33,14 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAuthRoute =
-    request.nextUrl.pathname.startsWith("/login") ||
-    request.nextUrl.pathname.startsWith("/signup");
+  // পাসওয়ার্ড রিসেট ফ্লো (/reset-password এ হ্যাশে #access_token আসে, যেটা সার্ভারে কখনো
+  // যায় না — তাই এখানে গেট করা যাবে না, ক্লায়েন্ট-সাইডে পার্স হতে দিতে হবে) আর আইনি
+  // পাবলিক পেজ — এগুলোয় লগইন ছাড়াও ঢোকা যাবে
+  const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/terms", "/privacy", "/data-deletion"];
+  const isPublicRoute = publicPaths.some((p) => request.nextUrl.pathname.startsWith(p));
 
   // লগইন না থাকলে dashboard/onboarding এ ঢুকতে দেবে না
-  if (!user && !isAuthRoute && request.nextUrl.pathname !== "/") {
+  if (!user && !isPublicRoute && request.nextUrl.pathname !== "/") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

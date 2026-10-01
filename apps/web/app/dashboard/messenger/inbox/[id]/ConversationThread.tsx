@@ -119,9 +119,9 @@ export default function ConversationThread({
           <Badge variant={windowOpen ? "success" : humanAgentWindowOpen ? "warning" : "neutral"}>
             <Clock className="h-3 w-3" />
             {windowOpen
-              ? `উইন্ডো: ${Math.round(windowHoursLeft)} ঘণ্টা বাকি`
+              ? `উইন্ডো: ${Math.round(windowHoursLeft).toLocaleString("bn-BD")} ঘণ্টা বাকি`
               : humanAgentWindowOpen
-                ? `Human Agent: ${Math.ceil(humanAgentHoursLeft / 24)} দিন বাকি`
+                ? `Human Agent: ${Math.ceil(humanAgentHoursLeft / 24).toLocaleString("bn-BD")} দিন বাকি`
                 : "উইন্ডো শেষ"}
           </Badge>
         </div>
