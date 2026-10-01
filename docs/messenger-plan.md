@@ -603,6 +603,42 @@ M1-M2 এর ৪টার (0040→0043) পরে শুধু একটা ন�
    দেখা উচিত, আর dashboard এ "কমেন্টে নতুন লিড" নোটিফিকেশন আসা উচিত (bot বন্ধ থাকলেও আসবে —
    লিড-ডিটেকশন bot_enabled এর উপর নির্ভর করে না, ইচ্ছাকৃতভাবে)।
 
+### ৭. টেস্ট স্ক্রিপ্ট দিয়ে যাচাই (আসল Facebook কমেন্ট ছাড়াই)
+
+আসল পোস্টে আসল Facebook অ্যাকাউন্ট দিয়ে কমেন্ট করা ঝামেলার হতে পারে (অ্যাডমিন অ্যাকাউন্ট
+দিয়ে কমেন্ট করলে webhook আসে না, আলাদা টেস্ট অ্যাকাউন্ট লাগে)। `scripts/test-messenger-comment.ts`
+স্ক্রিপ্টটা Meta-র "feed" webhook ইভেন্টের ঠিক একই আকারের একটা নকল payload বানিয়ে, আসল
+`MESSENGER_APP_SECRET` দিয়ে sign করে, সরাসরি `/api/webhooks/messenger` এ POST করে — এতে
+signature যাচাই, রুল-ম্যাচিং, লগ লেখা, আর queue/worker পাইপলাইন পরীক্ষা হয়ে যায়।
+
+**চালানোর আগে**: Redis (`docker-compose up -d redis`) আর worker (`npm run dev:worker`) চালু
+থাকতে হবে — নাহলে BullMQ queue.add() Redis এর সাথে কানেক্ট করার চেষ্টায় রিট্রাই করতে থাকবে
+আর রিকোয়েস্ট অনেকক্ষণ ঝুলে থাকতে পারে (তবু শেষে হয়তো 200 ফেরত দেবে)। web dev server
+(`npm run dev:web`) ও চালু থাকতে হবে, যেহেতু স্ক্রিপ্ট ডিফল্টভাবে `http://localhost:3000` এ POST করে।
+
+```bash
+npx tsx scripts/test-messenger-comment.ts <page_id> "দাম কত?"
+```
+
+- `page_id` — কোনো কানেক্টেড পেজের আসল Facebook page_id (Supabase এ `messenger_pages.page_id`
+  কলামে দেখুন) — worker এটা দিয়েই workspace/সেটিংস লুকআপ করে, তাই আসল হতে হবে।
+  comment_id/post_id/from (কমেন্টকারীর psid) স্ক্রিপ্ট নিজেই নকল তৈরি করে।
+- কমেন্টের লেখায় একটা ফোন নাম্বার দিলে (`"দাম কত? 01712345678"`) লিড ক্যাপচার টেস্ট হয়ে যায়।
+- secret (`MESSENGER_APP_SECRET`, `apps/web/.env.local` থেকে পড়া হয়) আর payload কখনো কনসোলে
+  প্রিন্ট হয় না — শুধু HTTP status আর একটা ছোট ব্যাখ্যা লাইন দেখায়।
+
+**যা আশা করবেন**:
+- HTTP status `200` — webhook রুট ইভেন্টটা queue তে বসিয়েছে।
+- worker এর লগে `[messenger-comment]` প্রিফিক্সের লাইন — কমেন্ট সেভ হওয়া, রুল ম্যাচ/না-ম্যাচ,
+  cooldown, রিপ্লাই জব queue হওয়া দেখাবে।
+- `/dashboard/messenger/comments` এর লগ টেবিলে নতুন রো দেখা উচিত।
+- রিপ্লাই জব (public_reply/private_reply) **ব্যর্থ হবে** — কারণ `comment_id`/`fromPsid` নকল,
+  Meta এর আসল API এই আইডি চিনবে না। worker এর `[messenger-comment-reply]` লগে একটা Meta API
+  এরর (যেমন "Unsupported comment" বা অনুরূপ) দেখা **স্বাভাবিক ও প্রত্যাশিত** — এটা পাইপলাইনের
+  বাগ না, শুধু নকল ডাটার সীমাবদ্ধতা। রুল-ম্যাচিং/লগ/queue পর্যন্ত কাজ করলেই স্ক্রিপ্টের উদ্দেশ্য
+  পূরণ হয়েছে ধরা যায়।
+- signature ভুল হলে (secret মিলছে না) `401` আসবে।
+
 ---
 
 # চ্যানেল বিচ্ছিন্নতা ("ফেজ" সিরিজ — M0-M5 এর উপরে আলাদা একটা বড় উদ্যোগ)
