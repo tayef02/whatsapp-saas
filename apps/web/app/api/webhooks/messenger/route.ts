@@ -60,7 +60,11 @@ type ChangeEvent = {
 };
 
 // এখানে কোনো DB কাজ হয় না — শুধু signature যাচাই আর queue তে push করে দ্রুত 200 দেওয়া হয়,
-// আসল প্রসেসিং apps/worker করে (WhatsApp webhook route এর ঠিক একই নিয়ম)
+// আসল প্রসেসিং apps/worker করে (WhatsApp webhook route এর ঠিক একই নিয়ম)।
+//
+// ডায়াগনস্টিক লগ: কমেন্ট ইভেন্ট না আসার সমস্যা ডিবাগ করতে প্রতিটা POST এ signature ঠিক/ভুল,
+// payload এর object/entry সংখ্যা, প্রতিটা entry এর page_id ও messaging/changes আছে কিনা, আর
+// কোনো ইভেন্ট বাদ পড়লে কারণ লগ হয় — কখনো মেসেজ/কমেন্টের লেখা, নাম, token/secret ছাপা হয় না।
 export async function POST(request: NextRequest) {
   const appSecret = process.env.MESSENGER_APP_SECRET;
   if (!appSecret) {
@@ -72,8 +76,11 @@ export async function POST(request: NextRequest) {
 
   const rawBody = await request.text();
   const signature = request.headers.get("x-hub-signature-256");
+  const signatureValid = isValidSignature(rawBody, signature, appSecret);
 
-  if (!isValidSignature(rawBody, signature, appSecret)) {
+  console.log(`[messenger webhook] POST এসেছে — signature ${signatureValid ? "ঠিক" : "ভুল"}, body size=${rawBody.length} bytes`);
+
+  if (!signatureValid) {
     console.warn("[messenger webhook] signature যাচাই ব্যর্থ, রিকোয়েস্ট বাতিল");
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
@@ -82,25 +89,45 @@ export async function POST(request: NextRequest) {
   try {
     body = JSON.parse(rawBody);
   } catch {
+    console.warn("[messenger webhook] body valid JSON না, বাতিল");
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
+  console.log(`[messenger webhook] object="${body.object}", entry সংখ্যা=${body.entry?.length ?? 0}`);
+
   if (body.object !== "page") {
+    console.log(`[messenger webhook] object="${body.object}" — "page" না, পুরো payload উপেক্ষা করা হলো`);
     return NextResponse.json({ status: "ignored" });
   }
 
   const queue = getMessengerWebhookQueue();
+  let queuedMessageCount = 0;
+  let queuedCommentCount = 0;
 
   try {
     // একটা POST এ একাধিক entry/messaging event ব্যাচ হয়ে আসতে পারে — প্রতিটাকে আলাদা job
     // হিসেবে বসানো হচ্ছে, যাতে প্রতিটার নিজস্ব mid-ভিত্তিক jobId (dedup) থাকে
     for (const entry of body.entry ?? []) {
       const pageId = entry.id;
-      if (!pageId) continue;
+      const messagingCount = entry.messaging?.length ?? 0;
+      const changesCount = entry.changes?.length ?? 0;
+      console.log(`[messenger webhook] entry — page_id=${pageId ?? "(নেই)"}, messaging=${messagingCount}, changes=${changesCount}`);
+
+      if (!pageId) {
+        console.warn("[messenger webhook] entry.id (page_id) নেই, এই entry বাদ দেওয়া হলো");
+        continue;
+      }
 
       for (const event of entry.messaging ?? []) {
         const senderPsid = event.sender?.id;
-        if (!senderPsid || event.message?.is_echo) continue; // নিজের পাঠানো মেসেজের echo, স্কিপ
+        if (!senderPsid) {
+          console.warn(`[messenger webhook] messaging event এ sender.id নেই, বাদ দেওয়া হলো page_id=${pageId}`);
+          continue;
+        }
+        if (event.message?.is_echo) {
+          console.log(`[messenger webhook] echo (নিজের পাঠানো) মেসেজ, বাদ দেওয়া হলো page_id=${pageId}`);
+          continue; // নিজের পাঠানো মেসেজের echo, স্কিপ
+        }
 
         const jobData: MessengerWebhookJobData = {
           pageId,
@@ -128,14 +155,33 @@ export async function POST(request: NextRequest) {
           removeOnFail: 1000,
           ...(jobId ? { jobId } : {}),
         });
+        queuedMessageCount++;
       }
 
       // Phase M3 — একই "messenger-webhook-events" queue তে আলাদা job name ("comment") দিয়ে
       // যায়, messengerWebhookWorker এটা দেখে DM ("event") আর comment আলাদা প্রসেসরে পাঠায়
       for (const change of entry.changes ?? []) {
-        if (change.field !== "feed") continue;
+        if (change.field !== "feed") {
+          console.log(`[messenger webhook] changes field="${change.field}" — "feed" না, বাদ দেওয়া হলো page_id=${pageId}`);
+          continue;
+        }
         const value = change.value;
-        if (!value || value.item !== "comment" || value.verb !== "add" || !value.comment_id) continue;
+        if (!value) {
+          console.warn(`[messenger webhook] feed change এ value নেই, বাদ দেওয়া হলো page_id=${pageId}`);
+          continue;
+        }
+        if (value.item !== "comment") {
+          console.log(`[messenger webhook] feed item="${value.item}" — "comment" না, বাদ দেওয়া হলো page_id=${pageId}`);
+          continue;
+        }
+        if (value.verb !== "add") {
+          console.log(`[messenger webhook] comment verb="${value.verb}" — "add" না (এডিট/রিমুভ/রিঅ্যাকশন হতে পারে), বাদ দেওয়া হলো page_id=${pageId}`);
+          continue;
+        }
+        if (!value.comment_id) {
+          console.warn(`[messenger webhook] comment এ comment_id নেই, বাদ দেওয়া হলো page_id=${pageId}`);
+          continue;
+        }
 
         const commentJobData: MessengerCommentWebhookJobData = {
           pageId,
@@ -155,6 +201,7 @@ export async function POST(request: NextRequest) {
           removeOnFail: 1000,
           jobId: commentJobId,
         });
+        queuedCommentCount++;
       }
     }
   } catch (err) {
@@ -164,6 +211,8 @@ export async function POST(request: NextRequest) {
     console.error("[messenger webhook] queue.add ব্যর্থ:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "queue unavailable" }, { status: 500 });
   }
+
+  console.log(`[messenger webhook] সম্পন্ন — DM job=${queuedMessageCount}, কমেন্ট job=${queuedCommentCount}`);
 
   return NextResponse.json({ status: "ok" });
 }

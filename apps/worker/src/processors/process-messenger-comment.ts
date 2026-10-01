@@ -40,7 +40,18 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
     throw new Error(`messenger_pages lookup failed: ${pageError.message}`);
   }
   if (!page) {
-    console.log(`[messenger-comment] no connected page for page_id=${data.pageId}, skipping`);
+    console.log(`[messenger-comment] skip reason=unknown_page page_id=${data.pageId} — এই page_id এর কোনো কানেক্টেড পেজ পাওয়া যায়নি`);
+    return;
+  }
+
+  // Facebook এর নিয়ম: পেজ নিজে যখন কোনো কমেন্টে রিপ্লাই দেয় (আমাদের নিজের public_reply, বা
+  // অ্যাডমিন Page Inbox থেকে ম্যানুয়ালি রিপ্লাই), সেটাও webhook এ একটা নতুন "comment"/"add"
+  // ইভেন্ট হিসেবেই আসে, from.id = পেজের নিজের page_id। এটা ফিল্টার না করলে "সব কমেন্ট" ট্রিগার
+  // রুল নিজের রিপ্লাইকেও ম্যাচ করে বারবার রিপ্লাই দিতে থাকতে পারে (cooldown দিয়ে থামবে, কিন্তু
+  // থেমে থেমে চলতেই থাকবে) — তাই page_id এর সাথে fromPsid মিললেই শুরুতেই স্কিপ, লগ বা
+  // লিড-ডিটেকশন কিছুই হবে না (এটা কোনো কাস্টমার ইন্টারঅ্যাকশন না)
+  if (data.fromPsid && data.fromPsid === data.pageId) {
+    console.log(`[messenger-comment] skip reason=own_page_comment page_id=${data.pageId} commentId=${data.commentId} — পেজ নিজেই এই কমেন্ট করেছে`);
     return;
   }
 
@@ -64,7 +75,7 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
 
   if (insertError) {
     if (insertError.code === "23505") {
-      console.log(`[messenger-comment] duplicate comment ignored page=${page.id} commentId=${data.commentId}`);
+      console.log(`[messenger-comment] skip reason=duplicate_comment page=${page.id} commentId=${data.commentId} — আগেই প্রসেস হয়েছে`);
       return;
     }
     console.error(`[messenger-comment] messenger_comments insert failed page=${page.id}: ${insertError.message}`);
@@ -84,11 +95,14 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
   }
 
   if (!page.bot_enabled) {
-    console.log(`[messenger-comment] bot is turned off for page=${page.id}, skipping rule matching`);
+    console.log(`[messenger-comment] skip reason=bot_disabled page=${page.id} — কমেন্ট লগ হয়েছে, কিন্তু রুল-ম্যাচিং হবে না`);
     return;
   }
 
-  if (!data.commentText.trim()) return; // খালি/শুধু-ছবি কমেন্ট — ম্যাচ করার মতো টেক্সট নেই
+  if (!data.commentText.trim()) {
+    console.log(`[messenger-comment] skip reason=empty_text page=${page.id} commentId=${data.commentId} — খালি/শুধু-ছবি কমেন্ট`);
+    return;
+  }
 
   const { data: rules } = await supabase
     .from("messenger_comment_rules")
@@ -101,7 +115,7 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
     r.trigger_type === "all" ? true : r.keyword ? lowerText.includes(r.keyword.toLowerCase()) : false
   );
   if (!matched) {
-    console.log(`[messenger-comment] no rule matched page=${page.id} commentId=${data.commentId}`);
+    console.log(`[messenger-comment] skip reason=no_rule_matched page=${page.id} commentId=${data.commentId} — কোনো active রুলের কিওয়ার্ড/all মেলেনি`);
     return;
   }
 
@@ -124,7 +138,7 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
   }
 
   if (!won) {
-    console.log(`[messenger-comment] rule cooldown active, skipping rule=${matched.id} page=${page.id}`);
+    console.log(`[messenger-comment] skip reason=cooldown_active rule=${matched.id} page=${page.id} — এই রুল এখনো cooldown এর মধ্যে`);
     return;
   }
 
@@ -138,12 +152,12 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
   }
 
   if (!replyText?.trim()) {
-    console.log(`[messenger-comment] no reply text produced (AI skipped or empty), rule=${matched.id}`);
+    console.log(`[messenger-comment] skip reason=empty_reply_text rule=${matched.id} — AI স্কিপ করেছে বা খালি রিপ্লাই দিয়েছে`);
     return;
   }
 
   if (matched.action === "private_reply" && !data.fromPsid) {
-    console.log(`[messenger-comment] private_reply rule matched but no psid available, rule=${matched.id} commentId=${data.commentId}`);
+    console.log(`[messenger-comment] skip reason=no_psid_for_private_reply rule=${matched.id} commentId=${data.commentId} — private_reply এর জন্য fromPsid লাগে, পাওয়া যায়নি`);
     return;
   }
 
