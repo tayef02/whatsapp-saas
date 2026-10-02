@@ -239,4 +239,18 @@ export class MetaMessengerProvider implements MessengerProvider {
     const data = (await res.json()) as { message_id: string };
     return { messageId: data.message_id };
   }
+
+  // রিপ্লাই পাঠানোর ঠিক আগে কমেন্ট এখনো আছে কিনা — ইউজার কমেন্ট ডিলিট করে দিতে পারে, delay
+  // থাকা drip-queued পাবলিক রিপ্লাইয়ের ক্ষেত্রে এই সম্ভাবনা বাস্তব। Meta ডিলিট করা কমেন্টের
+  // জন্য "does not exist"/"cannot be loaded" জাতীয় স্পষ্ট এরর দেয় — শুধু তখনই false, অন্য
+  // যেকোনো এরর (network/rate-limit) অনিশ্চিত, তাই throw করা হচ্ছে (caller fail-safe আচরণ করবে)
+  async commentExists(pageAccessToken: string, commentId: string): Promise<boolean> {
+    const params = new URLSearchParams({ fields: "id", access_token: pageAccessToken });
+    const res = await safeFetch(`${GRAPH_API_BASE}/${commentId}?${params.toString()}`, { method: "GET" });
+    if (res.ok) return true;
+
+    const message = await parseGraphError(res);
+    if (/does not exist|cannot be loaded|unsupported get request/i.test(message)) return false;
+    throw new Error(`comment existence check অনিশ্চিত: ${message}`);
+  }
 }

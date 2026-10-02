@@ -65,4 +65,10 @@ export type MessengerCommentReplyJobData = {
   fromPsid: string | null;
   action: "public_reply" | "private_reply";
   replyText: string;
+  // কবে queue তে বসানো হয়েছিল (ISO string) — send করার ঠিক আগে staleness চেক করতে (drip delay
+  // ছাড়াও infra backlog এর কারণে দেরি হলে সেটাও ধরা পড়ে, reason=queue_expired)
+  queuedAt: string;
+  // "স্কিপড কমেন্ট" পেজ থেকে ম্যানুয়ালি "এখন পাঠান" চাপলে সেই skip row এর id — সফল হলে ওই
+  // row.status "sent_manually" এ আপডেট হয়
+  skipId?: string;
 };

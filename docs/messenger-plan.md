@@ -336,6 +336,83 @@ worker (`process-messenger-comment.ts`) এই `scheduled_at` থেকে delay
 স্প্যাম/বট অ্যাটাকে জবের সারি অনেক লম্বা হয়ে যেতে পারে)। এরকম চরম কেস দেখা গেলে পরে একটা
 সর্বোচ্চ queue-length cap যোগ করার কথা ভাবা যেতে পারে।
 
+*(আপডেট: নিচের "M3 ফলো-আপ ৪" এ এই সীমাবদ্ধতাই সমাধান হয়েছে — drip delay ৩০ মিনিট পার
+হয়ে গেলে এখন কিউতে না বসিয়েই স্কিপ করে, রিভিউ-তালিকায় যায়।)*
+
+### M3 ফলো-আপ ৪ (সম্পন্ন, ২০২৬-১০-০২) — rate-limit caps + "স্কিপড কমেন্ট" রিভিউ সিস্টেম
+
+ইউজার আরও স্পষ্ট নিয়ম দিয়েছেন পাবলিক/প্রাইভেট রিপ্লাইয়ের জন্য, আর একটা সম্পূর্ণ নতুন
+"স্কিপড কমেন্ট" রিভিউ সিস্টেম চেয়েছেন — যাতে rate-limit/অন্য কারণে অটো-রিপ্লাই না যাওয়া
+কোনো কমেন্ট একদম হারিয়ে না যায়, মালিক/দায়িত্বশীল পরে দেখে ম্যানুয়ালি সিদ্ধান্ত নিতে পারেন।
+
+**rate-limit ধ্রুবক** (`packages/core/messenger/comment-limits.ts` এর `MESSENGER_COMMENT_LIMITS`):
+
+| ধ্রুবক | ডিফল্ট | অর্থ |
+|---|---|---|
+| `PUBLIC_REPLY_PER_CUSTOMER_POST_PER_HOUR` | ৩ | একই কাস্টমার একই পোস্টে ঘণ্টায় সর্বোচ্চ কতগুলো পাবলিক রিপ্লাই পাবে |
+| `PUBLIC_REPLY_PER_PAGE_PER_HOUR` | ১০০ | পেজে ঘণ্টায় মোট পাবলিক রিপ্লাই সীমা |
+| `PUBLIC_REPLY_MAX_QUEUE_DELAY_MINUTES` | ৩০ | drip delay এর বেশি হলে কিউতে না বসিয়েই স্কিপ |
+| `PRIVATE_REPLY_PER_CUSTOMER_POST_TOTAL` | ৩ | একই কাস্টমার একই পোস্টে (সব রুল মিলিয়ে) মোট সর্বোচ্চ প্রাইভেট রিপ্লাই |
+| `PRIVATE_REPLY_PER_PAGE_PER_HOUR` | ৫০ | পেজে ঘণ্টায় মোট প্রাইভেট রিপ্লাই সীমা |
+| `SEND_STALENESS_LIMIT_MINUTES` | ৩০ | queue তে বসানোর পর এর বেশি সময় পার হলে (infra backlog) আর পাঠানো হয় না |
+| `SKIP_REVIEW_EXPIRY_DAYS` | ৭ | এর পরে pending private-reply skip গুলো `expired_7d` মার্ক হয় |
+
+**পাবলিক রিপ্লাই লজিক** (`process-messenger-comment.ts`): rule ম্যাচ ও replyText জেনারেশনের
+পর — (১) কাস্টমার+পোস্ট ঘণ্টার cap চেক, ছাড়ালে `limit_per_customer`। (২) পেজ ঘণ্টার cap
+চেক, ছাড়ালে `limit_per_page`। (৩) drip slot রিজার্ভ (migration 0049/0050 RPC
+`reserve_comment_reply_slot`)। (৪) সেই delay ৩০ মিনিটের বেশি হলে কিউতে বসানো হয় না,
+`cooldown_active`। (৫) সব ঠিক থাকলে BullMQ `comment-reply` job এ `delay` সহ বসে,
+`messenger_comments.action`/`queued_at` আপডেট হয় (rate-limit গণনার জন্য)।
+
+**প্রাইভেট রিপ্লাই লজিক**: কখনো delay হয় না। (১) একই রুল+কাস্টমার+পোস্টে আগেই একবার
+পাঠানো থাকলে `cooldown_active` (রুল-ভিত্তিক "once" নিয়ম)। (২) কাস্টমার+পোস্টে (সব রুল
+মিলিয়ে) মোট cap ছাড়ালে `private_limit`। (৩) পেজ ঘণ্টার cap ছাড়ালে `limit_per_page`।
+কোনো রুল না মিললে কখনোই রিপ্লাই নেই (`rule_not_matched`)।
+
+**send-time চেক** (`process-messenger-comment-reply.ts`, পাবলিক+প্রাইভেট দুটোতেই): পাঠানোর
+ঠিক আগে (১) job কতক্ষণ queue তে ছিল (`queuedAt` থেকে) — `SEND_STALENESS_LIMIT_MINUTES` পার
+হলে `queue_expired`। (২) কমেন্ট এখনো আছে কিনা (নতুন `MessengerProvider.commentExists()`,
+Meta এর "does not exist" এরর ধরে) — না থাকলে `comment_deleted` (অনিশ্চিত এরর হলে fail-safe,
+পাঠানোর চেষ্টা চালিয়ে যায়)। শেষ attempt এও পাঠানো ব্যর্থ হলে (auth এরর, বা ৩ বারই transient
+এরর) `reply_failed`।
+
+**"স্কিপড কমেন্ট" রিভিউ সিস্টেম**:
+- নতুন টেবিল `messenger_comment_skips` (migration 0050) — ১০টা reason code
+  (`cooldown_active`, `limit_per_customer`, `limit_per_page`, `rule_not_matched`,
+  `private_limit`, `comment_deleted`, `expired_7d`, `bot_disabled`, `reply_failed`,
+  `queue_expired`), `status` (`pending_review`/`sent_manually`/`dismissed`), কমেন্টের
+  সংক্ষিপ্ত অংশ (`comment_text_excerpt`, সর্বোচ্চ ২০০ অক্ষর — পুরো টেক্সট না, আর কখনো লগে
+  যায় না), আর ইতিমধ্যে জেনারেট হওয়া `reply_text` (থাকলে, "এখন পাঠান" প্রি-ফিল করতে)।
+- `messenger_comments` এ নতুন `action`/`queued_at` কলাম (rate-limit কাউন্ট কোয়েরির জন্য)।
+- শেয়ার্ড helper `apps/worker/src/lib/messenger-comment-skip.ts` এর
+  `writeMessengerCommentSkip()` — দুই প্রসেসরই ব্যবহার করে, লেখা ব্যর্থ হলেও (non-critical)
+  শুধু লগ, কমেন্ট প্রসেসিং আটকায় না।
+  - **ইচ্ছাকৃতভাবে ট্র্যাক করা হয়নি** (silent log-only, ১০-কোডের তালিকায় নেই): `own_page_comment`,
+    `duplicate_comment`, `empty_text`, `unknown_page`, `empty_reply_text` (AI স্কিপ করলে),
+    `no_psid_for_private_reply` — এগুলো হয় কাস্টমার-ইন্টারঅ্যাকশনই না, নয়তো সত্যিকারের
+    edge case যেখানে কোনো manual action সম্ভবই না।
+- নতুন পেজ `/dashboard/messenger/comments/skipped` — পেজ-সিলেক্টর, status/reason ফিল্টার
+  (URL query param ভিত্তিক), প্রতিটা pending রো তে "এখন পাঠান" (action + reply text
+  এডিট করে, `messenger-jobs` queue তেই `comment-reply` job বসায়, `skipId` সহ) আর "বাদ দিন"।
+  - ⚠️ **ডিজাইন সিদ্ধান্ত**: "এখন পাঠান" automated flow এর hourly/per-customer **soft cap**
+    আবার চেক করে না (একজন মানুষ সচেতনভাবে এই নির্দিষ্ট কমেন্টটা পাঠাতে চাইছেন) — কিন্তু
+    Meta-এনফোর্সড **hard** নিয়ম দুটো এখনো মানে: প্রাইভেট রিপ্লাইয়ে ৭ দিনের উইন্ডো (সার্ভার
+    অ্যাকশনেই সিঙ্ক্রোনাসভাবে চেক, ব্যর্থ হলে সাথে সাথে বাংলায় এরর), আর কমেন্ট এখনো আছে কিনা
+    (worker এর job এই চেক এমনিতেই করে)।
+  - `messenger_comment_rules` এর "রুল তৈরির ফর্ম"-এ নতুন হেল্প টেক্সট: পাবলিক রিপ্লাই বাছাই
+    করলে মনে করিয়ে দেয় যে প্রথম DM "Message Requests" ফোল্ডারে যেতে পারে, তাই রিপ্লাই
+    টেক্সটে ইনবক্স/Message Requests চেক করতে বলা ভালো।
+- `/dashboard/messenger/comments` এর লগে নতুন "স্কিপ কারণ" কলাম (বাংলা লেবেল,
+  `skip-reasons.ts` এ শেয়ার্ড ম্যাপ) + লিংক।
+- মূল ড্যাশবোর্ড (`/dashboard`, Messenger ট্যাব) এ "পর্যালোচনার অপেক্ষায় স্কিপ হওয়া কমেন্ট: N"
+  কার্ড (`pending_review` count > 0 হলেই দেখা যায়)।
+- নতুন cron script `apps/worker/src/scripts/expire-messenger-comment-skips.ts`
+  (`npm run expire-comment-skips`) — দিনে একবার বাইরে থেকে (crontab) চালানোর জন্য, দুটো কাজ:
+  (১) ৭ দিনের পুরনো pending private-reply skip `expired_7d` মার্ক করে। (২) প্রতিটা
+  workspace এ pending থাকলে একটা সারাংশ নোটিফিকেশন পাঠায় (`channel: "messenger"`) — "দিনে
+  সর্বোচ্চ একটা" স্ক্রিপ্টটা দিনে একবার চলার মাধ্যমেই নিশ্চিত হয়, কোনো in-DB dedup-ট্র্যাকিং
+  লাগেনি।
+
 ---
 
 ## M4 — পোস্ট শিডিউলার
@@ -636,12 +713,16 @@ Supabase SQL Editor এ ম্যানুয়ালি একটা কথো
 
 ### ১. Migration চালানোর ক্রম
 
-M1-M2 এর ৪টার (0040→0043) পরে শুধু একটা নতুন:
+M1-M2 এর ৪টার (0040→0043) পরে এই ক্রমে:
 
-5. `0047_messenger_comments.sql`
+5. `0047_messenger_comments.sql` — নতুন টেবিল (`messenger_comment_rules`, `messenger_comments`)
+6. `0048_messenger_comment_cooldown_per_commenter.sql` — নতুন cooldown টেবিল + RPC
+7. `0049_messenger_comment_cooldown_queue.sql` — ওই টেবিলের কলাম রিনেম + RPC রিপ্লেস
+8. `0050_messenger_comment_skips.sql` — নতুন `messenger_comment_skips` টেবিল +
+   `messenger_comments` এ `action`/`queued_at` কলাম
 
-নতুন টেবিল তৈরি করে শুধু (`messenger_comment_rules`, `messenger_comments`), কোনো বিদ্যমান
-টেবিল টাচ করে না — ঝুঁকি কম, যেকোনো সময় চালানো যায়।
+সবগুলোই additive/নতুন টেবিল বা রিনেম — কোনো বিদ্যমান ডাটা ড্রপ হয় না, ঝুঁকি কম, যেকোনো
+সময় চালানো যায়। ক্রম গুরুত্বপূর্ণ (0048 এর টেবিল 0049 এ রিনেম হয়)।
 
 ### ২. Webhook "feed" সাবস্ক্রিপশন চেক
 
@@ -730,11 +811,13 @@ npx tsx scripts/test-messenger-comment.ts <page_id> "দাম কত?"
 - worker এর লগে `[messenger-comment]` প্রিফিক্সের লাইন — কমেন্ট সেভ হওয়া, রুল ম্যাচ/না-ম্যাচ,
   cooldown, রিপ্লাই জব queue হওয়া দেখাবে।
 - `/dashboard/messenger/comments` এর লগ টেবিলে নতুন রো দেখা উচিত।
-- রিপ্লাই জব (public_reply/private_reply) **ব্যর্থ হবে** — কারণ `comment_id`/`fromPsid` নকল,
-  Meta এর আসল API এই আইডি চিনবে না। worker এর `[messenger-comment-reply]` লগে একটা Meta API
-  এরর (যেমন "Unsupported comment" বা অনুরূপ) দেখা **স্বাভাবিক ও প্রত্যাশিত** — এটা পাইপলাইনের
-  বাগ না, শুধু নকল ডাটার সীমাবদ্ধতা। রুল-ম্যাচিং/লগ/queue পর্যন্ত কাজ করলেই স্ক্রিপ্টের উদ্দেশ্য
-  পূরণ হয়েছে ধরা যায়।
+- রিপ্লাই জব queue হওয়ার পর পাঠানোর ঠিক আগে **`comment_deleted` হিসেবে স্কিপ হবে** (M3
+  ফলো-আপ ৪ এর পর থেকে) — কারণ `comment_id` নকল, worker এর নতুন `commentExists()` চেক Meta
+  কে জিজ্ঞাসা করে "এই কমেন্ট নেই" উত্তর পায়। এটা **স্বাভাবিক ও প্রত্যাশিত**, পাইপলাইনের বাগ না —
+  বরং সুবিধাজনক: `/dashboard/messenger/comments/skipped` এ একটা রো দেখা উচিত reason=
+  "কমেন্ট ডিলিট হয়ে গেছে" সহ, যেটা দিয়ে comment_deleted পাথ ফ্রিতে টেস্ট হয়ে যায় (নিচের
+  "৯. rate-limit/skip-review প্রতিটা কারণ টেস্ট করা" সেকশন দেখুন)। রুল-ম্যাচিং/লগ/queue
+  পর্যন্ত কাজ করলেই স্ক্রিপ্টের মূল উদ্দেশ্য পূরণ হয়েছে ধরা যায়।
 - signature ভুল হলে (secret মিলছে না) `401` আসবে।
 
 ### ৮. প্রোডাকশনে (VPS) চালানো
@@ -765,11 +848,50 @@ docker logs -f wa-worker
 
 - `[messenger-comment]` প্রিফিক্সের লাইন — কমেন্ট লগ হওয়া, রুল ম্যাচ/cooldown/না-ম্যাচ।
 - লিড ফোন নাম্বার দিলে dashboard এ "কমেন্টে নতুন লিড" নোটিফিকেশন তৈরি হওয়ার লগ।
-- রুল ম্যাচ করলে `[messenger-comment-reply]` প্রিফিক্সে একটা Meta API এরর — নকল `comment_id`
-  বলে এটাই প্রত্যাশিত, worker/queue ক্রাশ করছে না এটাই আসল পরীক্ষার বিষয়।
+- রুল ম্যাচ করলে `[messenger-comment-reply]` প্রিফিক্সে `skip reason=comment_deleted` —
+  নকল `comment_id` বলে এটাই প্রত্যাশিত, worker/queue ক্রাশ করছে না এটাই আসল পরীক্ষার বিষয়।
+  `/dashboard/messenger/comments/skipped` এ একটা নতুন রো দেখা উচিত।
 - ⚠️ যদি webhook থেকে কোনো লগই না আসে: webhook route টা আসলে request পেয়েছে কিনা Nginx/`wa-web`
   এর লগে (`docker logs wa-web`) `POST /api/webhooks/messenger` লাইন খুঁজুন — না পেলে ডোমেইন/SSL/
   Nginx proxy কনফিগারেশন সমস্যা, worker এর কোড না।
+
+### ৯. rate-limit/skip-review প্রতিটা কারণ টেস্ট করা
+
+`--psid`/`--post-id` ফ্ল্যাগ দুটো (একই মান বারবার দিলে "একই কাস্টমার"/"একই পোস্ট" সিমুলেট হয়)
+rate-limit টেস্ট করতে লাগবে। প্রতিটা কমান্ডের পর `/dashboard/messenger/comments/skipped`
+এ গিয়ে নতুন রো দেখুন (ফিল্টার: কারণ অনুযায়ী)। `comment_id` সবসময় নকল বলে প্রতিটা সফলভাবে
+queue হওয়া জবই শেষে `comment_deleted` এ গিয়ে থামবে — কিন্তু তার **আগে** rate-limit
+চেকগুলো সঠিকভাবে কাজ করছে কিনা সেটাই এখানে যাচাইয়ের বিষয় (queue হওয়া মানেই limit পার
+হয়ে গেছে, এটা send হওয়ার আগেই নির্ধারিত হয়)।
+
+**ধরে নিচ্ছি**: `<page_id>` কানেক্টেড পেজ, একটা keyword রুল "দাম" (public_reply, cooldown
+৫ মিনিট) আর একটা "নিবো" (private_reply) আগে থেকে বানানো আছে (`/dashboard/messenger/comments`)।
+
+| কারণ | কমান্ড |
+|---|---|
+| `rule_not_matched` | `npx tsx scripts/test-messenger-comment.ts <page_id> "elomelo kisu na"` (কোনো রুলের কিওয়ার্ড না) |
+| `bot_disabled` | PageCard এ বট বন্ধ করুন, তারপর `npx tsx scripts/test-messenger-comment.ts <page_id> "দাম"` |
+| `limit_per_customer` (public) | একই `--psid`+`--post-id` দিয়ে ৪ বার পরপর (ডিফল্ট সীমা ৩/ঘণ্টা): `npx tsx scripts/test-messenger-comment.ts <page_id> "দাম" --psid cust1 --post-id post1` (৪ বার চালান) |
+| `cooldown_active` (public) | "দাম" রুলের cooldown ৪০ মিনিটে বাড়ান (ফর্মে), তারপর একই `--psid` দিয়ে ২ বার: প্রথমটা যাবে (delay=0), দ্বিতীয়টার delay ৪০ মিনিট > ৩০ মিনিট সীমা বলে স্কিপ |
+| `cooldown_active` (private, "একবারই") | "নিবো" রুলে একই `--psid`+`--post-id` দিয়ে ২ বার — দ্বিতীয়বার এই রুল এই কাস্টমার+পোস্টে আগেই একবার পাঠিয়েছে বলে স্কিপ |
+| `private_limit` | ৩+টা আলাদা private_reply কিওয়ার্ড রুল বানান (যেমন "নিবো"/"চাই"/"লাগবে"/"অর্ডার"), একই `--psid`+`--post-id` দিয়ে ৪টা আলাদা কিওয়ার্ড-ম্যাচিং কমেন্ট পাঠান — ৪র্থটা `private_limit` এ স্কিপ হবে (কাস্টমার+পোস্টে মোট সীমা ৩) |
+| `comment_deleted` | ওপরের যেকোনো সফল (queue হওয়া) কমান্ড — send-time এ এমনিতেই এটা হবে |
+| `queue_expired` | টেস্ট করা কঠিন লাইভে (৩০ মিনিট অপেক্ষা লাগে) — সাময়িকভাবে `packages/core/messenger/comment-limits.ts` এ `SEND_STALENESS_LIMIT_MINUTES` কমিয়ে (যেমন ১) টেস্ট করে আবার ফেরত দিন |
+| `limit_per_page` | ডিফল্ট সীমা বড় (পাবলিক ১০০/ঘণ্টা, প্রাইভেট ৫০/ঘণ্টা) — ম্যানুয়ালি এত কমান্ড চালানো অবাস্তব; সাময়িকভাবে ধ্রুবক কমিয়ে টেস্ট করুন, বা কোড রিভিউয়ে ভরসা করুন |
+| `reply_failed` | স্বাভাবিকভাবে পেজের token invalid/expired হলে হয় (M2 এর token_expired ফ্লো দেখুন) — ইচ্ছাকৃতভাবে রিপ্রোডিউস করা কঠিন, কোড রিভিউয়ে ভরসা করুন |
+| `expired_7d` | একটা private-reply স্কিপ রো বানিয়ে Supabase SQL Editor এ `update messenger_comment_skips set created_at = now() - interval '8 days' where id = '<skip-id>';` চালান, তারপর `npm run expire-comment-skips` (worker কন্টেইনারে `docker exec wa-worker npm run expire-comment-skips`) — reason "expired_7d" এ বদলে যাওয়া উচিত। এছাড়া "এখন পাঠান" এ Private Reply বেছে পাঠানোর চেষ্টা করলেও সাথে সাথে বাংলায় এরর আসা উচিত |
+
+**"এখন পাঠান"/"বাদ দিন" টেস্ট**: `/dashboard/messenger/comments/skipped` এ যেকোনো
+`pending_review` রো তে "এখন পাঠান" চাপুন — action/text এডিট করে পাঠান (comment_id নকল বলে
+আবার `comment_deleted` এ স্কিপ হবে, কিন্তু status `sent_manually` এ বদলানো উচিত যেহেতু
+queue তে বসানো পর্যন্ত সফল হয়েছে)। "বাদ দিন" চাপলে status সাথে সাথে `dismissed` হওয়া উচিত।
+
+**দৈনিক cron স্ক্রিপ্ট**: `npm run expire-comment-skips` ম্যানুয়ালি চালিয়ে দেখুন আউটপুটে
+কতগুলো expire হলো আর কতগুলো workspace কে নোটিফিকেশন পাঠানো হলো তার লগ আসে কিনা। VPS এ
+দিনে একবার crontab দিয়ে শিডিউল করুন, যেমন:
+```bash
+0 3 * * * docker exec wa-worker npm run expire-comment-skips >> /var/log/messenger-skip-expiry.log 2>&1
+```
 
 ---
 

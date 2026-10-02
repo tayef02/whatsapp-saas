@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge, EmptyState } from "@/components/ui";
 import { History } from "lucide-react";
 import { formatDhakaDateTime } from "@/lib/format-date";
+import { SKIP_REASON_LABEL } from "./skip-reasons";
 
 type CommentRow = {
   id: string;
@@ -13,6 +15,7 @@ type CommentRow = {
   is_lead: boolean;
   lead_phone: string | null;
   created_at: string;
+  skip: { reason: string; status: string } | null;
 };
 
 export default function CommentLogTable({ comments }: { comments: CommentRow[] }) {
@@ -28,6 +31,7 @@ export default function CommentLogTable({ comments }: { comments: CommentRow[] }
               <TableHeaderCell>কাস্টমার</TableHeaderCell>
               <TableHeaderCell>কমেন্ট</TableHeaderCell>
               <TableHeaderCell>রিপ্লাই</TableHeaderCell>
+              <TableHeaderCell>স্কিপ কারণ</TableHeaderCell>
               <TableHeaderCell>তারিখ</TableHeaderCell>
             </TableRow>
           </TableHead>
@@ -50,6 +54,15 @@ export default function CommentLogTable({ comments }: { comments: CommentRow[] }
                     <Badge variant="success">পাঠানো হয়েছে</Badge>
                   ) : (
                     <Badge variant="neutral">রিপ্লাই যায়নি</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {c.skip ? (
+                    <Link href="/dashboard/messenger/comments/skipped" className="text-xs text-primary hover:underline">
+                      {SKIP_REASON_LABEL[c.skip.reason] ?? c.skip.reason}
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-text-muted">—</span>
                   )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-text-muted">{formatDhakaDateTime(c.created_at)}</TableCell>

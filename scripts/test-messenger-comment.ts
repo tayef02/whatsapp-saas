@@ -5,7 +5,7 @@
 // যখন আসল Meta API কে রিপ্লাই পাঠানোর চেষ্টা করবে, সেটা ব্যর্থ হবে (এটা প্রত্যাশিত, নিচে docs এ ব্যাখ্যা আছে)।
 //
 // ব্যবহার:
-//   npx tsx scripts/test-messenger-comment.ts <page_id> "<কমেন্টের লেখা>" [--url <target_url>] [--env-path <path>]
+//   npx tsx scripts/test-messenger-comment.ts <page_id> "<কমেন্টের লেখা>" [--url <target_url>] [--env-path <path>] [--psid <id>] [--post-id <id>]
 //
 // নোট: ফ্ল্যাগটার নাম ইচ্ছাকৃতভাবে "--env-path", "--env-file" না — tsx নিজেই "--env-file"
 // ফ্ল্যাগটা node এর built-in env-loader হিসেবে ধরে নেয় আর script এর কাছে পৌঁছানোর আগেই
@@ -76,12 +76,14 @@ function urlWithoutQueryForLog(url: string): string {
 
 function printUsageAndExit(): never {
   console.error(
-    'ব্যবহার: npx tsx scripts/test-messenger-comment.ts <page_id> "<কমেন্টের লেখা>" [--url <target_url>] [--env-path <path>]'
+    'ব্যবহার: npx tsx scripts/test-messenger-comment.ts <page_id> "<কমেন্টের লেখা>" [--url <target_url>] [--env-path <path>] [--psid <id>] [--post-id <id>]'
   );
   console.error("  page_id      — কানেক্টেড Messenger পেজের আসল Facebook page_id (messenger_pages টেবিলে দেখুন)");
   console.error('  কমেন্টের লেখা — কোট দিয়ে ঘিরে দিন, যেমন "দাম কত?"');
   console.error("  --url        — ডিফল্ট: " + DEFAULT_WEBHOOK_URL + " (শুধু origin দিলেও চলবে, path নিজে যুক্ত হয়)");
   console.error("  --env-path   — MESSENGER_APP_SECRET কোথা থেকে পড়বে, ডিফল্ট: apps/web/.env.local");
+  console.error("  --psid       — ডিফল্ট: প্রতিবার র‍্যান্ডম (নতুন কাস্টমার)। একই মান বারবার দিলে 'একই কাস্টমার' সিমুলেট হয় (cooldown/per-customer-limit টেস্টে দরকার)");
+  console.error("  --post-id    — ডিফল্ট: প্রতিবার র‍্যান্ডম (নতুন পোস্ট)। একই মান দিলে 'একই পোস্টে কমেন্ট' সিমুলেট হয়");
   process.exit(1);
 }
 
@@ -89,6 +91,8 @@ function parseArgs(argv: string[]) {
   const positional: string[] = [];
   let urlArg: string | undefined;
   let envPathArg: string | undefined;
+  let psidArg: string | undefined;
+  let postIdArg: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -96,16 +100,20 @@ function parseArgs(argv: string[]) {
       urlArg = argv[++i];
     } else if (arg === "--env-path") {
       envPathArg = argv[++i];
+    } else if (arg === "--psid") {
+      psidArg = argv[++i];
+    } else if (arg === "--post-id") {
+      postIdArg = argv[++i];
     } else {
       positional.push(arg);
     }
   }
 
-  return { pageId: positional[0], commentText: positional[1], urlArg, envPathArg };
+  return { pageId: positional[0], commentText: positional[1], urlArg, envPathArg, psidArg, postIdArg };
 }
 
 async function main() {
-  const { pageId, commentText, urlArg, envPathArg } = parseArgs(process.argv.slice(2));
+  const { pageId, commentText, urlArg, envPathArg, psidArg, postIdArg } = parseArgs(process.argv.slice(2));
   if (!pageId || !commentText) printUsageAndExit();
 
   const envPath = envPathArg ? path.resolve(process.cwd(), envPathArg) : DEFAULT_ENV_PATH;
@@ -121,8 +129,8 @@ async function main() {
   // নকল আইডি — আসল Meta কমেন্ট না, তাই worker যখন এই comment_id দিয়ে Meta কে রিপ্লাই
   // পাঠানোর চেষ্টা করবে সেটা ব্যর্থ হবে (এটাই প্রত্যাশিত, রুল-ম্যাচিং/লগ/queue পর্যন্ত যাচাই হলেই যথেষ্ট)
   const fakeCommentId = `test_comment_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
-  const fakePostId = `${pageId}_test_post_${Date.now()}`;
-  const fakeFromId = `test_user_${Math.floor(Math.random() * 1e9)}`;
+  const fakePostId = postIdArg || `${pageId}_test_post_${Date.now()}`;
+  const fakeFromId = psidArg || `test_user_${Math.floor(Math.random() * 1e9)}`;
 
   const payload = {
     object: "page",

@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "expire-comment-skips": "tsx src/scripts/expire-messenger-comment-skips.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.0",

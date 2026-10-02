@@ -45,16 +45,37 @@ export default async function MessengerCommentsPage({ searchParams }: { searchPa
 
   const { data: comments } = await supabase
     .from("messenger_comments")
-    .select("id, from_name, comment_text, reply_sent, reply_text, is_lead, lead_phone, created_at")
+    .select("id, comment_id, from_name, comment_text, reply_sent, reply_text, is_lead, lead_phone, created_at")
     .eq("messenger_page_id", selectedPageId)
     .order("created_at", { ascending: false })
     .limit(50);
 
+  // উপরের ৫০টা কমেন্টের মধ্যে যেগুলো স্কিপ হয়েছে, সেগুলোর কারণ/স্ট্যাটাস একসাথে এনে map বানানো —
+  // প্রতিটা রো এর জন্য আলাদা কোয়েরি না করে একটাই কোয়েরিতে (N+1 এড়াতে)
+  const commentIds = (comments ?? []).map((c) => c.comment_id);
+  const { data: skips } =
+    commentIds.length > 0
+      ? await supabase
+          .from("messenger_comment_skips")
+          .select("comment_id, reason, status")
+          .eq("messenger_page_id", selectedPageId)
+          .in("comment_id", commentIds)
+      : { data: [] };
+  const skipByCommentId = new Map((skips ?? []).map((s) => [s.comment_id, s]));
+
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-semibold text-text">কমেন্ট অটোমেশন</h1>
-        <p className="mt-1 text-xs text-text-muted">পোস্টের কমেন্টে কিওয়ার্ড/AI দিয়ে অটো-রিপ্লাই, বা Private Reply দিয়ে ইনবক্সে নিয়ে আসা।</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-text">কমেন্ট অটোমেশন</h1>
+          <p className="mt-1 text-xs text-text-muted">পোস্টের কমেন্টে কিওয়ার্ড/AI দিয়ে অটো-রিপ্লাই, বা Private Reply দিয়ে ইনবক্সে নিয়ে আসা।</p>
+        </div>
+        <Link
+          href="/dashboard/messenger/comments/skipped"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-text hover:bg-gray-50"
+        >
+          স্কিপড কমেন্ট দেখুন
+        </Link>
       </div>
 
       {pages.length > 1 && (
@@ -74,7 +95,9 @@ export default async function MessengerCommentsPage({ searchParams }: { searchPa
       )}
 
       <CommentRulesList pageId={selectedPageId} rules={rules ?? []} />
-      <CommentLogTable comments={comments ?? []} />
+      <CommentLogTable
+        comments={(comments ?? []).map((c) => ({ ...c, skip: skipByCommentId.get(c.comment_id) ?? null }))}
+      />
     </div>
   );
 }

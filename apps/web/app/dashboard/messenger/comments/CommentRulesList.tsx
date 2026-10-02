@@ -78,6 +78,12 @@ export default function CommentRulesList({ pageId, rules }: { pageId: string; ru
               করে থাকলেও কাজ করে — Meta এর নিয়ম অনুযায়ী প্রতি কমেন্টে একবারই পাঠানো যায়।
             </p>
           )}
+          {action === "public_reply" && (
+            <p className="text-xs text-text-muted">
+              টিপস: কাস্টমার আগে কখনো পেজে মেসেজ না করে থাকলে প্রথম DM "Message Requests" ফোল্ডারে চলে যেতে পারে, মূল
+              ইনবক্সে না — তাই রিপ্লাই টেক্সটে "ইনবক্স/Message Requests চেক করুন" জাতীয় কথা যোগ করা ভালো।
+            </p>
+          )}
 
           <Select name="replyMode" label="রিপ্লাই মোড" value={replyMode} onChange={(e) => setReplyMode(e.target.value)}>
             <option value="fixed">ফিক্সড টেক্সট</option>

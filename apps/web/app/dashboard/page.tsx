@@ -208,6 +208,13 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
       .eq("channel", "messenger")
       .eq("status", "pending");
 
+    // rate-limit/comment-deleted ইত্যাদি কারণে স্কিপ হওয়া কমেন্ট — পর্যালোচনার অপেক্ষায়
+    // আছে এমন কতগুলো, মালিক/দায়িত্বশীলকে জানাতে
+    const { count: pendingSkippedCommentsCount } = await supabase
+      .from("messenger_comment_skips")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending_review");
+
     // অনবোর্ডিং চেকলিস্ট — Messenger এর নিজস্ব AI সেটিংস টেবিল (Phase ১, migration 0045)
     const { data: messengerAiSettings } = await supabase
       .from("messenger_ai_settings")
@@ -264,6 +271,18 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
           <StatCard icon={<Send className="h-5 w-5" />} label="আজকের মেসেজ" value={`${todayMessagesCount ?? 0}`} />
           <StatCard icon={<MessageCircleWarning className="h-5 w-5" />} label="এজেন্ট দরকার" value={`${handedOffCount ?? 0}`} />
         </div>
+
+        {(pendingSkippedCommentsCount ?? 0) > 0 && (
+          <Link href="/dashboard/messenger/comments/skipped">
+            <Card className="flex items-center justify-between gap-3 border-warning-light bg-warning-light">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-warning" />
+                <p className="text-sm font-medium text-text">পর্যালোচনার অপেক্ষায় স্কিপ হওয়া কমেন্ট: {pendingSkippedCommentsCount}</p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-text-muted" />
+            </Card>
+          </Link>
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">

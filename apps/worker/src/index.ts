@@ -251,7 +251,9 @@ const messengerJobsWorker = new Worker(
     } else if (job.name === "download-media") {
       await processDownloadMessengerMedia(job.data);
     } else if (job.name === "comment-reply") {
-      await processMessengerCommentReply(job.data);
+      // পুরো job (শুধু job.data না) — attemptsMade/opts.attempts লাগে শেষ attempt এও ব্যর্থ
+      // হলে reply_failed স্কিপ-রো একবারই লেখার জন্য (প্রতিটা retry তে না)
+      await processMessengerCommentReply(job);
     }
   },
   { connection }

@@ -62,4 +62,9 @@ export interface MessengerProvider {
   // পাঠানো যায় — এটা এই মেথড নিজে এনফোর্স করে না, caller এর (messenger_comments এর
   // comment_id dedup) দায়িত্ব (M3)
   sendPrivateReply(pageAccessToken: string, commentId: string, text: string): Promise<{ messageId: string }>;
+
+  // রিপ্লাই পাঠানোর ঠিক আগে কমেন্টটা এখনো আছে কিনা (ইউজার ডিলিট করে দিতে পারে) — "already
+  // deleted" জাতীয় স্পষ্ট এরর পেলে false, অন্য কোনো (নেটওয়ার্ক/অস্থায়ী) এরর হলে অনিশ্চিত থাকায়
+  // throw করে (caller fail-safe হিসেবে পাঠানোর চেষ্টা চালিয়ে যায়, ভুলবশত বৈধ কমেন্ট স্কিপ না হয়)
+  commentExists(pageAccessToken: string, commentId: string): Promise<boolean>;
 }
