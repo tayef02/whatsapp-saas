@@ -45,7 +45,7 @@ export default function Sidebar({
         {/* h-16 — টপবারের সাথে উচ্চতা মিলিয়ে রাখা হয়েছে (DashboardShell.tsx এর header ও h-16) */}
         <div className="flex h-16 items-center justify-between border-b border-border px-5">
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-base font-bold text-primary">WhatsApp SaaS</p>
+            <p className="truncate text-base font-bold text-primary">Gen Z CRM</p>
             <p className="truncate text-xs text-text-muted">{workspaceName}</p>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-full p-1 text-text-muted hover:bg-gray-100 md:hidden" aria-label="মেনু বন্ধ করুন">
@@ -54,12 +54,15 @@ export default function Sidebar({
         </div>
 
         {MESSENGER_ENABLED && (
+          // চ্যানেল সুইচার — ব্র্যান্ড primary (পার্পল) থেকে ইচ্ছাকৃতভাবে আলাদা: WhatsApp সবুজ
+          // (success টোকেন), Messenger নীল (info টোকেন) — চ্যানেল-নিজস্ব চিহ্ন হিসেবে, Badge
+          // কম্পোনেন্টেও Messenger-কে info/নীল দিয়ে দেখানো হয় (OrdersList.tsx), ধারাবাহিক রাখতে
           <div className="flex gap-1 border-b border-border p-2">
             <Link
               href="/dashboard"
               onClick={onClose}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
-                channel === "whatsapp" ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+                channel === "whatsapp" ? "bg-success-light text-success" : "text-text-muted hover:bg-gray-100"
               }`}
             >
               <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
@@ -68,7 +71,7 @@ export default function Sidebar({
               href="/dashboard/messenger"
               onClick={onClose}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
-                channel === "messenger" ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+                channel === "messenger" ? "bg-info-light text-info" : "text-text-muted hover:bg-gray-100"
               }`}
             >
               <MessageSquare className="h-3.5 w-3.5" /> Messenger

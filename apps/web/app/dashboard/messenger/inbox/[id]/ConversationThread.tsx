@@ -156,7 +156,10 @@ export default function ConversationThread({
             <div
               key={m.id}
               className={`max-w-[75%] rounded-xl px-3 py-2 ${
-                m.direction === "inbound" ? "self-start border border-border bg-card" : "self-end bg-[#dcf8c6]"
+                // WhatsApp ইনবক্সে outbound বাবল #dcf8c6 (আসল WhatsApp অ্যাপের সবুজ) — এখানে
+                // ভুলে সেই একই রং কপি হয়ে গিয়েছিল। Messenger নিজস্ব নীল (info টোকেন, Badge/
+                // চ্যানেল সুইচারেও Messenger=নীল), WhatsApp-এর সবুজ না
+                m.direction === "inbound" ? "self-start border border-border bg-card" : "self-end bg-info-light"
               }`}
             >
               <p className="mb-0.5 text-[11px] text-text-muted">{senderLabel[m.sender_type] ?? m.sender_type}</p>

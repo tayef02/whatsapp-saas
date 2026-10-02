@@ -537,11 +537,14 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
 }
 
 function ChannelTab({ href, active, label }: { href: string; active: boolean; label: string }) {
+  // Sidebar.tsx এর চ্যানেল সুইচারের মতোই — WhatsApp সবুজ (success), Messenger নীল (info),
+  // ব্র্যান্ড primary (পার্পল) থেকে ইচ্ছাকৃতভাবে আলাদা
+  const activeClass = label === "Messenger" ? "bg-info-light text-info" : "bg-success-light text-success";
   return (
     <Link
       href={href}
       className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-        active ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+        active ? activeClass : "text-text-muted hover:bg-gray-100"
       }`}
     >
       {label}

@@ -8,8 +8,8 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const notoSansBengali = Noto_Sans_Bengali({ subsets: ["bengali"], variable: "--font-noto-bengali" });
 
 export const metadata: Metadata = {
-  title: "WhatsApp SaaS",
-  description: "WhatsApp মার্কেটিং প্ল্যাটফর্ম",
+  title: "Gen Z CRM",
+  description: "WhatsApp মার্কেটিং ও কাস্টমার ম্যানেজমেন্ট প্ল্যাটফর্ম — Gen Z CRM",
 };
 
 export default function RootLayout({
