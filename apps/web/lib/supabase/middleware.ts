@@ -34,13 +34,28 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // পাসওয়ার্ড রিসেট ফ্লো (/reset-password এ হ্যাশে #access_token আসে, যেটা সার্ভারে কখনো
-  // যায় না — তাই এখানে গেট করা যাবে না, ক্লায়েন্ট-সাইডে পার্স হতে দিতে হবে) আর আইনি
-  // পাবলিক পেজ — এগুলোয় লগইন ছাড়াও ঢোকা যাবে
-  const publicPaths = ["/login", "/signup", "/forgot-password", "/reset-password", "/terms", "/privacy", "/data-deletion"];
-  const isPublicRoute = publicPaths.some((p) => request.nextUrl.pathname.startsWith(p));
+  // যায় না — তাই এখানে গেট করা যাবে না, ক্লায়েন্ট-সাইডে পার্স হতে দিতে হবে), আইনি পেজ, আর
+  // নতুন (marketing) সাইটের পেজ — এগুলোয় লগইন ছাড়াও ঢোকা যাবে
+  const publicPaths = [
+    "/login",
+    "/signup",
+    "/forgot-password",
+    "/reset-password",
+    "/terms",
+    "/privacy",
+    "/data-deletion",
+    "/features",
+    "/pricing",
+    "/about",
+    "/contact",
+    "/faq",
+  ];
+  // "/" কে .startsWith() দিয়ে publicPaths এ রাখা যাবে না — তাহলে প্রতিটা পাথই ("/" দিয়ে শুরু)
+  // পাবলিক হয়ে যেত, তাই আলাদা exact-match চেক
+  const isPublicRoute = request.nextUrl.pathname === "/" || publicPaths.some((p) => request.nextUrl.pathname.startsWith(p));
 
   // লগইন না থাকলে dashboard/onboarding এ ঢুকতে দেবে না
-  if (!user && !isPublicRoute && request.nextUrl.pathname !== "/") {
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

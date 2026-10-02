@@ -33,7 +33,10 @@ export default function LoginPage() {
       setError(translateAuthError(result.error));
       return;
     }
-    router.push("/");
+    // আগে "/" এ পাঠানো হতো, যেটা নিজে থেকেই /dashboard এ রিডাইরেক্ট করত — এখন "/" পাবলিক
+    // মার্কেটিং হোমপেজ (Gen Z CRM), তাই সরাসরি /dashboard এ পাঠানো হচ্ছে। workspace/onboarding
+    // লাগলে dashboard/layout.tsx নিজেই /onboarding এ পাঠিয়ে দেয় — আচরণ অপরিবর্তিত।
+    router.push("/dashboard");
     router.refresh();
   }
 

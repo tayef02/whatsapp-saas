@@ -28,6 +28,10 @@ services:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
         NEXT_PUBLIC_MESSENGER_ENABLED: ${NEXT_PUBLIC_MESSENGER_ENABLED:-false}
+        # আগে থেকে ব্যবহার হতো কিন্তু এখানে যোগ করা হয়নি বলে production বিল্ডে কাজ করত না —
+        # website ব্রাঞ্চের মার্কেটিং সাইট বানাতে গিয়ে ঠিক করা হলো
+        NEXT_PUBLIC_SUPPORT_WHATSAPP: ${NEXT_PUBLIC_SUPPORT_WHATSAPP}
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL}
     container_name: wa-web
     env_file:
       - .env.production

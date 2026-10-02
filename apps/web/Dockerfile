@@ -21,9 +21,16 @@ COPY . .
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_MESSENGER_ENABLED
+# এই দুইটা আগে থেকেই ব্যবহার হতো (Sidebar.tsx) কিন্তু এখানে যোগ করা হয়নি বলে production
+# বিল্ডে সাপোর্ট লিংক দেখাতো না (লোকাল dev এ .env.local থেকে কাজ করত বলে ধরা পড়েনি) —
+# website ব্রাঞ্চের মার্কেটিং সাইটে ব্যবহার করতে গিয়ে ঠিক করা হলো
+ARG NEXT_PUBLIC_SUPPORT_WHATSAPP
+ARG NEXT_PUBLIC_SUPPORT_EMAIL
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_MESSENGER_ENABLED=$NEXT_PUBLIC_MESSENGER_ENABLED
+ENV NEXT_PUBLIC_SUPPORT_WHATSAPP=$NEXT_PUBLIC_SUPPORT_WHATSAPP
+ENV NEXT_PUBLIC_SUPPORT_EMAIL=$NEXT_PUBLIC_SUPPORT_EMAIL
 RUN npm run build --workspace=apps/web
 
 FROM node:24-alpine AS runner
