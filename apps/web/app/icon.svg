@@ -5,6 +5,14 @@
       <stop offset="1" stop-color="#7e22ce" />
     </linearGradient>
   </defs>
-  <rect width="24" height="24" rx="6" fill="url(#g)" />
-  <path d="M7.492 15.213a1.4 1.4 0 0 1 .066.817l-.746 2.303a0.7 0.7 0 0 0 .865.818l2.389-.699a1.4 1.4 0 0 1 .769.065 7 7 0 1 0-3.343-3.304" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <rect width="24" height="24" rx="6.5" fill="url(#g)" />
+  <g transform="translate(3.6 3.6) scale(0.7)" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round">
+    <line x1="12" y1="12" x2="5.5" y2="6.5" />
+    <line x1="12" y1="12" x2="18.5" y2="7.5" />
+    <line x1="12" y1="12" x2="12" y2="19.5" />
+    <circle cx="12" cy="12" r="3.2" fill="#ffffff" stroke="none" />
+    <circle cx="5.5" cy="6.5" r="2" fill="#ffffff" stroke="none" />
+    <circle cx="18.5" cy="7.5" r="2" fill="#ffffff" stroke="none" />
+    <circle cx="12" cy="19.5" r="2" fill="#ffffff" stroke="none" />
+  </g>
 </svg>

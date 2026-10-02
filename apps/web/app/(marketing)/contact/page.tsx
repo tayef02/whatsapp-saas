@@ -1,25 +1,32 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { MessageCircle, Mail, Clock, ArrowRight } from "lucide-react";
+import Breadcrumb from "../_components/Breadcrumb";
+import { getLang } from "../_lib/get-lang";
+import { getContent } from "../_lib/content";
 
-export const metadata: Metadata = {
-  title: "যোগাযোগ",
-  description: "Gen Z CRM নিয়ে প্রশ্ন থাকলে WhatsApp বা ইমেইলে সরাসরি যোগাযোগ করুন।",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const m = getContent(await getLang()).meta.contact;
+  return { title: m.title, description: m.description };
+}
 
 // সাপোর্ট নাম্বার/ইমেইল — .env.example দেখুন। Server Component বলে সরাসরি process.env
-// পড়া নিরাপদ, আর কোনো মান না থাকলে (লোকাল ডেভে সেট করা না থাকলে) পুরো সেকশনটাই লুকানো থাকে —
+// পড়া নিরাপদ, আর কোনো মান না থাকলে (লোকাল ডেভে সেট করা না থাকলে) সংশ্লিষ্ট কার্ডটাই লুকানো থাকে —
 // খালি/ভাঙা লিংক দেখানো হয় না।
 const supportWhatsApp = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP;
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const t = getContent(await getLang());
+  const c = t.contact;
+
   return (
     <>
+      <Breadcrumb homeLabel={t.common.home} current={c.eyebrow} />
       <section className="mx-auto max-w-xl px-4 pt-16 pb-10 text-center sm:px-6 lg:px-10">
-        <div className="mb-2.5 text-xs font-bold text-purple-600">যোগাযোগ</div>
-        <h1 className="mb-3.5 text-[28px] font-extrabold tracking-tight text-zinc-900 sm:text-[34px]">কোনো প্রশ্ন আছে?</h1>
-        <p className="text-sm text-zinc-500">সরাসরি WhatsApp বা ইমেইলে লিখুন — আমরা দ্রুত উত্তর দেওয়ার চেষ্টা করি।</p>
+        <div className="mb-2.5 text-xs font-bold text-purple-600">{c.eyebrow}</div>
+        <h1 className="mb-3.5 text-[30px] font-extrabold tracking-tight text-zinc-900 sm:text-[38px]">{c.title}</h1>
+        <p className="text-sm text-zinc-600">{c.body}</p>
       </section>
 
       <section className="mx-auto grid max-w-3xl gap-4 px-4 pb-10 sm:grid-cols-2 sm:px-6 lg:px-10">
@@ -34,29 +41,26 @@ export default function ContactPage() {
               <MessageCircle className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-[14px] font-bold text-zinc-900">WhatsApp-এ লিখুন</div>
-              <div className="mt-0.5 text-xs text-zinc-600">সবচেয়ে দ্রুত উত্তর পেতে</div>
+              <div className="text-[14px] font-bold text-zinc-900">{c.whatsappTitle}</div>
+              <div className="mt-0.5 text-xs text-zinc-600">{c.whatsappDesc}</div>
             </div>
             <span className="mt-1 flex items-center gap-1 text-xs font-bold text-emerald-700">
-              চ্যাট শুরু করুন <ArrowRight className="h-3.5 w-3.5" />
+              {c.whatsappCta} <ArrowRight className="h-3.5 w-3.5" />
             </span>
           </a>
         ) : null}
 
         {supportEmail ? (
-          <a
-            href={`mailto:${supportEmail}`}
-            className="flex flex-col items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-7 hover:border-purple-300"
-          >
+          <a href={`mailto:${supportEmail}`} className="flex flex-col items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-7 hover:border-purple-300">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-100 text-purple-600">
               <Mail className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-[14px] font-bold text-zinc-900">ইমেইল করুন</div>
-              <div className="mt-0.5 text-xs text-zinc-600">{supportEmail}</div>
+              <div className="text-[14px] font-bold text-zinc-900">{c.emailTitle}</div>
+              <div className="mt-0.5 text-xs break-all text-zinc-600">{supportEmail}</div>
             </div>
             <span className="mt-1 flex items-center gap-1 text-xs font-bold text-purple-700">
-              ইমেইল লিখুন <ArrowRight className="h-3.5 w-3.5" />
+              {c.emailCta} <ArrowRight className="h-3.5 w-3.5" />
             </span>
           </a>
         ) : null}
@@ -68,16 +72,16 @@ export default function ContactPage() {
             <Clock className="h-4 w-4" />
           </div>
           <div className="text-xs text-zinc-600">
-            <span className="font-bold text-zinc-900">সাড়া দেওয়ার সময়: </span>
-            সাধারণত একই কর্মদিবসে উত্তর দেওয়ার চেষ্টা করি।
+            <span className="font-bold text-zinc-900">{c.responseLabel}</span>
+            {c.response}
           </div>
         </div>
       </section>
 
-      <section className="bg-purple-50/40 px-4 py-14 text-center sm:px-6 lg:px-10">
-        <div className="mb-2 text-[13.5px] font-bold text-zinc-900">সাধারণ প্রশ্নের উত্তর আগে থেকেই আছে</div>
-        <Link href="/faq" className="text-sm font-bold text-purple-600 hover:underline">
-          প্রশ্নোত্তর পেজ দেখুন →
+      <section className="bg-zinc-50 px-4 py-14 text-center sm:px-6 lg:px-10">
+        <div className="mb-2 text-[13.5px] font-bold text-zinc-900">{c.faqTitle}</div>
+        <Link href="/faq" className="text-sm font-bold text-purple-700 hover:underline">
+          {c.faqLink} →
         </Link>
       </section>
     </>

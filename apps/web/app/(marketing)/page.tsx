@@ -1,229 +1,299 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { ArrowRight, Sparkles, CheckCircle2, MessageCircle } from "lucide-react";
+import { ArrowRight, Bot, CalendarClock, Check, Inbox, Megaphone, MessageCircle, MessageSquare, MessageSquareReply, ShoppingCart } from "lucide-react";
+import LogoMark from "@/components/brand/LogoMark";
 import { createClient } from "@/lib/supabase/server";
+import FaqAccordion from "./faq/FaqAccordion";
+import { ChatCards, CampaignMock, ChipsMock, ConnectMock, HeroMock, InboxMock, KnowledgeMock, OrderMock } from "./_components/Mockups";
+import { getLang } from "./_lib/get-lang";
+import { fill, getContent } from "./_lib/content";
+import { formatNumber, getPlans, lowestPaidPrice } from "./_lib/plans";
 
-export const metadata: Metadata = {
-  title: "Gen Z CRM — ক্যাম্পেইন, AI চ্যাটবট ও অর্ডার এক জায়গায়",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const m = getContent(await getLang()).meta;
+  return { title: { absolute: m.homeTitle }, description: m.homeDescription };
+}
 
-const trustItems = [
-  { title: "প্রতি নাম্বারে দৈনিক সীমা", desc: "এক নাম্বার থেকে একসাথে অনেক মেসেজ গেলে WhatsApp ব্যান করে দিতে পারে — তাই প্রতিদিনের একটা সর্বোচ্চ সীমা বাধ্যতামূলক।" },
-  { title: "ওয়ার্ম-আপ মোড", desc: "নতুন কানেক্ট করা নাম্বারে প্রথম কয়েকদিন কম মেসেজ, ধীরে ধীরে বাড়ে — ব্যান হওয়ার ঝুঁকি কমে।" },
-  { title: "র‍্যান্ডম ডিলে ও Spintax", desc: "মেসেজের মাঝে এলোমেলো বিরতি, আর {নমস্কার|হ্যালো} জাতীয় বৈচিত্র্য — বট-এর মতো লাগা এড়ায়।" },
-  { title: "STOP লিখলে অটো বন্ধ", desc: "কাস্টমার \"STOP\" বা \"বন্ধ\" লিখলে তার নাম্বারে আর কোনো ক্যাম্পেইন মেসেজ যাবে না।" },
-  { title: "ব্যান হলে সাথে সাথে জানাই", desc: "কোনো নাম্বার ডিসকানেক্ট/ব্যান হলে ইন-অ্যাপ ও ইমেইলে সাথে সাথে নোটিফিকেশন যায়।" },
-  { title: "নকল পরিসংখ্যান দেখাই না", desc: "আমরা মিথ্যা গ্রাহক সংখ্যা বা রিভিউ দেখাই না — যা সত্যি, শুধু তাই বলি।" },
-];
+const pillarIcons = [Megaphone, Bot, Inbox, ShoppingCart];
+const channelIcons = [MessageCircle, MessageSquare, MessageSquareReply, CalendarClock];
+const channelTone = ["bg-emerald-100 text-emerald-600", "bg-blue-100 text-blue-600", "bg-zinc-100 text-zinc-500", "bg-zinc-100 text-zinc-500"];
 
-const features = [
-  { title: "ক্যাম্পেইন", desc: "টেক্সট, ছবি, PDF — টেমপ্লেট দিয়ে শিডিউল করে পাঠান।" },
-  { title: "AI চ্যাটবট", desc: "আপনার নলেজ বেস থেকে কাস্টমারের প্রশ্নের উত্তর দেয়।" },
-  { title: "ইনবক্স", desc: "সব কথোপকথন এক জায়গায়, দরকারে নিজে রিপ্লাই দিন।" },
-  { title: "অর্ডার ট্র্যাকিং", desc: "চ্যাটেই অর্ডার কনফার্ম, স্ট্যাটাস বদলালে অটো আপডেট।" },
-  { title: "গ্রুপ টুলস", desc: "কিওয়ার্ড রিপ্লাই, ওয়েলকাম মেসেজ, স্প্যাম ফিল্টার — অটোমেটিক চলে।" },
-];
-
-const faqPreview = [
-  { q: "আমার WhatsApp নাম্বার ব্যান হবে না তো?", a: "প্রতি নাম্বারে দৈনিক সীমা, ওয়ার্ম-আপ মোড আর র‍্যান্ডম ডিলে — এই তিনটা মিলিয়ে ব্যানের ঝুঁকি অনেক কমে যায়।" },
-  { q: "AI বট কীভাবে উত্তর দেয়?", a: "আপনার দেওয়া নলেজ বেস (PDF/Excel) আর সিস্টেম প্রম্পট থেকেই — কোনো হার্ডকোড করা নিয়ম নেই।" },
-  { q: "পেমেন্ট কীভাবে করবো?", a: "bKash বা Nagad দিয়ে ম্যানুয়ালি — কার্ড লাগবে না।" },
-];
+const container = "mx-auto max-w-6xl px-4 sm:px-6 lg:px-10";
 
 export default async function HomePage() {
+  const lang = await getLang();
+  const t = getContent(lang);
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   const isLoggedIn = Boolean(user);
 
+  const { plans } = await getPlans();
+  const minPrice = lowestPaidPrice(plans);
+  const priceText = minPrice !== null ? formatNumber(minPrice, lang) : null;
+
+  const howMocks = [
+    <ConnectMock key="c" m={t.how.mock} sample={t.common.sample} />,
+    <KnowledgeMock key="k" m={t.how.mock} sample={t.common.sample} />,
+    <CampaignMock key="m" m={t.how.mock} sample={t.common.sample} />,
+    <InboxMock key="i" m={t.how.mock} sample={t.common.sample} />,
+    <OrderMock key="o" m={t.how.mock} sample={t.common.sample} />,
+  ];
+
+  const primaryCta = isLoggedIn ? (
+    <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-6 py-3.5 text-sm font-bold text-white hover:bg-purple-700">
+      {t.common.dashboard}
+      <ArrowRight className="h-4 w-4" />
+    </Link>
+  ) : (
+    <Link href="/signup" className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-6 py-3.5 text-sm font-bold text-white hover:bg-purple-700">
+      {t.common.startTrial}
+      <ArrowRight className="h-4 w-4" />
+    </Link>
+  );
+
   return (
     <>
       {/* হিরো */}
-      <section className="relative overflow-hidden px-4 pt-20 pb-20 sm:px-6 sm:pt-24 lg:px-10">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-56 left-1/2 h-[560px] w-[900px] -translate-x-1/3 rounded-full bg-[radial-gradient(circle,rgba(192,132,252,0.35),transparent_65%)]"
-        />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-2">
+      <section className="relative overflow-hidden bg-zinc-50 px-4 pt-16 pb-6 sm:px-6 sm:pt-20 lg:px-10">
+        <div className="relative mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[1.05fr_1fr]">
           <div>
-            <div className="mb-4 inline-flex items-center gap-1.5 text-[12.5px] font-bold text-purple-600">
-              <Sparkles className="h-3.5 w-3.5" />
-              বাংলাদেশের WhatsApp মার্কেটিং CRM
+            <div className="mb-4 text-[13px] font-bold text-purple-600">{t.hero.eyebrow}</div>
+            <h1 className="mb-5 text-[34px] leading-[1.12] font-extrabold tracking-tight text-zinc-900 sm:text-[44px] lg:text-[52px]">{t.hero.title}</h1>
+            <p className="mb-8 max-w-[540px] text-[15px] leading-relaxed text-zinc-600">{t.hero.body}</p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+              {primaryCta}
+              <a href="#how-it-works" className="text-sm font-bold text-purple-700 hover:underline">
+                {t.hero.secondary} ↓
+              </a>
             </div>
-            <h1 className="mb-5 text-[32px] leading-[1.2] font-extrabold tracking-tight text-zinc-900 sm:text-[42px] sm:leading-[1.18] lg:text-[48px]">
-              ক্যাম্পেইন পাঠান, AI দিয়ে রিপ্লাই দিন, সব এক জায়গা থেকে।
-            </h1>
-            <p className="mb-7 max-w-[480px] text-[14.5px] leading-relaxed text-zinc-600">
-              Gen Z CRM একটা অল-ইন-ওয়ান WhatsApp মার্কেটিং টুল — ক্যাম্পেইন পাঠায়, AI দিয়ে কাস্টমারের রিপ্লাই দেয়, অর্ডার ট্র্যাক করে, তাই ৬টা অ্যাপের বদলে একটাতেই সব সামলানো যায়।
-            </p>
-            {isLoggedIn ? (
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-6 py-3.5 text-sm font-bold text-white hover:bg-purple-700"
-              >
-                ড্যাশবোর্ডে যান
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            ) : (
-              <>
-                <Link
-                  href="/signup"
-                  className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-6 py-3.5 text-sm font-bold text-white hover:bg-purple-700"
-                >
-                  ৩ দিনের ফ্রি ট্রায়াল শুরু করুন
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-                <p className="mt-3 text-xs text-zinc-400">কার্ড লাগবে না · যেকোনো সময় বাতিল</p>
-              </>
-            )}
+            {!isLoggedIn && <p className="mt-3 text-xs text-zinc-500">{t.common.noCard}</p>}
           </div>
+          <HeroMock t={t.hero} sample={t.common.sample} />
+        </div>
+      </section>
 
-          <div className="relative mx-auto w-full max-w-[460px] pt-8 pb-14">
-            <div className="absolute top-0 left-10 z-10 flex items-center gap-1.5 rounded-full bg-white py-2 pr-3.5 pl-2.5 text-xs font-bold text-zinc-700 shadow-[0_10px_30px_rgba(24,24,27,0.14)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              তৈরি, শিডিউল, পাঠান, বিশ্লেষণ করুন
-            </div>
-            <div className="relative mt-9 overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-[0_30px_70px_rgba(24,24,27,0.14)]">
-              <div className="flex items-center gap-1.5 border-b border-zinc-100 px-3.5 py-2.5">
-                <span className="h-2 w-2 rounded-full bg-red-300" />
-                <span className="h-2 w-2 rounded-full bg-amber-300" />
-                <span className="h-2 w-2 rounded-full bg-emerald-300" />
-              </div>
-              <div className="flex flex-col gap-3 p-4">
-                <div className="text-xs font-bold text-zinc-900">
-                  ড্যাশবোর্ড <span className="font-medium text-zinc-400">· ক্যাম্পেইন, ইনবক্স, অর্ডার এক নজরে</span>
+      {/* চার স্তম্ভ */}
+      <section className="bg-purple-50/50 px-4 py-20 sm:px-6 lg:px-10">
+        <div className={container}>
+          <div className="mx-auto mb-12 max-w-3xl text-center">
+            <h2 className="mb-3 text-[28px] leading-tight font-extrabold tracking-tight text-zinc-900 sm:text-[38px]">{t.pillars.title}</h2>
+            <p className="text-sm leading-relaxed text-zinc-600">{t.pillars.body}</p>
+          </div>
+          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            {t.pillars.items.map((p, i) => {
+              const Icon = pillarIcons[i];
+              return (
+                <div key={p.title}>
+                  <Icon className="mb-3 h-6 w-6 text-purple-600" strokeWidth={1.8} />
+                  <div className="mb-1.5 text-[15px] font-bold text-zinc-900">{p.title}</div>
+                  <p className="text-[13px] leading-relaxed text-zinc-600">{p.desc}</p>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { v: "AI", l: "চ্যাটবট" },
-                    { v: "📦", l: "অর্ডার" },
-                    { v: "👥", l: "গ্রুপ" },
-                    { v: "📊", l: "রিপোর্ট" },
-                  ].map((s) => (
-                    <div key={s.l} className="rounded-lg bg-purple-50 p-2.5 text-center">
-                      <div className="text-sm font-extrabold text-zinc-900">{s.v}</div>
-                      <div className="mt-0.5 text-[9px] text-zinc-400">{s.l}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="rounded-lg bg-purple-50 p-3">
-                  <div className="mb-1.5 flex justify-between text-[10.5px] text-zinc-500">
-                    <span>সক্রিয় ক্যাম্পেইন</span>
-                    <span className="font-bold text-purple-700">চলছে</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-purple-100">
-                    <div className="h-full w-[62%] rounded-full bg-gradient-to-r from-purple-400 to-purple-700" />
-                  </div>
-                </div>
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* কেন বিশ্বাস করবেন */}
-      <section className="bg-[#0f0a19] px-4 py-20 sm:px-6 lg:px-10">
-        <div className="mx-auto max-w-5xl text-center">
-          <div className="mb-2.5 text-xs font-bold text-purple-300">কেন বিশ্বাস করবেন</div>
-          <h2 className="mx-auto mb-3.5 max-w-xl text-2xl font-extrabold tracking-tight text-white sm:text-[30px]">আপনার নাম্বার ব্যান ঠেকাতে তৈরি</h2>
-          <p className="mx-auto mb-11 max-w-lg text-sm leading-relaxed text-[#c4b5d4]">
-            আমরা মিথ্যা গ্রাহক সংখ্যা দেখাই না — যা সত্যি, শুধু তাই বলি। নিচের প্রতিটা নিরাপত্তা ফিচার প্রোডাক্টেই আছে।
-          </p>
-          <div className="grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-3">
-            {trustItems.map((t) => (
-              <div key={t.title} className="rounded-2xl border border-white/10 bg-white/5 p-5">
-                <div className="mb-3.5 flex h-[34px] w-[34px] items-center justify-center rounded-lg bg-purple-300/15">
-                  <CheckCircle2 className="h-4 w-4 text-purple-300" />
-                </div>
-                <div className="mb-1.5 text-[13.5px] font-bold text-white">{t.title}</div>
-                <div className="text-xs leading-relaxed text-[#a89bb8]">{t.desc}</div>
+      {/* সমস্যা */}
+      <section className="px-4 py-20 sm:px-6 lg:px-10">
+        <div className={`${container} grid items-center gap-12 lg:grid-cols-2`}>
+          <div>
+            <h2 className="mb-4 text-[28px] leading-tight font-extrabold tracking-tight text-zinc-900 sm:text-[36px]">{t.problem.title}</h2>
+            <p className="mb-5 text-sm leading-relaxed text-zinc-600">{t.problem.body}</p>
+            <ul className="flex flex-col gap-2.5">
+              {t.problem.bullets.map((b) => (
+                <li key={b} className="flex gap-2.5 text-sm text-zinc-700">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-500" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <ChipsMock t={t.problem} />
+        </div>
+      </section>
+
+      {/* AI রিপ্লাই কার্ড */}
+      <section className="overflow-hidden px-4 pb-24 sm:px-6 lg:px-10">
+        <div className={`${container} text-center`}>
+          <div className="mb-3 text-[11.5px] font-bold tracking-wide text-purple-600 uppercase">{t.aiCards.eyebrow}</div>
+          <h2 className="mx-auto mb-4 max-w-2xl text-[28px] leading-tight font-extrabold tracking-tight text-zinc-900 sm:text-[38px]">{t.aiCards.title}</h2>
+          <p className="mx-auto max-w-2xl text-sm leading-relaxed text-zinc-600">{t.aiCards.body}</p>
+          <ChatCards t={t.aiCards} sample={t.common.sample} />
+        </div>
+      </section>
+
+      {/* কেন অটোমেট */}
+      <section className="bg-zinc-50 px-4 py-20 sm:px-6 lg:px-10">
+        <div className={container}>
+          <div className="mx-auto mb-10 max-w-2xl text-center">
+            <h2 className="mb-3 text-[26px] font-extrabold tracking-tight text-zinc-900 sm:text-[34px]">{t.why.title}</h2>
+            <p className="text-sm text-zinc-600">{t.why.body}</p>
+          </div>
+          <div className="grid gap-5 md:grid-cols-3">
+            {t.why.cards.map((c, i) => (
+              <div key={c.title} className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <div className="mb-3 text-lg font-extrabold text-purple-600">{i + 1}</div>
+                <div className="mb-3 text-[15px] leading-snug font-bold text-zinc-900">{c.title}</div>
+                <ul className="flex flex-col gap-2">
+                  {c.points.map((p) => (
+                    <li key={p} className="flex gap-2 text-[13px] text-zinc-600">
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-600" strokeWidth={2.5} />
+                      {p}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
+          <div className="mt-10 flex flex-col items-center gap-3 text-center">
+            <p className="text-sm font-bold text-zinc-900">{t.why.closing}</p>
+            {primaryCta}
+            {!isLoggedIn && <p className="text-xs text-zinc-500">{t.common.noCard}</p>}
+          </div>
         </div>
       </section>
 
-      {/* ফিচার */}
-      <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-10">
-        <div className="mb-12 text-center">
-          <div className="mb-2.5 text-xs font-bold text-purple-600">ফিচার</div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-[30px]">যা যা করতে পারবেন</h2>
+      {/* গাঢ় ব্যান্ড */}
+      <section className="bg-slate-900 px-4 py-20 sm:px-6 lg:px-10">
+        <div className={container}>
+          <div className="mb-3 text-[11px] font-bold tracking-wide text-purple-300">{t.band.eyebrow}</div>
+          <h2 className="mb-10 max-w-2xl text-[26px] leading-tight font-extrabold tracking-tight text-white sm:text-[34px]">
+            {priceText ? fill(t.band.titleWithPrice, { price: priceText }) : t.band.titleNoPrice}
+          </h2>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {t.band.items.map((it) => (
+              <div key={it.title} className="border-t border-white/20 pt-4">
+                <div className="mb-2 text-[14px] font-bold text-white">{it.title}</div>
+                <p className="text-[12.5px] leading-relaxed text-slate-300">{it.desc}</p>
+              </div>
+            ))}
+            {priceText && (
+              <div className="border-t border-purple-400 pt-4">
+                <div className="text-[11px] font-bold text-purple-300">{t.band.priceLabel}</div>
+                <div className="mt-1 flex items-baseline gap-1 text-white">
+                  <span className="text-4xl font-extrabold">৳{priceText}</span>
+                  <span className="text-xs text-slate-300">{t.band.perMonth}</span>
+                </div>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-slate-300">{t.band.priceNote}</p>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="grid gap-[18px] sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f) => (
-            <div key={f.title} className="rounded-2xl border border-zinc-100 p-6 hover:border-purple-200">
-              <div className="mb-4 text-lg font-extrabold text-purple-600">{f.title[0]}</div>
-              <div className="mb-1.5 text-[14.5px] font-bold text-zinc-900">{f.title}</div>
-              <div className="text-xs leading-relaxed text-zinc-500">{f.desc}</div>
+      </section>
+
+      {/* কীভাবে কাজ করে */}
+      <section id="how-it-works" className="scroll-mt-20 px-4 pt-20 sm:px-6 lg:px-10">
+        <div className={`${container} mb-12 flex flex-col items-center text-center`}>
+          <LogoMark size={44} className="mb-4" />
+          <h2 className="mb-3 max-w-2xl text-[28px] leading-tight font-extrabold tracking-tight text-zinc-900 sm:text-[36px]">{t.how.title}</h2>
+          <p className="max-w-xl text-sm leading-relaxed text-zinc-600">{t.how.body}</p>
+          <Link href="/features" className="mt-3 text-sm font-bold text-purple-700 hover:underline">
+            {t.how.link} →
+          </Link>
+        </div>
+        {t.how.rows.map((row, i) => (
+          <div key={row.label} className={i % 2 === 0 ? "bg-white" : "bg-zinc-50"}>
+            <div className={`${container} grid items-center gap-10 py-14 lg:grid-cols-2 lg:gap-16`}>
+              <div>
+                <div className="mb-2 text-[11.5px] font-bold text-purple-600">{row.label}</div>
+                <h3 className="mb-3 text-[24px] leading-tight font-extrabold tracking-tight text-zinc-900 sm:text-[30px]">{row.title}</h3>
+                <p className="mb-3 max-w-md text-sm leading-relaxed text-zinc-600">{row.body}</p>
+                <Link href="/features" className="text-[13px] font-bold text-purple-700 hover:underline">
+                  {row.link} →
+                </Link>
+              </div>
+              <div className="mx-auto w-full max-w-md">{howMocks[i]}</div>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* ২×২ টেক্সট গ্রিড */}
+      <section className="bg-zinc-50 px-4 py-20 sm:px-6 lg:px-10">
+        <div className={`${container} grid gap-x-12 gap-y-10 sm:grid-cols-2`}>
+          {t.grid.map((g) => (
+            <div key={g.title}>
+              <span className="mb-3 block h-0.5 w-6 bg-purple-500" />
+              <div className="mb-2 text-[17px] leading-snug font-extrabold text-zinc-900">{g.title}</div>
+              <p className="text-[13.5px] leading-relaxed text-zinc-600">{g.desc}</p>
             </div>
           ))}
-        </div>
-        <div className="mt-8 text-center">
-          <Link href="/features" className="text-sm font-bold text-purple-600 hover:underline">
-            সব ফিচার দেখুন →
-          </Link>
         </div>
       </section>
 
       {/* চ্যানেল */}
-      <section className="bg-purple-50/40 px-4 py-[72px] sm:px-6 lg:px-10">
-        <div className="mx-auto max-w-3xl text-center mb-10">
-          <div className="mb-2.5 text-xs font-bold text-purple-600">চ্যানেল</div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-[28px]">যেখানে আপনার কাস্টমার আছে</h2>
-        </div>
-        <div className="mx-auto grid max-w-3xl gap-[18px] sm:grid-cols-2">
-          <div className="relative rounded-2xl border-[1.5px] border-purple-300 bg-white p-6">
-            <span className="absolute -top-2.5 right-5 rounded-full bg-emerald-500 px-2.5 py-0.5 text-[10px] font-bold text-white">লাইভ</span>
-            <div className="mb-3.5 flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
-              <MessageCircle className="h-5 w-5" />
-            </div>
-            <div className="mb-1.5 text-base font-extrabold text-zinc-900">WhatsApp</div>
-            <p className="text-xs leading-relaxed text-zinc-500">ক্যাম্পেইন, AI চ্যাটবট, গ্রুপ অটোমেশন, অর্ডার — সবকিছু চালু আছে।</p>
-          </div>
-          <div className="relative rounded-2xl border border-zinc-100 bg-white p-6 opacity-75">
-            <span className="absolute -top-2.5 right-5 rounded-full bg-zinc-500 px-2.5 py-0.5 text-[10px] font-bold text-white">শীঘ্রই আসছে</span>
-            <div className="mb-3.5 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-              <MessageCircle className="h-5 w-5" />
-            </div>
-            <div className="mb-1.5 text-base font-extrabold text-zinc-900">Messenger</div>
-            <p className="text-xs leading-relaxed text-zinc-500">কমেন্ট অটোমেশন, পোস্ট শিডিউলার, ইনবক্স — টেস্টিং চলছে।</p>
+      <section className="px-4 py-20 sm:px-6 lg:px-10">
+        <div className={`${container} text-center`}>
+          <h2 className="mx-auto mb-3 max-w-2xl text-[26px] leading-tight font-extrabold tracking-tight text-zinc-900 sm:text-[34px]">{t.channels.title}</h2>
+          <p className="mb-10 text-sm text-zinc-600">{t.channels.body}</p>
+          <div className="mx-auto grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {t.channels.items.map((c, i) => {
+              const Icon = channelIcons[i];
+              const live = c.status === "live";
+              return (
+                <div key={c.name} className={`relative rounded-2xl p-5 text-left ${live ? "border-[1.5px] border-purple-300 bg-white" : "border border-zinc-200 bg-white/70"}`}>
+                  <span className={`absolute -top-2.5 right-4 rounded-full px-2.5 py-0.5 text-[10px] font-bold text-white ${live ? "bg-emerald-500" : "bg-zinc-500"}`}>
+                    {live ? t.channels.live : t.channels.soon}
+                  </span>
+                  <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-lg ${channelTone[i]}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="mb-1 text-[14px] font-extrabold text-zinc-900">{c.name}</div>
+                  <p className="text-xs leading-relaxed text-zinc-500">{c.desc}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* মূল্য টিজার */}
-      <section className="mx-auto max-w-5xl px-4 py-20 text-center sm:px-6 lg:px-10">
-        <div className="mb-2.5 text-xs font-bold text-purple-600">মূল্য</div>
-        <h2 className="mb-3 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-[30px]">যত পাঠাবেন, ততটুকুর দাম</h2>
-        <p className="mx-auto mb-10 max-w-md text-sm text-zinc-500">৭ দিন বিনামূল্যে ট্রায়াল, তারপর bKash/Nagad দিয়ে সহজে পেমেন্ট।</p>
-        <Link
-          href="/pricing"
-          className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-6 py-3.5 text-sm font-bold text-white hover:bg-purple-700"
-        >
-          সব প্ল্যান ও দাম দেখুন
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </section>
-
-      {/* FAQ প্রিভিউ */}
-      <section className="bg-purple-50/40 px-4 py-[72px] sm:px-6 lg:px-10">
-        <div className="mx-auto max-w-2xl">
-          <div className="mb-9 text-center">
-            <div className="mb-2.5 text-xs font-bold text-purple-600">প্রশ্নোত্তর</div>
-            <h2 className="text-xl font-extrabold tracking-tight text-zinc-900 sm:text-2xl">সাধারণ কিছু প্রশ্ন</h2>
+      {/* শুরু করুন + মূল্য কার্ড */}
+      <section className="bg-zinc-50 px-4 py-20 sm:px-6 lg:px-10">
+        <div className={`${container} grid items-center gap-10 lg:grid-cols-2`}>
+          <div>
+            <h2 className="mb-3 text-[28px] leading-tight font-extrabold tracking-tight text-zinc-900 sm:text-[36px]">{t.start.title}</h2>
+            <p className="mb-5 max-w-md text-sm leading-relaxed text-zinc-600">{priceText ? fill(t.start.bodyWithPrice, { price: priceText }) : t.start.bodyNoPrice}</p>
+            <ul className="flex flex-col gap-2.5">
+              {t.start.bullets.map((b) => (
+                <li key={b} className="flex gap-2.5 text-sm text-zinc-700">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-purple-600" strokeWidth={2.5} />
+                  {b}
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="flex flex-col gap-2.5">
-            {faqPreview.map((q) => (
-              <div key={q.q} className="rounded-xl border border-zinc-100 bg-white p-5">
-                <div className="mb-1.5 text-[13.5px] font-bold text-zinc-900">{q.q}</div>
-                <div className="text-xs leading-relaxed text-zinc-500">{q.a}</div>
+          <div className="mx-auto w-full max-w-sm rounded-2xl border-2 border-purple-500 bg-white p-6 shadow-[0_20px_50px_rgba(147,51,234,0.15)]">
+            <div className="mb-1 text-[11px] font-bold text-purple-600">{t.start.cardLabel}</div>
+            {priceText && (
+              <div className="mb-1 flex items-baseline gap-1.5 text-zinc-900">
+                <span className="text-xs text-zinc-500">{t.start.from}</span>
+                <span className="text-4xl font-extrabold">৳{priceText}</span>
+                <span className="text-xs text-zinc-500">{t.start.perMonth}</span>
               </div>
-            ))}
+            )}
+            <div className="mb-5 text-xs text-zinc-500">{t.start.cardNote}</div>
+            <Link href={isLoggedIn ? "/dashboard" : "/signup"} className="block rounded-lg bg-purple-600 py-3 text-center text-sm font-bold text-white hover:bg-purple-700">
+              {isLoggedIn ? t.common.dashboard : t.start.cta}
+            </Link>
+            <div className="mt-2 text-center text-[11px] text-zinc-400">{t.start.cardFoot}</div>
+            <Link href="/pricing" className="mt-3 block text-center text-xs font-bold text-purple-700 hover:underline">
+              {t.common.seeAllPlans} →
+            </Link>
           </div>
-          <div className="mt-5 text-center">
-            <Link href="/faq" className="text-sm font-bold text-purple-600 hover:underline">
-              সব প্রশ্ন দেখুন →
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="px-4 py-20 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-2xl">
+          <h2 className="mb-8 text-center text-[26px] font-extrabold tracking-tight text-zinc-900 sm:text-[32px]">{t.faqSection.title}</h2>
+          <FaqAccordion items={t.faq.items.slice(0, 6)} />
+          <div className="mt-6 text-center">
+            <Link href="/faq" className="text-sm font-bold text-purple-700 hover:underline">
+              {t.common.seeAllQuestions} →
             </Link>
           </div>
         </div>
@@ -231,13 +301,17 @@ export default async function HomePage() {
 
       {/* শেষ CTA */}
       {!isLoggedIn && (
-        <section className="bg-gradient-to-br from-purple-900 to-purple-600 px-4 py-20 text-center sm:px-6 lg:px-10">
-          <h2 className="mx-auto mb-3.5 max-w-lg text-2xl font-extrabold tracking-tight text-white sm:text-[30px]">আজই শুরু করুন, ৩ দিন সম্পূর্ণ ফ্রি</h2>
-          <p className="mx-auto mb-6 max-w-sm text-sm text-purple-100">কার্ড লাগবে না। যেকোনো সময় বাতিল করতে পারবেন।</p>
-          <Link href="/signup" className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3.5 text-sm font-bold text-purple-700 hover:bg-purple-50">
-            ফ্রি ট্রায়াল শুরু করুন
+        <section className="bg-purple-700 px-4 py-20 text-center sm:px-6 lg:px-10">
+          <div className="mx-auto mb-4 flex justify-center">
+            <LogoMark size={40} className="ring-2 ring-white/30" />
+          </div>
+          <h2 className="mb-2 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{t.finalCta.title}</h2>
+          <p className="mx-auto mb-6 max-w-md text-sm text-purple-100">{t.finalCta.body}</p>
+          <Link href="/signup" className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-6 py-3.5 text-sm font-bold text-zinc-900 hover:bg-amber-300">
+            {t.start.cta}
             <ArrowRight className="h-4 w-4" />
           </Link>
+          <p className="mt-3 text-xs text-purple-200">{t.common.noCard}</p>
         </section>
       )}
     </>

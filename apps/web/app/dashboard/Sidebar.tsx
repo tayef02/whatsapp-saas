@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X, MessageCircle, MessageSquare, LifeBuoy } from "lucide-react";
+import LogoMark from "@/components/brand/LogoMark";
 import { getNavGroups, isNavItemActive, getChannelFromPathname, type Channel } from "./nav-config";
 
 // ফ্ল্যাগ বন্ধ থাকলে (ডিফল্ট) চ্যানেল সুইচার সম্পূর্ণ লুকানো, সবসময় WhatsApp — বিটা ইউজার
@@ -44,9 +45,12 @@ export default function Sidebar({
       >
         {/* h-16 — টপবারের সাথে উচ্চতা মিলিয়ে রাখা হয়েছে (DashboardShell.tsx এর header ও h-16) */}
         <div className="flex h-16 items-center justify-between border-b border-border px-5">
-          <div className="min-w-0 leading-tight">
-            <p className="truncate text-base font-bold text-primary">Gen Z CRM</p>
-            <p className="truncate text-xs text-text-muted">{workspaceName}</p>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <LogoMark size={32} />
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-base font-bold text-primary">Gen Z CRM</p>
+              <p className="truncate text-xs text-text-muted">{workspaceName}</p>
+            </div>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-full p-1 text-text-muted hover:bg-gray-100 md:hidden" aria-label="মেনু বন্ধ করুন">
             <X className="h-5 w-5" />

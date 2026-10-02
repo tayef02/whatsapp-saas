@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageCircle } from "lucide-react";
+import LogoMark from "@/components/brand/LogoMark";
 
 // /terms, /privacy, /data-deletion — তিনটাই পাবলিক পেজ (middleware.ts এ allow-list করা),
 // সাইডবার/ড্যাশবোর্ড শেল ছাড়া একদম সাধারণ একটা কনটেইনার। লগইন ছাড়াই যে কেউ দেখতে পারবে।
@@ -9,9 +9,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
       <header className="border-b border-border bg-card px-4 py-4">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-light text-primary">
-              <MessageCircle className="h-4 w-4" />
-            </div>
+            <LogoMark size={32} />
             <span className="text-sm font-bold text-primary">Gen Z CRM</span>
           </Link>
         </div>
