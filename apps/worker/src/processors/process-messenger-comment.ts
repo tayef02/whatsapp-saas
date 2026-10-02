@@ -119,27 +119,36 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
     return;
   }
 
-  // atomic cooldown — single conditional UPDATE, WhatsApp group keyword rules এর ঠিক একই
-  // প্যাটার্ন (দুইটা প্রায়-একসাথে আসা কমেন্ট একই রুলে ম্যাচ করলেও একটাই রিপ্লাই যাবে)
-  const cooldownCutoff = new Date(Date.now() - matched.cooldown_seconds * 1000).toISOString();
-  const { data: won, error: cooldownError } = await supabase
-    .from("messenger_comment_rules")
-    .update({ last_triggered_at: new Date().toISOString() })
-    .eq("id", matched.id)
-    .or(`last_triggered_at.is.null,last_triggered_at.lt.${cooldownCutoff}`)
-    .select("id")
-    .maybeSingle();
+  // cooldown প্রতি-কমেন্টকারী (per rule+from_psid) আলাদা — আগে পুরো রুলের জন্য একটাই global
+  // cooldown ছিল, ফলে একজন কাস্টমার রিপ্লাই পেলে পরের cooldown_seconds সময়ে অন্য কাস্টমাররা
+  // রিপ্লাই পেত না (ইউজার রিপোর্ট করেছিলেন, migration 0048 এ ঠিক করা হয়েছে)। fromPsid না থাকা
+  // edge case এ একটা শেয়ার্ড "unknown" bucket ব্যবহার হয় (আগের per-rule আচরণের সমতুল্য)।
+  // atomic claim RPC — single SQL statement এ conditional UPSERT, দুইটা প্রায়-একসাথে আসা একই
+  // কমেন্টকারীর কমেন্ট একই রুলে ম্যাচ করলেও একটাই রিপ্লাই যাবে
+  const cooldownKey = data.fromPsid ?? "unknown";
+  const { data: won, error: cooldownError } = await supabase.rpc("try_claim_comment_rule_cooldown", {
+    p_rule_id: matched.id,
+    p_from_psid: cooldownKey,
+    p_cooldown_seconds: matched.cooldown_seconds,
+  });
 
-  // cooldownError থাকলেও won স্বাভাবিকভাবেই null/undefined হবে, নিচের !won শাখাতেই পড়বে —
-  // কিন্তু "কুলডাউন সক্রিয়" (স্বাভাবিক, no-op) আর "আপডেট আসলে ব্যর্থ হয়েছে" (infra সমস্যা) এই
-  // দুটো কেস লগে আলাদা দেখা দরকার, নাহলে চুপচাপ একটা real error "cooldown" হিসেবে চাপা পড়ে যাবে
   if (cooldownError) {
-    console.error(`[messenger-comment] cooldown UPDATE ব্যর্থ rule=${matched.id} page=${page.id}: ${cooldownError.message}`);
+    console.error(`[messenger-comment] cooldown claim RPC ব্যর্থ rule=${matched.id} page=${page.id}: ${cooldownError.message}`);
   }
 
   if (!won) {
-    console.log(`[messenger-comment] skip reason=cooldown_active rule=${matched.id} page=${page.id} — এই রুল এখনো cooldown এর মধ্যে`);
+    console.log(`[messenger-comment] skip reason=cooldown_active rule=${matched.id} page=${page.id} — এই কমেন্টকারী এখনো এই রুলের cooldown এর মধ্যে`);
     return;
+  }
+
+  // last_triggered_at এখন শুধু ড্যাশবোর্ডে "সর্বশেষ ট্রিগার" দেখানোর তথ্য — gating logic উপরের
+  // per-commenter RPC করে, তাই এখানে ব্যর্থ হলেও (non-critical) শুধু লগ, রিপ্লাই আটকাবে না
+  const { error: lastTriggeredError } = await supabase
+    .from("messenger_comment_rules")
+    .update({ last_triggered_at: new Date().toISOString() })
+    .eq("id", matched.id);
+  if (lastTriggeredError) {
+    console.error(`[messenger-comment] last_triggered_at আপডেট ব্যর্থ (non-critical) rule=${matched.id}: ${lastTriggeredError.message}`);
   }
 
   let replyText: string | null = null;
