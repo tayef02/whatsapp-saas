@@ -1,6 +1,7 @@
 import type { Job } from "bullmq";
 import { getSupabase } from "../lib/supabase";
 import { writeMessengerCommentSkip } from "../lib/messenger-comment-skip";
+import { countMessengerMessageSent } from "../lib/messenger-usage";
 import { MESSENGER_COMMENT_LIMITS } from "@whatsapp-saas/core/messenger/comment-limits";
 import type { MessengerCommentReplyJobData } from "@whatsapp-saas/core/messenger/types";
 import { MetaMessengerProvider } from "@whatsapp-saas/core/providers/messenger";
@@ -145,6 +146,11 @@ export async function processMessengerCommentReply(job: Job<MessengerCommentRepl
     }
     throw err;
   }
+
+  // রিপ্লাই সত্যিই চলে গেছে (পাবলিক বা প্রাইভেট) — প্ল্যানের মাসিক ব্যবহারে ঠিক একবার গোনা।
+  // প্রাইভেট রিপ্লাইয়ে উপরে ইনবক্সে যে outbound রো লেখা হয়েছে সেটা আলাদা করে গোনা হয় না।
+  // শুধু গণনা, ব্যর্থ হলে throw না (নইলে retry এ একই রিপ্লাই আবার যেত)
+  await countMessengerMessageSent(supabase, page?.workspace_id, data.action);
 
   const { data: updatedRows, error: updateError } = await supabase
     .from("messenger_comments")

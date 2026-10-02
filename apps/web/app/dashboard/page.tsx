@@ -79,7 +79,7 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   const { data: membership } = await supabase
     .from("workspace_members")
     .select(
-      "workspace_id, workspaces(daily_message_limit, messages_used_this_cycle, subscription_expires_at, plans(name, monthly_message_limit))"
+      "workspace_id, workspaces(daily_message_limit, messages_used_this_cycle, messenger_messages_used_this_cycle, subscription_expires_at, plans(name, monthly_message_limit))"
     )
     .limit(1)
     .maybeSingle();
@@ -87,12 +87,17 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
   const workspace = membership?.workspaces as unknown as {
     daily_message_limit: number;
     messages_used_this_cycle: number;
+    messenger_messages_used_this_cycle: number;
     subscription_expires_at: string | null;
     plans: { name: string; monthly_message_limit: number } | null;
   } | null;
 
   const monthlyLimit = workspace?.plans?.monthly_message_limit ?? 0;
-  const usedThisCycle = workspace?.messages_used_this_cycle ?? 0;
+  // মোট ব্যবহার = WhatsApp (ক্যাম্পেইন) + Messenger (বট/এজেন্ট/কমেন্ট রিপ্লাই) — দুটো আলাদা কাউন্টার,
+  // শুধু দেখানোর জন্য যোগ করা হচ্ছে (ক্যাম্পেইন scheduler এখনো শুধু WhatsApp কাউন্টার দেখে)
+  const whatsappUsed = workspace?.messages_used_this_cycle ?? 0;
+  const messengerUsed = workspace?.messenger_messages_used_this_cycle ?? 0;
+  const usedThisCycle = whatsappUsed + messengerUsed;
   // rawPct রাউন্ড করার আগেই রাখা হচ্ছে — নাহলে 46/30000 এর মতো ছোট ব্যবহার Math.round এ 0% দেখাত,
   // যেটা "কিছুই ব্যবহার হয়নি" মনে হতে পারত
   const rawUsagePct = monthlyLimit > 0 ? (usedThisCycle / monthlyLimit) * 100 : 0;
@@ -126,9 +131,6 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
     </div>
   );
 
-  // ⚠️ এই কাউন্ট এখন পর্যন্ত শুধু WhatsApp ক্যাম্পেইন/ওয়েবহুক কোড ইনক্রিমেন্ট করে
-  // (apply_message_status RPC) — Messenger এর কোনো মেসেজ এখনো এই কোটায় গোনা হয় না (জানা
-  // সীমাবদ্ধতা, docs/messenger-plan.md এর Phase ১ সেকশনে বিস্তারিত)
   const planUsageCard = (
     <Card className="self-start">
       <p className="mb-3 text-sm font-semibold text-text">প্ল্যান ব্যবহার</p>
@@ -146,7 +148,9 @@ export default async function DashboardHome({ searchParams }: { searchParams: Pr
               style={{ width: `${usageBarWidthPct}%` }}
             />
           </div>
-          <p className="mt-2 text-xs text-text-muted">{usagePctLabel} ব্যবহার হয়েছে এই সাইকেলে (এখন শুধু WhatsApp মেসেজ গোনা হয়)</p>
+          <p className="mt-2 text-xs text-text-muted">
+            {usagePctLabel} ব্যবহার হয়েছে এই সাইকেলে — WhatsApp {whatsappUsed.toLocaleString("bn-BD")} · Messenger {messengerUsed.toLocaleString("bn-BD")}
+          </p>
           <Link href="/dashboard/billing" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
             প্ল্যান দেখুন <ArrowRight className="h-3 w-3" />
           </Link>

@@ -35,6 +35,8 @@ export async function activateSubscription(
       subscription_started_at: now.toISOString(),
       subscription_expires_at: newExpiry.toISOString(),
       messages_used_this_cycle: 0,
+      // Messenger এর আলাদা কাউন্টারও নতুন সাইকেলে ০ (migration 0053)
+      messenger_messages_used_this_cycle: 0,
     })
     .eq("id", workspaceId);
 

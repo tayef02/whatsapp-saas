@@ -34,6 +34,7 @@ interface Props {
     subscription_status: string;
     subscription_expires_at: string | null;
     messages_used_this_cycle: number;
+    messenger_messages_used_this_cycle: number;
     plans: { name: string; monthly_message_limit: number } | null;
   } | null;
   payments: Payment[];
@@ -91,7 +92,10 @@ export default function BillingForm({ plans, currentSubscription, payments, bkas
   }
 
   const monthlyLimit = currentSubscription?.plans?.monthly_message_limit ?? 0;
-  const usedThisCycle = currentSubscription?.messages_used_this_cycle ?? 0;
+  // মোট = WhatsApp (ক্যাম্পেইন) + Messenger — চ্যানেল-ভিত্তিক ভাগ নিচে আলাদা দেখানো হয়
+  const whatsappUsed = currentSubscription?.messages_used_this_cycle ?? 0;
+  const messengerUsed = currentSubscription?.messenger_messages_used_this_cycle ?? 0;
+  const usedThisCycle = whatsappUsed + messengerUsed;
   const rawUsagePct = monthlyLimit > 0 ? (usedThisCycle / monthlyLimit) * 100 : 0;
   const usagePct = Math.min(100, Math.round(rawUsagePct));
   const usagePctLabel = usedThisCycle > 0 && rawUsagePct < 1 ? "<১%" : `${usagePct}%`;
@@ -127,6 +131,20 @@ export default function BillingForm({ plans, currentSubscription, payments, bkas
                 />
               </div>
               <p className="mt-1.5 text-xs text-text-muted">{usagePctLabel} ব্যবহার হয়েছে</p>
+              {/* চ্যানেল-ভিত্তিক ভাগ — রং চ্যানেল-চিহ্নের নিয়মে (WhatsApp সবুজ, Messenger নীল) */}
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-xs">
+                <div className="flex items-center gap-1.5 text-text-muted">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-success" />
+                  WhatsApp <span className="ml-auto font-medium text-text">{whatsappUsed.toLocaleString("bn-BD")}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-text-muted">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-info" />
+                  Messenger <span className="ml-auto font-medium text-text">{messengerUsed.toLocaleString("bn-BD")}</span>
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-text-muted">
+                Messenger মেসেজ (বট/এজেন্ট রিপ্লাই ও কমেন্ট রিপ্লাই) শুধু গণনা হয়, কোটার কারণে Messenger রিপ্লাই কখনো আটকায় না।
+              </p>
             </>
           )}
         </Card>

@@ -1,5 +1,6 @@
 import { getSupabase } from "../lib/supabase";
 import { createNotification } from "../lib/notify";
+import { countMessengerMessageSent } from "../lib/messenger-usage";
 import type { MessengerReplyJobData } from "@whatsapp-saas/core/messenger/types";
 import { MetaMessengerProvider } from "@whatsapp-saas/core/providers/messenger";
 
@@ -113,6 +114,16 @@ export async function processMessengerReply(data: MessengerReplyJobData) {
 
     throw err; // transient/network এরর — retry হওয়া উচিত
   }
+
+  // মেসেজ সত্যিই চলে গেছে — প্ল্যানের মাসিক ব্যবহারে গোনা (বট/এজেন্ট/অর্ডার-নোটিফিকেশন সবই)।
+  // শুধু গণনা, ব্যর্থ হলে throw না (নইলে retry এ একই মেসেজ আবার যেত)
+  const { data: pageRow, error: pageError } = await supabase
+    .from("messenger_pages")
+    .select("workspace_id")
+    .eq("id", data.messengerPageId)
+    .maybeSingle();
+  if (pageError) console.error(`[messenger-reply] workspace খুঁজে পেতে ব্যর্থ (ব্যবহার গণনার জন্য) page=${data.messengerPageId}: ${pageError.message}`);
+  await countMessengerMessageSent(supabase, pageRow?.workspace_id, "reply");
 
   const { error: insertError } = await supabase.from("messenger_messages").insert({
     conversation_id: data.conversationId,

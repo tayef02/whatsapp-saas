@@ -13,7 +13,7 @@ export default async function BillingPage() {
   const { data: membership } = await supabase
     .from("workspace_members")
     .select(
-      "workspace_id, workspaces(subscription_status, subscription_expires_at, messages_used_this_cycle, plans(name, monthly_message_limit))"
+      "workspace_id, workspaces(subscription_status, subscription_expires_at, messages_used_this_cycle, messenger_messages_used_this_cycle, plans(name, monthly_message_limit))"
     )
     .limit(1)
     .maybeSingle();
@@ -23,6 +23,7 @@ export default async function BillingPage() {
         subscription_status: string;
         subscription_expires_at: string | null;
         messages_used_this_cycle: number;
+        messenger_messages_used_this_cycle: number;
         plans: { name: string; monthly_message_limit: number } | null;
       }
     | undefined;
