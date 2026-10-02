@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { MessageCircle, Eye, EyeOff, CheckCircle2 } from "lucide-react";
-import { Card, Button } from "@/components/ui";
+import { Eye, EyeOff, CheckCircle2, Loader2 } from "lucide-react";
+import AuthBrand from "../_components/AuthBrand";
 import { createClient } from "@/lib/supabase/client";
 
 // Supabase এর রিসেট লিংকে #access_token=...&type=recovery হ্যাশ থাকে — URL fragment কখনো
@@ -65,46 +65,46 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-app-bg px-4">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-light text-primary">
-            <MessageCircle className="h-6 w-6" />
-          </div>
-          <span className="text-lg font-bold text-primary">WhatsApp SaaS</span>
+        <div className="flex flex-col items-center">
+          <AuthBrand />
         </div>
 
-        <Card>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           {done ? (
             <div className="text-center">
               <div className="mb-3 flex justify-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success-light text-success">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
               </div>
-              <h1 className="mb-2 text-base font-semibold text-text">পাসওয়ার্ড বদলানো হয়েছে</h1>
-              <Button onClick={() => router.push("/login")} className="w-full">
+              <h1 className="mb-2 text-base font-semibold text-zinc-900">পাসওয়ার্ড বদলানো হয়েছে</h1>
+              <button
+                onClick={() => router.push("/login")}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-700"
+              >
                 লগইন করুন
-              </Button>
+              </button>
             </div>
           ) : invalidLink ? (
             <div className="text-center">
-              <h1 className="mb-2 text-base font-semibold text-text">লিংকের মেয়াদ শেষ হয়ে গেছে</h1>
-              <p className="mb-4 text-sm text-text-muted">এই রিসেট লিংকটা আর কাজ করছে না — আবার একটা নতুন লিংক চেয়ে নিন।</p>
-              <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+              <h1 className="mb-2 text-base font-semibold text-zinc-900">লিংকের মেয়াদ শেষ হয়ে গেছে</h1>
+              <p className="mb-4 text-sm text-zinc-500">এই রিসেট লিংকটা আর কাজ করছে না — আবার একটা নতুন লিংক চেয়ে নিন।</p>
+              <Link href="/forgot-password" className="text-sm font-medium text-purple-700 hover:underline">
                 আবার চেষ্টা করুন
               </Link>
             </div>
           ) : !ready ? (
-            <p className="py-4 text-center text-sm text-text-muted">লিংক যাচাই হচ্ছে...</p>
+            <p className="py-4 text-center text-sm text-zinc-500">লিংক যাচাই হচ্ছে...</p>
           ) : (
             <>
-              <h1 className="mb-4 text-base font-semibold text-text">নতুন পাসওয়ার্ড দিন</h1>
-              {error && <p className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
+              <h1 className="mb-4 text-base font-semibold text-zinc-900">নতুন পাসওয়ার্ড দিন</h1>
+              {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
               <div className="flex flex-col gap-4">
                 <label className="block text-sm">
-                  <span className="mb-1.5 block font-medium text-text">নতুন পাসওয়ার্ড</span>
+                  <span className="mb-1.5 block font-medium text-zinc-900">নতুন পাসওয়ার্ড</span>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
@@ -112,38 +112,43 @@ export default function ResetPasswordPage() {
                       onChange={(e) => setPassword(e.target.value)}
                       minLength={6}
                       required
-                      className="w-full rounded-lg border border-border px-3 py-2 pr-10 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 pr-10 text-sm text-zinc-900 outline-none transition-colors focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute top-1/2 right-3 -translate-y-1/2 text-text-muted hover:text-text"
+                      className="absolute top-1/2 right-3 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
                       aria-label={showPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখান"}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  <span className="mt-1 block text-xs text-text-muted">কমপক্ষে ৬ ক্যারেক্টার</span>
+                  <span className="mt-1 block text-xs text-zinc-500">কমপক্ষে ৬ ক্যারেক্টার</span>
                 </label>
 
                 <label className="block text-sm">
-                  <span className="mb-1.5 block font-medium text-text">আবার লিখুন</span>
+                  <span className="mb-1.5 block font-medium text-zinc-900">আবার লিখুন</span>
                   <input
                     type={showPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
                   />
                 </label>
 
-                <Button onClick={handleSubmit} loading={loading} className="w-full">
+                <button
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   {loading ? "সেভ হচ্ছে..." : "পাসওয়ার্ড সেভ করুন"}
-                </Button>
+                </button>
               </div>
             </>
           )}
-        </Card>
+        </div>
       </div>
     </div>
   );

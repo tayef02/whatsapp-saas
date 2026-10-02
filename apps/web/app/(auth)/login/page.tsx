@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { MessageCircle, Eye, EyeOff } from "lucide-react";
-import { Card, Input, Button } from "@/components/ui";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
+import AuthBrand from "../_components/AuthBrand";
 import { login } from "../actions";
 
 // Supabase এর রাগরাগে এরর মেসেজ — ব্যবহারকারীকে বাংলায় স্পষ্ট করে দেখানোর জন্য ম্যাপ করা।
@@ -41,34 +41,34 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-app-bg px-4">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-light text-primary">
-            <MessageCircle className="h-6 w-6" />
-          </div>
-          <span className="text-lg font-bold text-primary">WhatsApp SaaS</span>
+        <div className="flex flex-col items-center">
+          <AuthBrand />
         </div>
 
-        <Card>
-          <h1 className="mb-4 text-base font-semibold text-text">লগইন করুন</h1>
-          {error && <p className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <h1 className="mb-4 text-base font-semibold text-zinc-900">লগইন করুন</h1>
+          {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
           <form action={handleSubmit} className="flex flex-col gap-4">
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              label="ইমেইল"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium text-zinc-900">ইমেইল</span>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+              />
+            </label>
 
             <label className="block text-sm">
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="font-medium text-text">পাসওয়ার্ড</span>
-                <Link href="/forgot-password" className="text-xs font-medium text-primary hover:underline">
+                <span className="font-medium text-zinc-900">পাসওয়ার্ড</span>
+                <Link href="/forgot-password" className="text-xs font-medium text-purple-700 hover:underline">
                   পাসওয়ার্ড ভুলে গেছেন?
                 </Link>
               </div>
@@ -78,12 +78,12 @@ export default function LoginPage() {
                   name="password"
                   type={showPassword ? "text" : "password"}
                   required
-                  className="w-full rounded-lg border border-border px-3 py-2 pr-10 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 pr-10 text-sm text-zinc-900 outline-none transition-colors focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute top-1/2 right-3 -translate-y-1/2 text-text-muted hover:text-text"
+                  className="absolute top-1/2 right-3 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
                   aria-label={showPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখান"}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -91,26 +91,31 @@ export default function LoginPage() {
               </div>
             </label>
 
-            <Button type="submit" loading={loading} className="w-full">
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               {loading ? "লগইন হচ্ছে..." : "লগইন"}
-            </Button>
+            </button>
           </form>
 
-          <p className="mt-4 text-center text-sm text-text-muted">
+          <p className="mt-4 text-center text-sm text-zinc-500">
             অ্যাকাউন্ট নেই?{" "}
-            <Link href="/signup" className="font-medium text-primary hover:underline">
+            <Link href="/signup" className="font-medium text-purple-700 hover:underline">
               সাইনআপ করুন
             </Link>
           </p>
-        </Card>
+        </div>
 
-        <p className="mt-4 text-center text-xs text-text-muted">
+        <p className="mt-4 text-center text-xs text-zinc-500">
           লগইন করলে আপনি আমাদের{" "}
-          <Link href="/terms" className="underline hover:text-text">
+          <Link href="/terms" className="underline hover:text-zinc-700">
             শর্তাবলী
           </Link>{" "}
           ও{" "}
-          <Link href="/privacy" className="underline hover:text-text">
+          <Link href="/privacy" className="underline hover:text-zinc-700">
             গোপনীয়তা নীতি
           </Link>{" "}
           মেনে নিচ্ছেন।
