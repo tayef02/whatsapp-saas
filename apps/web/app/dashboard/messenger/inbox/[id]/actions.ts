@@ -63,3 +63,16 @@ export async function setMessengerConversationStatus(conversationId: string, sta
   revalidatePath("/dashboard/messenger/inbox");
   return { error: null };
 }
+
+// WhatsApp ইনবক্সের markConversationRead এর Messenger-নিজস্ব সংস্করণ (আলাদা টেবিল, আলাদা
+// revalidate স্কোপ) — কথোপকথন খুললে "পঠিত" চিহ্নিত
+export async function markMessengerConversationRead(conversationId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("messenger_conversations").update({ last_read_at: new Date().toISOString() }).eq("id", conversationId);
+  if (error) {
+    console.error(`[messenger-inbox] markMessengerConversationRead ব্যর্থ conversation=${conversationId}: ${error.message}`);
+    return { error: error.message };
+  }
+  revalidatePath("/dashboard/messenger/inbox", "layout");
+  return { error: null };
+}

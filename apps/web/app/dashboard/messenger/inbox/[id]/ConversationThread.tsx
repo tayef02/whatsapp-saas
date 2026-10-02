@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Send, Clock, Image as ImageIcon, FileText, Video, Music, Download } from "lucide-react";
 import { Card, Badge, Button, Modal } from "@/components/ui";
-import { sendAgentReply, setMessengerConversationStatus } from "./actions";
+import { sendAgentReply, setMessengerConversationStatus, markMessengerConversationRead } from "./actions";
 
 type Message = {
   id: string;
@@ -71,6 +71,11 @@ export default function ConversationThread({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // খুললেই "পঠিত" — ফলাফল UI তে লাগে না, ব্যর্থ হলে সার্ভারে লগ হয়
+  useEffect(() => {
+    void markMessengerConversationRead(conversationId);
+  }, [conversationId]);
 
   const windowOpen = windowHoursLeft > 0;
   // ২৪ ঘণ্টার RESPONSE উইন্ডো শেষ হলেও ৭ দিন পর্যন্ত Human Agent ট্যাগ দিয়ে রিপ্লাই পাঠানো

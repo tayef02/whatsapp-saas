@@ -48,3 +48,17 @@ export async function setConversationStatus(conversationId: string, status: "act
   revalidatePath("/dashboard/inbox");
   return { error: null };
 }
+
+// কথোপকথন খুললে "পঠিত" চিহ্নিত — আলাদা server action (পেজ রেন্ডারের ভেতরে DB লেখা হয় না, কারণ
+// Next.js prefetch করলেও রেন্ডার চলতে পারে আর তাতে না খুলেই "পঠিত" হয়ে যেত)। layout এর লিস্ট
+// (অপঠিত সংখ্যা) যেন সাথে সাথে আপডেট হয়, তাই layout স্কোপে revalidate।
+export async function markConversationRead(conversationId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("conversations").update({ last_read_at: new Date().toISOString() }).eq("id", conversationId);
+  if (error) {
+    console.error(`[inbox] markConversationRead ব্যর্থ conversation=${conversationId}: ${error.message}`);
+    return { error: error.message };
+  }
+  revalidatePath("/dashboard/inbox", "layout");
+  return { error: null };
+}

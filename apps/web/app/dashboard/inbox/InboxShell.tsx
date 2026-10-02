@@ -17,10 +17,12 @@ type Conversation = {
 export default function InboxShell({
   conversations,
   unreadIds,
+  awaitingReplyIds,
   children,
 }: {
   conversations: Conversation[];
   unreadIds: string[];
+  awaitingReplyIds: string[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -29,7 +31,7 @@ export default function InboxShell({
   return (
     <div className="flex h-[calc(100vh-140px)] gap-4">
       <div className={`w-full shrink-0 overflow-hidden md:block md:w-80 ${isDetailView ? "hidden" : "block"}`}>
-        <ConversationList conversations={conversations} unreadIds={unreadIds} />
+        <ConversationList conversations={conversations} unreadIds={unreadIds} awaitingReplyIds={awaitingReplyIds} />
       </div>
       <div className={`min-w-0 flex-1 overflow-hidden md:block ${isDetailView ? "block" : "hidden"}`}>{children}</div>
     </div>

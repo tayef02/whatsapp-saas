@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Send, Image as ImageIcon, FileText, Video, Music, Sticker, Download } from "lucide-react";
 import { Card, Badge, Button, Modal } from "@/components/ui";
-import { sendAgentReply, setConversationStatus } from "./actions";
+import { sendAgentReply, setConversationStatus, markConversationRead } from "./actions";
 
 type Message = {
   id: string;
@@ -69,6 +69,11 @@ export default function ConversationThread({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // খুললেই "পঠিত" — ফলাফল (সফল/ব্যর্থ) UI তে লাগে না, ব্যর্থ হলে সার্ভারে লগ হয়
+  useEffect(() => {
+    void markConversationRead(conversationId);
+  }, [conversationId]);
 
   async function handleSend(formData: FormData) {
     setBusy(true);

@@ -11,28 +11,40 @@ type Conversation = {
   id: string;
   status: string;
   last_message_at: string;
+  last_read_at?: string | null;
   contacts: { name: string | null; phone: string } | { name: string | null; phone: string }[] | null;
   whatsapp_numbers: { display_name: string | null } | { display_name: string | null }[] | null;
 };
 
-type Filter = "all" | "unread" | "needs_human";
+type Filter = "all" | "unread" | "awaiting" | "needs_human";
 
 // conversations এই পুরো layout.tsx (inbox/layout.tsx) এ একবারে .limit(100) দিয়ে ফেচ হয়ে এখানে
 // prop হিসেবে আসে (conversation select করলে পুরো সাইডবার আবার ফেচ হয় না) — তাই URL ?page= এর
 // বদলে এখানে ক্লায়েন্ট-সাইড পেজিনেশন, একই কারণে ফিল্টার ট্যাবও আগে থেকেই ক্লায়েন্ট-সাইড ছিল
 const PAGE_SIZE = 20;
 
-export default function ConversationList({ conversations, unreadIds }: { conversations: Conversation[]; unreadIds: string[] }) {
+export default function ConversationList({
+  conversations,
+  unreadIds,
+  awaitingReplyIds,
+}: {
+  conversations: Conversation[];
+  unreadIds: string[];
+  awaitingReplyIds: string[];
+}) {
   const pathname = usePathname();
   const [filter, setFilter] = useState<Filter>("all");
   const [page, setPage] = useState(1);
   const unreadSet = new Set(unreadIds);
+  const awaitingSet = new Set(awaitingReplyIds);
 
   const needsHumanCount = conversations.filter((c) => c.status === "handed_off").length;
   const unreadCount = conversations.filter((c) => unreadSet.has(c.id)).length;
+  const awaitingCount = conversations.filter((c) => awaitingSet.has(c.id)).length;
 
   const filtered = conversations.filter((c) => {
     if (filter === "unread") return unreadSet.has(c.id);
+    if (filter === "awaiting") return awaitingSet.has(c.id);
     if (filter === "needs_human") return c.status === "handed_off";
     return true;
   });
@@ -50,7 +62,18 @@ export default function ConversationList({ conversations, unreadIds }: { convers
     <Card className="flex h-full flex-col overflow-hidden p-0">
       <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border p-2">
         <FilterTab label="সব" active={filter === "all"} onClick={() => handleFilterChange("all")} />
-        <FilterTab label={`উত্তর বাকি (${unreadCount})`} active={filter === "unread"} onClick={() => handleFilterChange("unread")} />
+        <FilterTab
+          label={`অপঠিত (${unreadCount})`}
+          title="কাস্টমারের নতুন মেসেজ, যে কথোপকথন এখনো খোলা হয়নি"
+          active={filter === "unread"}
+          onClick={() => handleFilterChange("unread")}
+        />
+        <FilterTab
+          label={`উত্তর বাকি (${awaitingCount})`}
+          title="কাস্টমারের মেসেজই শেষ মেসেজ, এখনো রিপ্লাই যায়নি"
+          active={filter === "awaiting"}
+          onClick={() => handleFilterChange("awaiting")}
+        />
         <FilterTab label={`এজেন্ট (${needsHumanCount})`} active={filter === "needs_human"} onClick={() => handleFilterChange("needs_human")} />
       </div>
 
@@ -65,6 +88,7 @@ export default function ConversationList({ conversations, unreadIds }: { convers
           const contact = Array.isArray(c.contacts) ? c.contacts[0] : c.contacts;
           const number = Array.isArray(c.whatsapp_numbers) ? c.whatsapp_numbers[0] : c.whatsapp_numbers;
           const isUnread = unreadSet.has(c.id);
+          const isAwaiting = awaitingSet.has(c.id);
           const isActive = pathname === `/dashboard/inbox/${c.id}`;
 
           return (
@@ -74,14 +98,14 @@ export default function ConversationList({ conversations, unreadIds }: { convers
               className={`block border-b border-border px-3 py-3 last:border-b-0 ${isActive ? "bg-primary-light" : "hover:bg-gray-50"}`}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className={`min-w-0 truncate text-sm ${isUnread ? "font-semibold text-text" : "font-medium text-text"}`}>
-                  {contact?.name || contact?.phone || "(অজানা)"}
+                <p className={`flex min-w-0 items-center gap-1.5 truncate text-sm ${isUnread ? "font-semibold text-text" : "font-medium text-text"}`}>
+                  {isUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="অপঠিত" />}
+                  <span className="truncate">{contact?.name || contact?.phone || "(অজানা)"}</span>
                 </p>
-                {c.status === "handed_off" && (
-                  <Badge variant="danger" className="shrink-0">
-                    এজেন্ট দরকার
-                  </Badge>
-                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  {isAwaiting && <Badge variant="warning">উত্তর বাকি</Badge>}
+                  {c.status === "handed_off" && <Badge variant="danger">এজেন্ট দরকার</Badge>}
+                </div>
               </div>
               <div className="mt-0.5 flex items-center justify-between gap-2">
                 <span className="truncate text-xs text-text-muted">{number?.display_name}</span>
@@ -101,9 +125,10 @@ export default function ConversationList({ conversations, unreadIds }: { convers
   );
 }
 
-function FilterTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function FilterTab({ label, title, active, onClick }: { label: string; title?: string; active: boolean; onClick: () => void }) {
   return (
     <button
+      title={title}
       onClick={onClick}
       className={`shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-medium whitespace-nowrap transition-colors ${
         active ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
