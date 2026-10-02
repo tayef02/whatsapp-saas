@@ -86,10 +86,24 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
   // Facebook এর নিয়ম: পেজ নিজে যখন কোনো কমেন্টে রিপ্লাই দেয় (আমাদের নিজের public_reply, বা
   // অ্যাডমিন Page Inbox থেকে ম্যানুয়ালি রিপ্লাই), সেটাও webhook এ একটা নতুন "comment"/"add"
   // ইভেন্ট হিসেবেই আসে, from.id = পেজের নিজের page_id। এটা ফিল্টার না করলে "সব কমেন্ট" ট্রিগার
-  // রুল নিজের রিপ্লাইকেও ম্যাচ করে বারবার রিপ্লাই দিতে থাকতে পারে — তাই page_id এর সাথে fromPsid
-  // মিললেই শুরুতেই স্কিপ (এটা কোনো কাস্টমার ইন্টারঅ্যাকশন না, রিভিউ-তালিকায়ও যাওয়ার দরকার নেই)
+  // রুল নিজের রিপ্লাইকেও ম্যাচ করে বারবার রিপ্লাই দিতে থাকতে পারে — তাই rule-ম্যাচিং এখানেই থেমে
+  // যায়। is_own_comment=true দিয়ে লগ হয় (কমেন্ট লগে আলাদা চিহ্নে দেখা যাবে) — কিন্তু এটা কোনো
+  // "স্কিপ" না (messenger_comment_skips এ কখনো রো যায় না, রিভিউ-তালিকায় দরকার নেই)
   if (data.fromPsid && data.fromPsid === data.pageId) {
-    console.log(`[messenger-comment] skip reason=own_page_comment page_id=${data.pageId} commentId=${data.commentId} — পেজ নিজেই এই কমেন্ট করেছে`);
+    console.log(`[messenger-comment] own_page_comment page_id=${data.pageId} commentId=${data.commentId} — পেজ নিজেই এই কমেন্ট করেছে, লগ হচ্ছে`);
+    const { error: ownCommentError } = await supabase.from("messenger_comments").insert({
+      messenger_page_id: page.id,
+      workspace_id: page.workspace_id,
+      comment_id: data.commentId,
+      post_id: data.postId,
+      from_psid: data.fromPsid,
+      from_name: data.fromName,
+      comment_text: data.commentText,
+      is_own_comment: true,
+    });
+    if (ownCommentError && ownCommentError.code !== "23505") {
+      console.error(`[messenger-comment] own-comment insert failed page=${page.id}: ${ownCommentError.message}`);
+    }
     return;
   }
 
@@ -305,11 +319,12 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
   }
 
   const queuedAt = new Date().toISOString();
+  const scheduledAt = new Date(Date.now() + delayMs).toISOString();
 
   if (inserted?.id) {
     const { error: updateError } = await supabase
       .from("messenger_comments")
-      .update({ matched_rule_id: matched.id, action: matched.action, queued_at: queuedAt })
+      .update({ matched_rule_id: matched.id, action: matched.action, queued_at: queuedAt, reply_scheduled_at: scheduledAt })
       .eq("id", inserted.id);
     if (updateError) console.error(`[messenger-comment] matched_rule_id/action আপডেট ব্যর্থ comment=${inserted.id}: ${updateError.message}`);
   }

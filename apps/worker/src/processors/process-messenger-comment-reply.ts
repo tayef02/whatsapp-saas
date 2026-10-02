@@ -146,12 +146,20 @@ export async function processMessengerCommentReply(job: Job<MessengerCommentRepl
     throw err;
   }
 
-  const { error: updateError } = await supabase
+  const { data: updatedRows, error: updateError } = await supabase
     .from("messenger_comments")
-    .update({ reply_sent: true, reply_text: data.replyText })
+    .update({ replied_at: new Date().toISOString(), reply_text: data.replyText })
     .eq("messenger_page_id", data.messengerPageId)
-    .eq("comment_id", data.commentId);
-  if (updateError) console.error(`[messenger-comment-reply] reply_sent আপডেট ব্যর্থ commentId=${data.commentId}: ${updateError.message}`);
+    .eq("comment_id", data.commentId)
+    .select("id");
+  if (updateError) {
+    console.error(`[messenger-comment-reply] replied_at আপডেট ব্যর্থ commentId=${data.commentId}: ${updateError.message}`);
+  } else if (!updatedRows || updatedRows.length === 0) {
+    // কোনো এরর নেই কিন্তু ০টা রো ম্যাচ করেছে — messenger_page_id/comment_id মিলছে না, এটা
+    // নিজে থেকে ঠিক হবে না, স্পষ্ট করে লগ করা দরকার (আগে এই কেসে চুপচাপ "sent" লগ হয়ে যেত,
+    // ড্যাশবোর্ডে "রিপ্লাই যায়নি" দেখানোর আসল কারণ এটাই ছিল)
+    console.error(`[messenger-comment-reply] replied_at আপডেট — কোনো ম্যাচিং messenger_comments রো পাওয়া যায়নি page=${data.messengerPageId} commentId=${data.commentId}`);
+  }
 
   await markSentManuallyIfApplicable();
 

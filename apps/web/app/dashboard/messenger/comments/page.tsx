@@ -45,7 +45,9 @@ export default async function MessengerCommentsPage({ searchParams }: { searchPa
 
   const { data: comments } = await supabase
     .from("messenger_comments")
-    .select("id, comment_id, from_name, comment_text, reply_sent, reply_text, is_lead, lead_phone, created_at")
+    .select(
+      "id, comment_id, from_name, comment_text, reply_text, is_lead, lead_phone, is_own_comment, action, replied_at, queued_at, reply_scheduled_at, created_at"
+    )
     .eq("messenger_page_id", selectedPageId)
     .order("created_at", { ascending: false })
     .limit(50);

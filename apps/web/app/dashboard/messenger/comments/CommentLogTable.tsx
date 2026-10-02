@@ -10,13 +10,47 @@ type CommentRow = {
   id: string;
   from_name: string | null;
   comment_text: string;
-  reply_sent: boolean;
   reply_text: string | null;
   is_lead: boolean;
   lead_phone: string | null;
+  is_own_comment: boolean;
+  action: "public_reply" | "private_reply" | null;
+  replied_at: string | null;
+  queued_at: string | null;
+  reply_scheduled_at: string | null;
   created_at: string;
   skip: { reason: string; status: string } | null;
 };
+
+function ReplyStatus({ c }: { c: CommentRow }) {
+  if (c.is_own_comment) {
+    return <Badge variant="neutral">পেজের নিজের কমেন্ট</Badge>;
+  }
+
+  if (c.replied_at) {
+    return <Badge variant="success">{c.action === "private_reply" ? "প্রাইভেট রিপ্লাই গেছে" : "পাবলিক রিপ্লাই গেছে"}</Badge>;
+  }
+
+  if (c.skip) {
+    return (
+      <Link href="/dashboard/messenger/comments/skipped">
+        <Badge variant="danger">স্কিপ: {SKIP_REASON_LABEL[c.skip.reason] ?? c.skip.reason}</Badge>
+      </Link>
+    );
+  }
+
+  if (c.action && c.queued_at) {
+    const remainingMs = c.reply_scheduled_at ? new Date(c.reply_scheduled_at).getTime() - Date.now() : 0;
+    const remainingMin = Math.ceil(remainingMs / 60000);
+    return (
+      <Badge variant="info">
+        কিউয়ে আছে{remainingMin > 0 ? ` (${remainingMin} মিনিট পরে)` : ""}
+      </Badge>
+    );
+  }
+
+  return <Badge variant="neutral">—</Badge>;
+}
 
 export default function CommentLogTable({ comments }: { comments: CommentRow[] }) {
   return (
@@ -30,8 +64,7 @@ export default function CommentLogTable({ comments }: { comments: CommentRow[] }
             <TableRow className="hover:bg-transparent">
               <TableHeaderCell>কাস্টমার</TableHeaderCell>
               <TableHeaderCell>কমেন্ট</TableHeaderCell>
-              <TableHeaderCell>রিপ্লাই</TableHeaderCell>
-              <TableHeaderCell>স্কিপ কারণ</TableHeaderCell>
+              <TableHeaderCell>স্ট্যাটাস</TableHeaderCell>
               <TableHeaderCell>তারিখ</TableHeaderCell>
             </TableRow>
           </TableHead>
@@ -39,7 +72,7 @@ export default function CommentLogTable({ comments }: { comments: CommentRow[] }
             {comments.map((c) => (
               <TableRow key={c.id}>
                 <TableCell className="whitespace-nowrap">
-                  {c.from_name || "(অজানা)"}
+                  {c.is_own_comment ? <span className="text-text-muted">(পেজ)</span> : c.from_name || "(অজানা)"}
                   {c.is_lead && (
                     <Badge variant="success" className="ml-1.5">
                       লিড {c.lead_phone}
@@ -50,20 +83,7 @@ export default function CommentLogTable({ comments }: { comments: CommentRow[] }
                   {c.comment_text || <span className="text-text-muted">(টেক্সট নেই)</span>}
                 </TableCell>
                 <TableCell>
-                  {c.reply_sent ? (
-                    <Badge variant="success">পাঠানো হয়েছে</Badge>
-                  ) : (
-                    <Badge variant="neutral">রিপ্লাই যায়নি</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {c.skip ? (
-                    <Link href="/dashboard/messenger/comments/skipped" className="text-xs text-primary hover:underline">
-                      {SKIP_REASON_LABEL[c.skip.reason] ?? c.skip.reason}
-                    </Link>
-                  ) : (
-                    <span className="text-xs text-text-muted">—</span>
-                  )}
+                  <ReplyStatus c={c} />
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-text-muted">{formatDhakaDateTime(c.created_at)}</TableCell>
               </TableRow>
