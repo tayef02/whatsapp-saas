@@ -118,3 +118,40 @@ Workspace-না-থাকলে `/onboarding`-এ পাঠানোর লজ�
 **Messenger**: সাইটে এখনো "শীঘ্রই আসছে" — ড্যাশবোর্ডে কাজ শেষ হলেও Meta App Review পর্যন্ত
 `NEXT_PUBLIC_MESSENGER_ENABLED=false`। ফ্ল্যাগ চালু হলে `content.*.ts` এর `channels.items` ও
 `nav.messenger` এর স্ট্যাটাস বদলাতে হবে।
+
+## লগইন/সাইনআপ — English ডিফল্ট + EN | বাং টগল + Google/Facebook/LinkedIn
+
+**ভাষা**: লগইন, সাইনআপ, forgot/reset-password আর onboarding এখন মার্কেটিং সাইটের একই কুকি (`gz_lang`,
+ডিফল্ট `en`) ও একই `LanguageToggle` ব্যবহার করে — উপরে ডানে `EN | বাং`। সাইটের ভাষা আর লগইন
+পেজের ভাষা সবসময় এক। লেখা `(auth)/_lib/auth-content.ts` এ (দুই ভাষা, একই কাঠামো); `(auth)/layout.tsx`
+ও `onboarding/layout.tsx` সার্ভারে কুকি পড়ে `AuthShell` (context) এর মাধ্যমে ক্লায়েন্ট পেজে দেয়।
+**ড্যাশবোর্ড এখনো শুধু বাংলা** (লগইনের পরে টগল নেই) — ড্যাশবোর্ড দ্বিভাষিক করা আলাদা বড় কাজ।
+Supabase থেকে আসা অন্যান্য এরর (রাগরাগে ইংরেজি) যেমন আছে তেমন দেখায়, শুধু "invalid credentials"
+ভাষা অনুযায়ী।
+
+**সোশ্যাল সাইন-ইন**: লগইন ও সাইনআপ দুই পেজেই "or continue with" এর নিচে তিনটা বাটন (G / f / in)।
+সরাসরি Supabase OAuth (`signInWithOAuth`) — নতুন কোনো প্যাকেজ নেই। ফেরার রুট `/auth/callback`
+(`app/auth/callback/route.ts`, middleware এ পাবলিক): `?code=` কে সেশনে বদলে `/dashboard` এ পাঠায়,
+গন্তব্য নির্দিষ্ট (open redirect নেই), ব্যর্থ হলে `/login?error=oauth`। নতুন ইউজার হলে
+`dashboard/layout.tsx` আগের মতোই workspace না থাকলে `/onboarding` এ পাঠায়।
+
+**বাটন কোনগুলো দেখাবে**: `NEXT_PUBLIC_SOCIAL_LOGIN` (কমা দিয়ে `google,facebook,linkedin`; সেট না
+থাকলে তিনটাই; খালি = একটাও না)। build-time ভ্যারিয়েবল, তাই Dockerfile ARG/ENV ও
+docker-compose `build.args` এ যোগ আছে — পরিবর্তন করলে web আবার build করতে হবে।
+
+**আপনাকে যা সেটআপ করতে হবে (কোডে নয়, Supabase/প্রোভাইডার ড্যাশবোর্ডে)** — সেটআপ না হওয়া
+প্রোভাইডারের বাটনে চাপলে Supabase এর নিজস্ব "provider is not enabled" JSON পেজ আসবে, আমাদের
+ফ্রেন্ডলি মেসেজ না (সেই ব্রাউজার-রিডাইরেক্টের পর আমরা আর নিয়ন্ত্রণে থাকি না)। তাই সেটআপ শেষ না
+হওয়া প্রোভাইডার `NEXT_PUBLIC_SOCIAL_LOGIN` থেকে বাদ রাখুন:
+1. Supabase Dashboard > Authentication > **URL Configuration** > Redirect URLs এ যোগ করুন:
+   `https://<আপনার-ডোমেইন>/auth/callback` (লোকালে `http://localhost:3000/auth/callback`)।
+2. Supabase > Authentication > **Providers**: নিচের প্রতিটা চালু করে Client ID/Secret বসান। প্রতিটার
+   প্রোভাইডার-সাইডে Redirect/Callback URL হবে Supabase এর দেখানো `https://<প্রজেক্ট>.supabase.co/auth/v1/callback`।
+   - **Google**: Google Cloud Console > APIs & Services > Credentials > OAuth client ID (Web)।
+   - **Facebook**: Meta for Developers এ "Facebook Login" প্রোডাক্টসহ একটা অ্যাপ। প্রস্তাব: Messenger
+     ইন্টিগ্রেশনের অ্যাপ থেকে **আলাদা অ্যাপ** — নইলে লগইন-অ্যাপের রিভিউ/মোড সমস্যা Messenger
+     App Review এর সাথে জড়াবে। Development মোডে শুধু অ্যাপের টেস্টার/অ্যাডমিন লগইন করতে পারবে, সবার
+     জন্য Live মোড লাগবে (কোনো অতিরিক্ত পারমিশন ছাড়া শুধু email/public_profile এ সহজ অনুমোদন)।
+   - **LinkedIn (OIDC)**: LinkedIn Developer অ্যাপে "Sign In with LinkedIn using OpenID Connect"
+     প্রোডাক্ট; Supabase এ প্রোভাইডারের নাম `LinkedIn (OIDC)`।
+3. একই ইমেইলের বিদ্যমান অ্যাকাউন্ট থাকলে Supabase সাধারণত লিংক করে (ভেরিফায়েড ইমেইলের ক্ষেত্রে)।

@@ -1,27 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import AuthBrand from "../_components/AuthBrand";
+import AuthTerms from "../_components/AuthTerms";
+import SocialLogin from "../_components/SocialLogin";
+import { useAuthT } from "../_components/AuthShell";
 import { login } from "../actions";
-
-// Supabase এর রাগরাগে এরর মেসেজ — ব্যবহারকারীকে বাংলায় স্পষ্ট করে দেখানোর জন্য ম্যাপ করা।
-// login() সার্ভার অ্যাকশন অপরিবর্তিত, শুধু এখানে ডিসপ্লে করার আগে টেক্সট বদলানো হচ্ছে।
-function translateAuthError(message: string): string {
-  if (message.toLowerCase().includes("invalid login credentials")) {
-    return "ইমেইল বা পাসওয়ার্ড ভুল হয়েছে";
-  }
-  return message;
-}
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useAuthT();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // OAuth (Google/Facebook/LinkedIn) ব্যর্থ হলে /auth/callback এখানে ?error=oauth দিয়ে ফেরত পাঠায়
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("error") === "oauth") setError(t.login.oauthFailed);
+  }, [t]);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
@@ -30,30 +30,30 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.error) {
-      setError(translateAuthError(result.error));
+      // Supabase এর ইংরেজি এরর — সবচেয়ে সাধারণটা ভাষা অনুযায়ী দেখানো, বাকিগুলো যেমন আছে
+      setError(result.error.toLowerCase().includes("invalid login credentials") ? t.login.invalid : result.error);
       return;
     }
-    // আগে "/" এ পাঠানো হতো, যেটা নিজে থেকেই /dashboard এ রিডাইরেক্ট করত — এখন "/" পাবলিক
-    // মার্কেটিং হোমপেজ (Gen Z CRM), তাই সরাসরি /dashboard এ পাঠানো হচ্ছে। workspace/onboarding
-    // লাগলে dashboard/layout.tsx নিজেই /onboarding এ পাঠিয়ে দেয় — আচরণ অপরিবর্তিত।
+    // "/" এখন পাবলিক মার্কেটিং হোমপেজ, তাই সরাসরি /dashboard এ পাঠানো হচ্ছে। workspace/onboarding
+    // লাগলে dashboard/layout.tsx নিজেই /onboarding এ পাঠিয়ে দেয়।
     router.push("/dashboard");
     router.refresh();
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-16">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center">
           <AuthBrand />
         </div>
 
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <h1 className="mb-4 text-base font-semibold text-zinc-900">লগইন করুন</h1>
+          <h1 className="mb-4 text-base font-semibold text-zinc-900">{t.login.title}</h1>
           {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
           <form action={handleSubmit} className="flex flex-col gap-4">
             <label className="block text-sm">
-              <span className="mb-1.5 block font-medium text-zinc-900">ইমেইল</span>
+              <span className="mb-1.5 block font-medium text-zinc-900">{t.login.email}</span>
               <input
                 id="email"
                 name="email"
@@ -67,9 +67,9 @@ export default function LoginPage() {
 
             <label className="block text-sm">
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="font-medium text-zinc-900">পাসওয়ার্ড</span>
+                <span className="font-medium text-zinc-900">{t.login.password}</span>
                 <Link href="/forgot-password" className="text-xs font-medium text-purple-700 hover:underline">
-                  পাসওয়ার্ড ভুলে গেছেন?
+                  {t.login.forgot}
                 </Link>
               </div>
               <div className="relative">
@@ -84,7 +84,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute top-1/2 right-3 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
-                  aria-label={showPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখান"}
+                  aria-label={showPassword ? t.hidePassword : t.showPassword}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -97,29 +97,21 @@ export default function LoginPage() {
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? "লগইন হচ্ছে..." : "লগইন"}
+              {loading ? t.login.submitting : t.login.submit}
             </button>
           </form>
 
+          <SocialLogin />
+
           <p className="mt-4 text-center text-sm text-zinc-500">
-            অ্যাকাউন্ট নেই?{" "}
+            {t.login.noAccount}{" "}
             <Link href="/signup" className="font-medium text-purple-700 hover:underline">
-              সাইনআপ করুন
+              {t.login.signupLink}
             </Link>
           </p>
         </div>
 
-        <p className="mt-4 text-center text-xs text-zinc-500">
-          লগইন করলে আপনি আমাদের{" "}
-          <Link href="/terms" className="underline hover:text-zinc-700">
-            শর্তাবলী
-          </Link>{" "}
-          ও{" "}
-          <Link href="/privacy" className="underline hover:text-zinc-700">
-            গোপনীয়তা নীতি
-          </Link>{" "}
-          মেনে নিচ্ছেন।
-        </p>
+        <AuthTerms />
       </div>
     </div>
   );

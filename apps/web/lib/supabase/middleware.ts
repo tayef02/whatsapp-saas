@@ -49,6 +49,8 @@ export async function updateSession(request: NextRequest) {
     "/about",
     "/contact",
     "/faq",
+    // OAuth (Google/Facebook/LinkedIn) ফেরত আসার রুট — তখনো সেশন নেই, তাই পাবলিক
+    "/auth/callback",
   ];
   // "/" কে .startsWith() দিয়ে publicPaths এ রাখা যাবে না — তাহলে প্রতিটা পাথই ("/" দিয়ে শুরু)
   // পাবলিক হয়ে যেত, তাই আলাদা exact-match চেক
