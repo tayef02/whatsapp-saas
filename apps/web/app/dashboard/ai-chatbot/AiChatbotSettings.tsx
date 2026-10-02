@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { FileText, Upload, Trash2, RotateCcw, ChevronDown, ChevronUp, KeyRound } from "lucide-react";
-import { Card, Input, Select, Textarea, Button, Badge, EmptyState } from "@/components/ui";
+import { FileText, Upload, Trash2, RotateCcw, ChevronDown, ChevronUp, KeyRound, MessageSquareText, Info } from "lucide-react";
+import { Card, Input, Select, Textarea, Button, Badge, EmptyState, Pagination } from "@/components/ui";
 import { saveAiSettings, setApiKey, uploadDocument, reprocessDocument, deleteDocument, getDocumentChunks } from "./actions";
 
 type Settings = {
@@ -23,6 +23,15 @@ type Doc = {
   created_at: string;
 };
 
+type Tab = "prompt" | "apikey" | "knowledge" | "support";
+
+const tabs: { id: Tab; label: string }[] = [
+  { id: "prompt", label: "প্রম্পট" },
+  { id: "apikey", label: "API Key" },
+  { id: "knowledge", label: "নলেজ বেস" },
+  { id: "support", label: "সাপোর্ট তথ্য" },
+];
+
 const statusLabel: Record<string, string> = {
   pending: "অপেক্ষায়",
   processing: "প্রসেস হচ্ছে...",
@@ -37,6 +46,12 @@ const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | 
   failed: "danger",
 };
 
+const DOCS_PAGE_SIZE = 10;
+
+// নোট: "প্রম্পট" আর "সাপোর্ট তথ্য" — দুটো আলাদা ট্যাব দেখতে হলেও আসলে একই <form>/handleSaveSettings
+// এর ভেতরেই থাকে (নিচে), শুধু CSS দিয়ে একটার সময় অন্যটা hidden — তাই একই সেভ বাটনে দুটোই একসাথে
+// সেভ হয় (ফিল্ড আলাদা ফর্মে ভাগ করলে আলাদা সাবমিট/action লাগত, যেটা সার্ভার অ্যাকশনের
+// সিগনেচার না বদলানোর নিয়মে চলত না) — ইউজারের কাছে এটা দুটো আলাদা ট্যাবের মতোই অনুভূত হয়
 export default function AiChatbotSettings({
   settings,
   documents,
@@ -54,6 +69,13 @@ export default function AiChatbotSettings({
   const apiKeyInputRef = useRef<HTMLInputElement>(null);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [chunksByDoc, setChunksByDoc] = useState<Record<string, { id: string; content: string }[]>>({});
+  const [activeTab, setActiveTab] = useState<Tab>("prompt");
+  const [showIntro, setShowIntro] = useState(false);
+  const [docsPage, setDocsPage] = useState(1);
+
+  const docsTotalPages = Math.max(1, Math.ceil(documents.length / DOCS_PAGE_SIZE));
+  const safeDocsPage = Math.min(docsPage, docsTotalPages);
+  const pagedDocuments = documents.slice((safeDocsPage - 1) * DOCS_PAGE_SIZE, safeDocsPage * DOCS_PAGE_SIZE);
 
   async function toggleChunks(docId: string) {
     if (expandedDocId === docId) {
@@ -111,18 +133,23 @@ export default function AiChatbotSettings({
   }
 
   return (
-    <div className="mx-auto flex max-w-[850px] flex-col gap-6">
+    <div className="mx-auto flex max-w-[850px] flex-col gap-4">
       <div>
         <h1 className="text-lg font-semibold text-text">এআই চ্যাটবট</h1>
-        <p className="mt-1 text-[13px] text-text-muted">
-          কোনো hardcoded rule নেই — System Prompt-ই একমাত্র নিয়ন্ত্রক: বট কী জানলে কী উত্তর দেবে, না জানলে কীভাবে
-          ভদ্রভাবে বলবে, কীভাবে অর্ডার নেবে, সবকিছু এখানেই লিখে দিন। নাম্বার পেজ থেকে প্রতিটা নাম্বারে আলাদাভাবে বট
-          অন/অফ করা যায়।
+        <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[13px] text-text-muted">
+          কোনো hardcoded rule নেই — System Prompt-ই একমাত্র নিয়ন্ত্রক।
+          <button type="button" onClick={() => setShowIntro((v) => !v)} className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline">
+            বিস্তারিত {showIntro ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
         </p>
-        <p className="mt-1 text-[13px] text-text-muted">
-          API key খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।
-        </p>
-        <p className={`mt-2 text-xs ${totalReadyWords > fullTextModeMaxWords ? "text-warning" : "text-success"}`}>
+        {showIntro && (
+          <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-app-bg p-3 text-[13px] text-text-muted">
+            <p>বট কী জানলে কী উত্তর দেবে, না জানলে কীভাবে ভদ্রভাবে বলবে, কীভাবে অর্ডার নেবে — সবকিছু System Prompt ট্যাবে লিখে দিন। নাম্বার পেজ থেকে প্রতিটা নাম্বারে আলাদাভাবে বট অন/অফ করা যায়।</p>
+            <p>API key খরচ আপনার workspace বহন করবে (আপনার নিজের OpenAI/Gemini অ্যাকাউন্ট থেকে)।</p>
+          </div>
+        )}
+        <p className={`mt-2 flex items-center gap-1.5 text-xs ${totalReadyWords > fullTextModeMaxWords ? "text-warning" : "text-success"}`}>
+          <Info className="h-3.5 w-3.5 shrink-0" />
           মোট {totalReadyWords.toLocaleString("bn-BD")} শব্দ (রেডি ডকুমেন্ট মিলিয়ে) —{" "}
           {totalReadyWords > fullTextModeMaxWords ? "খোঁজা-ভিত্তিক (chunk retrieval) মোডে চলছে" : "পুরো-টেক্সট এজেন্ট মোডে চলছে"}
         </p>
@@ -130,8 +157,73 @@ export default function AiChatbotSettings({
 
       {error && <p className="rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">{error}</p>}
 
+      {/* ট্যাব বার */}
+      <div className="flex w-fit flex-wrap gap-1 rounded-lg border border-border bg-card p-1">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setActiveTab(t.id)}
+            className={`flex h-10 items-center rounded-md px-3 text-sm font-medium transition-colors ${
+              activeTab === t.id ? "bg-primary-light text-primary" : "text-text-muted hover:bg-gray-100"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* প্রম্পট + সাপোর্ট তথ্য — একই ফর্ম, ট্যাব দিয়ে শুধু দেখানো/লুকানো (একই সেভ বাটন) */}
+      <Card className={activeTab === "prompt" || activeTab === "support" ? "" : "hidden"}>
+        <form action={handleSaveSettings} className="flex flex-col gap-4">
+          <div className={activeTab === "prompt" ? "flex flex-col gap-4" : "hidden"}>
+            <div className="mb-1 flex items-center gap-2">
+              <MessageSquareText className="h-4 w-4 text-text-muted" />
+              <p className="text-sm font-semibold text-text">প্রম্পট</p>
+            </div>
+            <Select name="llmProvider" label="LLM Provider" defaultValue={settings?.llm_provider ?? "openai"}>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Gemini</option>
+            </Select>
+
+            <Textarea
+              name="systemPrompt"
+              label="System Prompt (বট কীভাবে কথা বলবে, কী টোনে, কী সীমার মধ্যে থেকে উত্তর দেবে)"
+              defaultValue={settings?.system_prompt ?? ""}
+              rows={8}
+              className="min-h-[200px]"
+              placeholder="যেমন: তুমি একটা কাপড়ের দোকানের সহকারী। বাংলায় ভদ্রভাবে সংক্ষিপ্ত উত্তর দাও। দাম নিয়ে অনিশ্চিত হলে সরাসরি বলে দাও যে নিশ্চিত না।"
+            />
+          </div>
+
+          <div className={activeTab === "support" ? "flex flex-col gap-4" : "hidden"}>
+            <p className="mb-1 text-sm font-semibold text-text">সাপোর্ট তথ্য</p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                name="supportPhone"
+                label="সাপোর্ট নাম্বার (ঐচ্ছিক)"
+                defaultValue={settings?.support_phone ?? ""}
+                placeholder="01XXXXXXXXX"
+                helperText="AI-এর প্রকৃত টেকনিক্যাল সমস্যা হলে (key ভুল, quota শেষ) এই নাম্বারসহ একটা safety-net মেসেজ যাবে"
+              />
+              <Input
+                name="typicalDeliveryTime"
+                label="সাধারণ ডেলিভারি সময় (ঐচ্ছিক)"
+                defaultValue={settings?.typical_delivery_time ?? ""}
+                placeholder="যেমন: ৩-৫ কর্মদিবস"
+                helperText='কাস্টমার "কবে পাবো?" জিজ্ঞেস করলে এই তথ্য দিয়ে উত্তর দেবে'
+              />
+            </div>
+          </div>
+
+          <Button type="submit" disabled={busy} className="self-start">
+            সেভ করুন
+          </Button>
+        </form>
+      </Card>
+
       {/* API Key */}
-      <Card>
+      <Card className={activeTab === "apikey" ? "" : "hidden"}>
         <div className="mb-3 flex items-center gap-2">
           <KeyRound className="h-4 w-4 text-text-muted" />
           <p className="text-sm font-semibold text-text">API Key</p>
@@ -153,56 +245,15 @@ export default function AiChatbotSettings({
         </form>
       </Card>
 
-      {/* ইনস্ট্রাকশন / সিস্টেম প্রম্পট */}
-      <Card>
-        <p className="mb-3 text-sm font-semibold text-text">ইনস্ট্রাকশন / সিস্টেম প্রম্পট</p>
-        <form action={handleSaveSettings} className="flex flex-col gap-4">
-          <Select name="llmProvider" label="LLM Provider" defaultValue={settings?.llm_provider ?? "openai"}>
-            <option value="openai">OpenAI</option>
-            <option value="gemini">Gemini</option>
-          </Select>
-
-          <Textarea
-            name="systemPrompt"
-            label="System Prompt (বট কীভাবে কথা বলবে, কী টোনে, কী সীমার মধ্যে থেকে উত্তর দেবে)"
-            defaultValue={settings?.system_prompt ?? ""}
-            rows={8}
-            className="min-h-[200px]"
-            placeholder="যেমন: তুমি একটা কাপড়ের দোকানের সহকারী। বাংলায় ভদ্রভাবে সংক্ষিপ্ত উত্তর দাও। দাম নিয়ে অনিশ্চিত হলে সরাসরি বলে দাও যে নিশ্চিত না।"
-          />
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              name="supportPhone"
-              label="সাপোর্ট নাম্বার (ঐচ্ছিক)"
-              defaultValue={settings?.support_phone ?? ""}
-              placeholder="01XXXXXXXXX"
-              helperText="AI-এর প্রকৃত টেকনিক্যাল সমস্যা হলে (key ভুল, quota শেষ) এই নাম্বারসহ একটা safety-net মেসেজ যাবে"
-            />
-            <Input
-              name="typicalDeliveryTime"
-              label="সাধারণ ডেলিভারি সময় (ঐচ্ছিক)"
-              defaultValue={settings?.typical_delivery_time ?? ""}
-              placeholder="যেমন: ৩-৫ কর্মদিবস"
-              helperText='কাস্টমার "কবে পাবো?" জিজ্ঞেস করলে এই তথ্য দিয়ে উত্তর দেবে'
-            />
-          </div>
-
-          <Button type="submit" disabled={busy} className="self-start">
-            সেভ করুন
-          </Button>
-        </form>
-      </Card>
-
       {/* Knowledge base */}
-      <Card>
-        <p className="mb-3 text-sm font-semibold text-text">নলেজ বেস ডকুমেন্ট</p>
+      <Card className={activeTab === "knowledge" ? "" : "hidden"}>
+        <p className="mb-3 text-sm font-semibold text-text">নলেজ বেস ডকুমেন্ট ({documents.length})</p>
 
         {documents.length === 0 ? (
           <EmptyState icon={<FileText className="h-8 w-8" />} title="এখনো কোনো ফাইল আপলোড হয়নি" />
         ) : (
           <div className="mb-4 flex flex-col gap-2">
-            {documents.map((d) => (
+            {pagedDocuments.map((d) => (
               <div key={d.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -220,7 +271,7 @@ export default function AiChatbotSettings({
                         disabled={busy}
                         onClick={() => toggleChunks(d.id)}
                         title="AI যেভাবে ডকুমেন্টটা ছোট ছোট অংশে ভেঙে পড়ে সেটা দেখুন"
-                        className="flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-gray-50"
+                        className="flex h-10 items-center gap-1 rounded-lg border border-border px-2.5 text-xs text-text-muted hover:bg-gray-50"
                       >
                         ডকুমেন্টের অংশ দেখুন {expandedDocId === d.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                       </button>
@@ -229,7 +280,7 @@ export default function AiChatbotSettings({
                       <button
                         disabled={busy}
                         onClick={() => handleReprocess(d.id)}
-                        className="flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs text-text-muted hover:bg-gray-50"
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-border text-text-muted hover:bg-gray-50"
                         aria-label="আবার চেষ্টা করুন"
                       >
                         <RotateCcw className="h-3.5 w-3.5" />
@@ -238,7 +289,7 @@ export default function AiChatbotSettings({
                     <button
                       disabled={busy}
                       onClick={() => handleDelete(d.id)}
-                      className="flex items-center gap-1 rounded-lg border border-danger-light px-2 py-1.5 text-xs text-danger hover:bg-danger-light"
+                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-danger-light text-danger hover:bg-danger-light"
                       aria-label="মুছুন"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -260,6 +311,8 @@ export default function AiChatbotSettings({
                 )}
               </div>
             ))}
+
+            <Pagination currentPage={safeDocsPage} totalPages={docsTotalPages} onPageChange={setDocsPage} />
           </div>
         )}
 

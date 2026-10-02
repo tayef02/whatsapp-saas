@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { Search, Image as ImageIcon, FileText, Video, Music, Sticker as StickerIcon, Download, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Card, Badge, EmptyState } from "@/components/ui";
+import { Card, Badge, EmptyState, Pagination } from "@/components/ui";
 import { formatDhakaDateTime } from "@/lib/format-date";
 
 const PAGE_SIZE = 50;
@@ -156,19 +156,11 @@ export default async function GroupMessagesPage({
         })}
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <a
-              key={p}
-              href={`/dashboard/groups/${id}/messages?page=${p}${q ? `&q=${q}` : ""}`}
-              className={`rounded-lg px-3 py-1.5 text-sm ${p === page ? "bg-primary text-white" : "bg-gray-100 text-text hover:bg-gray-200"}`}
-            >
-              {p}
-            </a>
-          ))}
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        hrefTemplate={`/dashboard/groups/${id}/messages?page={page}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+      />
     </div>
   );
 }

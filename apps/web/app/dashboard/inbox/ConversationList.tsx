@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Card, Badge, EmptyState } from "@/components/ui";
+import { Card, Badge, EmptyState, Pagination } from "@/components/ui";
 import { Inbox as InboxIcon } from "lucide-react";
 import { formatDhakaDateTime } from "@/lib/format-date";
 
@@ -17,9 +17,15 @@ type Conversation = {
 
 type Filter = "all" | "unread" | "needs_human";
 
+// conversations এই পুরো layout.tsx (inbox/layout.tsx) এ একবারে .limit(100) দিয়ে ফেচ হয়ে এখানে
+// prop হিসেবে আসে (conversation select করলে পুরো সাইডবার আবার ফেচ হয় না) — তাই URL ?page= এর
+// বদলে এখানে ক্লায়েন্ট-সাইড পেজিনেশন, একই কারণে ফিল্টার ট্যাবও আগে থেকেই ক্লায়েন্ট-সাইড ছিল
+const PAGE_SIZE = 20;
+
 export default function ConversationList({ conversations, unreadIds }: { conversations: Conversation[]; unreadIds: string[] }) {
   const pathname = usePathname();
   const [filter, setFilter] = useState<Filter>("all");
+  const [page, setPage] = useState(1);
   const unreadSet = new Set(unreadIds);
 
   const needsHumanCount = conversations.filter((c) => c.status === "handed_off").length;
@@ -31,12 +37,21 @@ export default function ConversationList({ conversations, unreadIds }: { convers
     return true;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function handleFilterChange(f: Filter) {
+    setFilter(f);
+    setPage(1);
+  }
+
   return (
     <Card className="flex h-full flex-col overflow-hidden p-0">
       <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border p-2">
-        <FilterTab label="সব" active={filter === "all"} onClick={() => setFilter("all")} />
-        <FilterTab label={`উত্তর বাকি (${unreadCount})`} active={filter === "unread"} onClick={() => setFilter("unread")} />
-        <FilterTab label={`এজেন্ট (${needsHumanCount})`} active={filter === "needs_human"} onClick={() => setFilter("needs_human")} />
+        <FilterTab label="সব" active={filter === "all"} onClick={() => handleFilterChange("all")} />
+        <FilterTab label={`উত্তর বাকি (${unreadCount})`} active={filter === "unread"} onClick={() => handleFilterChange("unread")} />
+        <FilterTab label={`এজেন্ট (${needsHumanCount})`} active={filter === "needs_human"} onClick={() => handleFilterChange("needs_human")} />
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -46,7 +61,7 @@ export default function ConversationList({ conversations, unreadIds }: { convers
           </div>
         )}
 
-        {filtered.map((c) => {
+        {paged.map((c) => {
           const contact = Array.isArray(c.contacts) ? c.contacts[0] : c.contacts;
           const number = Array.isArray(c.whatsapp_numbers) ? c.whatsapp_numbers[0] : c.whatsapp_numbers;
           const isUnread = unreadSet.has(c.id);
@@ -76,6 +91,12 @@ export default function ConversationList({ conversations, unreadIds }: { convers
           );
         })}
       </div>
+
+      {totalPages > 1 && (
+        <div className="shrink-0 border-t border-border p-2">
+          <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+        </div>
+      )}
     </Card>
   );
 }

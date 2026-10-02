@@ -4,12 +4,17 @@ import { Card, EmptyState } from "@/components/ui";
 import { ShieldAlert } from "lucide-react";
 import SkippedCommentsList from "./SkippedCommentsList";
 
+const SKIP_PAGE_SIZE = 20;
+
+// "page" query param এখানেও FB পেজ (UUID) বাছতে ব্যবহার হয় — তালিকা-পেজিনেশনের জন্য আলাদা
+// নাম "skipPage" (comments/page.tsx এর logPage এর মতো একই কারণে)
 export default async function SkippedCommentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; reason?: string; status?: string; post?: string }>;
+  searchParams: Promise<{ page?: string; reason?: string; status?: string; post?: string; skipPage?: string }>;
 }) {
-  const { page: selectedPageIdParam, reason, status, post } = await searchParams;
+  const { page: selectedPageIdParam, reason, status, post, skipPage: skipPageParam } = await searchParams;
+  const skipPage = Math.max(1, Number(skipPageParam) || 1);
   const supabase = await createClient();
 
   const { data: pages } = await supabase
@@ -43,16 +48,20 @@ export default async function SkippedCommentsPage({
 
   let query = supabase
     .from("messenger_comment_skips")
-    .select("id, comment_id, post_id, from_psid, comment_text_excerpt, reply_text, action, reason, status, created_at, reviewed_at")
-    .eq("messenger_page_id", selectedPageId)
-    .order("created_at", { ascending: false })
-    .limit(200);
+    .select("id, comment_id, post_id, from_psid, comment_text_excerpt, reply_text, action, reason, status, created_at, reviewed_at", {
+      count: "exact",
+    })
+    .eq("messenger_page_id", selectedPageId);
 
   if (statusFilter !== "all") query = query.eq("status", statusFilter);
   if (reason) query = query.eq("reason", reason);
   if (post) query = query.eq("post_id", post);
 
-  const { data: skips } = await query;
+  const { data: skips, count: skipCount } = await query
+    .order("created_at", { ascending: false })
+    .range((skipPage - 1) * SKIP_PAGE_SIZE, skipPage * SKIP_PAGE_SIZE - 1);
+
+  const skipTotalPages = Math.max(1, Math.ceil((skipCount ?? 0) / SKIP_PAGE_SIZE));
 
   // সম্ভব হলে কাস্টমারের নাম — messenger_comments এ আগে থেকেই সেভ আছে, comment_id দিয়ে map
   const commentIds = (skips ?? []).map((s) => s.comment_id);
@@ -104,6 +113,8 @@ export default async function SkippedCommentsPage({
         currentReason={reason ?? ""}
         currentStatus={statusFilter}
         skips={(skips ?? []).map((s) => ({ ...s, from_name: nameByCommentId.get(s.comment_id) ?? null }))}
+        skipPage={skipPage}
+        totalPages={skipTotalPages}
       />
     </div>
   );

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Card, EmptyState } from "@/components/ui";
+import { Card, EmptyState, Pagination } from "@/components/ui";
 import { MessageSquare } from "lucide-react";
 import { formatDhakaDateTime } from "@/lib/format-date";
 
@@ -19,19 +19,33 @@ type Conversation = {
 
 type Filter = "all" | "unread";
 
+// WhatsApp ইনবক্সের ConversationList.tsx এর একই কারণে ক্লায়েন্ট-সাইড পেজিনেশন (layout.tsx
+// এ একবারে .limit(100) ফেচ হয়ে prop আসে)
+const PAGE_SIZE = 20;
+
 export default function ConversationList({ conversations, unreadIds }: { conversations: Conversation[]; unreadIds: string[] }) {
   const pathname = usePathname();
   const [filter, setFilter] = useState<Filter>("all");
+  const [page, setPage] = useState(1);
   const unreadSet = new Set(unreadIds);
 
   const unreadCount = conversations.filter((c) => unreadSet.has(c.id)).length;
   const filtered = filter === "unread" ? conversations.filter((c) => unreadSet.has(c.id)) : conversations;
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function handleFilterChange(f: Filter) {
+    setFilter(f);
+    setPage(1);
+  }
+
   return (
     <Card className="flex h-full flex-col overflow-hidden p-0">
       <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border p-2">
-        <FilterTab label="সব" active={filter === "all"} onClick={() => setFilter("all")} />
-        <FilterTab label={`উত্তর বাকি (${unreadCount})`} active={filter === "unread"} onClick={() => setFilter("unread")} />
+        <FilterTab label="সব" active={filter === "all"} onClick={() => handleFilterChange("all")} />
+        <FilterTab label={`উত্তর বাকি (${unreadCount})`} active={filter === "unread"} onClick={() => handleFilterChange("unread")} />
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -41,7 +55,7 @@ export default function ConversationList({ conversations, unreadIds }: { convers
           </div>
         )}
 
-        {filtered.map((c) => {
+        {paged.map((c) => {
           const page = Array.isArray(c.messenger_pages) ? c.messenger_pages[0] : c.messenger_pages;
           const isUnread = unreadSet.has(c.id);
           const isActive = pathname === `/dashboard/messenger/inbox/${c.id}`;
@@ -65,6 +79,12 @@ export default function ConversationList({ conversations, unreadIds }: { convers
           );
         })}
       </div>
+
+      {totalPages > 1 && (
+        <div className="shrink-0 border-t border-border p-2">
+          <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+        </div>
+      )}
     </Card>
   );
 }

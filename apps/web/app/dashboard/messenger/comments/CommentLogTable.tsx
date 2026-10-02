@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge, EmptyState } from "@/components/ui";
+import { Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge, EmptyState, Pagination } from "@/components/ui";
 import { History } from "lucide-react";
 import { formatDhakaDateTime } from "@/lib/format-date";
 import { SKIP_REASON_LABEL } from "./skip-reasons";
@@ -52,10 +52,20 @@ function ReplyStatus({ c }: { c: CommentRow }) {
   return <Badge variant="neutral">—</Badge>;
 }
 
-export default function CommentLogTable({ comments }: { comments: CommentRow[] }) {
+export default function CommentLogTable({
+  comments,
+  selectedPageId,
+  logPage,
+  totalPages,
+}: {
+  comments: CommentRow[];
+  selectedPageId: string;
+  logPage: number;
+  totalPages: number;
+}) {
   return (
-    <div>
-      <p className="mb-3 text-sm font-semibold text-text">সাম্প্রতিক কমেন্ট (সর্বশেষ ৫০টা)</p>
+    <div className="flex flex-col gap-3">
+      <p className="text-sm font-semibold text-text">কমেন্ট লগ</p>
       {comments.length === 0 ? (
         <EmptyState icon={<History className="h-10 w-10" />} title="এখনো কোনো কমেন্ট আসেনি" />
       ) : (
@@ -91,6 +101,12 @@ export default function CommentLogTable({ comments }: { comments: CommentRow[] }
           </TableBody>
         </Table>
       )}
+
+      <Pagination
+        currentPage={logPage}
+        totalPages={totalPages}
+        hrefTemplate={`/dashboard/messenger/comments?page=${selectedPageId}&logPage={page}`}
+      />
     </div>
   );
 }

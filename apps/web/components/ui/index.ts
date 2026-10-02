@@ -9,3 +9,5 @@ export { default as Modal } from "./Modal";
 export { ToastProvider, useToast } from "./Toast";
 export { default as EmptyState } from "./EmptyState";
 export { default as Skeleton } from "./Skeleton";
+export { default as PageSkeleton } from "./PageSkeleton";
+export { default as Pagination } from "./Pagination";

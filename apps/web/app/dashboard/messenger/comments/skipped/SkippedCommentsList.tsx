@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Send, X, History } from "lucide-react";
-import { Card, Select, Textarea, Button, Badge, EmptyState, useToast } from "@/components/ui";
+import { Card, Select, Textarea, Button, Badge, EmptyState, useToast, Pagination } from "@/components/ui";
 import { formatDhakaDateTime } from "@/lib/format-date";
 import { sendSkippedCommentNow, dismissSkippedComment } from "./actions";
 import { SKIP_REASON_LABEL, SKIP_STATUS_LABEL } from "../skip-reasons";
@@ -35,12 +35,16 @@ export default function SkippedCommentsList({
   pendingCount,
   currentReason,
   currentStatus,
+  skipPage,
+  totalPages,
 }: {
   pageId: string;
   skips: SkipRow[];
   pendingCount: number;
   currentReason: string;
   currentStatus: string;
+  skipPage: number;
+  totalPages: number;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -56,6 +60,15 @@ export default function SkippedCommentsList({
     const status = next.status ?? currentStatus;
     if (reason) params.set("reason", reason);
     if (status) params.set("status", status);
+    router.push(`/dashboard/messenger/comments/skipped?${params.toString()}`);
+  }
+
+  function goToSkipPage(p: number) {
+    const params = new URLSearchParams();
+    params.set("page", pageId);
+    if (currentReason) params.set("reason", currentReason);
+    if (currentStatus) params.set("status", currentStatus);
+    if (p > 1) params.set("skipPage", String(p));
     router.push(`/dashboard/messenger/comments/skipped?${params.toString()}`);
   }
 
@@ -173,6 +186,8 @@ export default function SkippedCommentsList({
           ))}
         </div>
       )}
+
+      <Pagination currentPage={skipPage} totalPages={totalPages} onPageChange={goToSkipPage} />
     </div>
   );
 }

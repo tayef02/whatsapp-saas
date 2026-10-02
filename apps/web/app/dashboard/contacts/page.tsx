@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus, Search, Users, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { EmptyState } from "@/components/ui";
+import { EmptyState, Pagination } from "@/components/ui";
 import ContactsTable from "./ContactsTable";
 import ImportButton from "./ImportButton";
 
@@ -109,21 +109,11 @@ export default async function ContactsPage({
 
       {contacts && contacts.length > 0 && <ContactsTable contacts={contacts} />}
 
-      {totalPages > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Link
-              key={p}
-              href={`/dashboard/contacts?page=${p}${q ? `&q=${q}` : ""}${tag ? `&tag=${tag}` : ""}`}
-              className={`rounded-lg px-3 py-1.5 text-sm ${
-                p === page ? "bg-primary text-white" : "bg-gray-100 text-text hover:bg-gray-200"
-              }`}
-            >
-              {p}
-            </Link>
-          ))}
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        hrefTemplate={`/dashboard/contacts?page={page}${q ? `&q=${encodeURIComponent(q)}` : ""}${tag ? `&tag=${encodeURIComponent(tag)}` : ""}`}
+      />
     </div>
   );
 }

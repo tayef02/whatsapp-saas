@@ -5,8 +5,17 @@ import { MessageSquare } from "lucide-react";
 import CommentRulesList from "./CommentRulesList";
 import CommentLogTable from "./CommentLogTable";
 
-export default async function MessengerCommentsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
-  const { page: selectedPageIdParam } = await searchParams;
+const COMMENT_LOG_PAGE_SIZE = 20;
+
+// "page" query param FB পেজ (messenger_pages.id, UUID) বাছতে আগে থেকেই ব্যবহার হয় — তাই কমেন্ট
+// লগের পেজিনেশনের জন্য আলাদা নাম "logPage", যাতে দুটো মিশে না যায়
+export default async function MessengerCommentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; logPage?: string }>;
+}) {
+  const { page: selectedPageIdParam, logPage: logPageParam } = await searchParams;
+  const logPage = Math.max(1, Number(logPageParam) || 1);
   const supabase = await createClient();
 
   const { data: pages } = await supabase
@@ -43,14 +52,17 @@ export default async function MessengerCommentsPage({ searchParams }: { searchPa
     .eq("messenger_page_id", selectedPageId)
     .order("created_at", { ascending: false });
 
-  const { data: comments } = await supabase
+  const { data: comments, count: commentCount } = await supabase
     .from("messenger_comments")
     .select(
-      "id, comment_id, from_name, comment_text, reply_text, is_lead, lead_phone, is_own_comment, action, replied_at, queued_at, reply_scheduled_at, created_at"
+      "id, comment_id, from_name, comment_text, reply_text, is_lead, lead_phone, is_own_comment, action, replied_at, queued_at, reply_scheduled_at, created_at",
+      { count: "exact" }
     )
     .eq("messenger_page_id", selectedPageId)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .range((logPage - 1) * COMMENT_LOG_PAGE_SIZE, logPage * COMMENT_LOG_PAGE_SIZE - 1);
+
+  const commentLogTotalPages = Math.max(1, Math.ceil((commentCount ?? 0) / COMMENT_LOG_PAGE_SIZE));
 
   // উপরের ৫০টা কমেন্টের মধ্যে যেগুলো স্কিপ হয়েছে, সেগুলোর কারণ/স্ট্যাটাস একসাথে এনে map বানানো —
   // প্রতিটা রো এর জন্য আলাদা কোয়েরি না করে একটাই কোয়েরিতে (N+1 এড়াতে)
@@ -99,6 +111,9 @@ export default async function MessengerCommentsPage({ searchParams }: { searchPa
       <CommentRulesList pageId={selectedPageId} rules={rules ?? []} />
       <CommentLogTable
         comments={(comments ?? []).map((c) => ({ ...c, skip: skipByCommentId.get(c.comment_id) ?? null }))}
+        selectedPageId={selectedPageId}
+        logPage={logPage}
+        totalPages={commentLogTotalPages}
       />
     </div>
   );

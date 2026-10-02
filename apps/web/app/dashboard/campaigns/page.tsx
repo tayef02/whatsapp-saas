@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { Plus, Megaphone } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { EmptyState, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge } from "@/components/ui";
+import { EmptyState, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge, Pagination } from "@/components/ui";
+
+const PAGE_SIZE = 20;
 
 const statusLabel: Record<string, string> = {
   draft: "খসড়া",
@@ -23,13 +25,20 @@ const statusVariant: Record<string, "success" | "warning" | "danger" | "info" | 
   draft: "neutral",
 };
 
-export default async function CampaignsPage() {
+export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const { page: pageParam } = await searchParams;
+  const page = Math.max(1, Number(pageParam) || 1);
   const supabase = await createClient();
 
-  const { data: campaigns } = await supabase
+  const { data: campaigns, count } = await supabase
     .from("campaigns")
-    .select("id, name, status, created_at, campaign_stats(total_recipients, sent_count, delivered_count, read_count, failed_count)")
-    .order("created_at", { ascending: false });
+    .select("id, name, status, created_at, campaign_stats(total_recipients, sent_count, delivered_count, read_count, failed_count)", {
+      count: "exact",
+    })
+    .order("created_at", { ascending: false })
+    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   return (
     <div className="flex flex-col gap-4">
@@ -92,6 +101,8 @@ export default async function CampaignsPage() {
           </TableBody>
         </Table>
       )}
+
+      <Pagination currentPage={page} totalPages={totalPages} hrefTemplate="/dashboard/campaigns?page={page}" />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Info, PauseCircle, PlayCircle, XCircle, RotateCcw } from "lucide-react";
-import { Card, Badge, Button } from "@/components/ui";
+import { Card, Badge, Button, Pagination } from "@/components/ui";
 import { pauseCampaign, resumeCampaign, cancelCampaign, retryFailedMessages } from "./actions";
 
 type Stats = {
@@ -66,9 +66,16 @@ function normalizeStats(s: Stats | Stats[] | null): Stats {
   return stats ?? { total_recipients: 0, sent_count: 0, delivered_count: 0, read_count: 0, failed_count: 0, unknown_count: 0 };
 }
 
+// ব্যর্থ মেসেজের তালিকা সার্ভারে (page.tsx ও এর লাইভ-পোলিং /api/campaigns/[id] রুট, দুই জায়গাতেই)
+// সবসময় সর্বশেষ ১০০টা পর্যন্ত আনে — এই কম্পোনেন্ট প্রতি ৩ সেকেন্ডে পোল করে সেটাই রিফ্রেশ করে।
+// তাই true সার্ভার-সাইড range পেজিনেশন (URL ?page=) এখানে বসালে পোলিং রুটেও আলাদা page প্যারাম
+// প্লাম্বিং লাগত — তার বদলে ইতিমধ্যে আনা (সর্বোচ্চ ১০০টা) তালিকার উপর ক্লায়েন্ট-সাইড পেজিনেশন
+const FAILED_PAGE_SIZE = 10;
+
 export default function CampaignReport({ initial, stallNote }: { initial: CampaignData; stallNote: string | null }) {
   const [data, setData] = useState(initial);
   const [busy, setBusy] = useState(false);
+  const [failedPage, setFailedPage] = useState(1);
 
   useEffect(() => {
     if (data.status === "completed" || data.status === "cancelled") return;
@@ -144,22 +151,28 @@ export default function CampaignReport({ initial, stallNote }: { initial: Campai
         )}
       </div>
 
-      {data.failedMessages && data.failedMessages.length > 0 && (
-        <div>
-          <p className="mb-2 text-sm font-semibold text-text">ব্যর্থ মেসেজের তালিকা</p>
-          <div className="flex flex-col gap-2">
-            {data.failedMessages.map((m) => (
-              <Card key={m.id} className="border-danger-light">
-                <p className="text-sm text-text">
-                  <strong className="font-medium">{contactName(m.contacts)}</strong> · {m.phone}
-                  {m.retry_count > 0 && <span className="text-text-muted"> · {m.retry_count} বার চেষ্টা হয়েছে</span>}
-                </p>
-                <p className="mt-1 text-sm text-danger">{m.failed_reason ?? "কারণ জানা যায়নি"}</p>
-              </Card>
-            ))}
+      {data.failedMessages && data.failedMessages.length > 0 && (() => {
+        const failedTotalPages = Math.ceil(data.failedMessages.length / FAILED_PAGE_SIZE);
+        const safeFailedPage = Math.min(failedPage, failedTotalPages);
+        const pagedFailedMessages = data.failedMessages.slice((safeFailedPage - 1) * FAILED_PAGE_SIZE, safeFailedPage * FAILED_PAGE_SIZE);
+        return (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-semibold text-text">ব্যর্থ মেসেজের তালিকা ({data.failedMessages.length})</p>
+            <div className="flex flex-col gap-2">
+              {pagedFailedMessages.map((m) => (
+                <Card key={m.id} className="border-danger-light">
+                  <p className="text-sm text-text">
+                    <strong className="font-medium">{contactName(m.contacts)}</strong> · {m.phone}
+                    {m.retry_count > 0 && <span className="text-text-muted"> · {m.retry_count} বার চেষ্টা হয়েছে</span>}
+                  </p>
+                  <p className="mt-1 text-sm text-danger">{m.failed_reason ?? "কারণ জানা যায়নি"}</p>
+                </Card>
+              ))}
+            </div>
+            <Pagination currentPage={safeFailedPage} totalPages={failedTotalPages} onPageChange={setFailedPage} />
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

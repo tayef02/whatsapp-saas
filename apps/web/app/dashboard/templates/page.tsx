@@ -1,15 +1,22 @@
 import Link from "next/link";
 import { Plus, FileText, Image as ImageIcon, File as FileIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { EmptyState, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge } from "@/components/ui";
+import { EmptyState, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, Badge, Pagination } from "@/components/ui";
 
-export default async function TemplatesPage() {
+const PAGE_SIZE = 20;
+
+export default async function TemplatesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const { page: pageParam } = await searchParams;
+  const page = Math.max(1, Number(pageParam) || 1);
   const supabase = await createClient();
 
-  const { data: templates } = await supabase
+  const { data: templates, count } = await supabase
     .from("templates")
-    .select("id, name, category, content, media_type")
-    .order("created_at", { ascending: false });
+    .select("id, name, category, content, media_type", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   return (
     <div className="flex flex-col gap-4">
@@ -82,6 +89,8 @@ export default async function TemplatesPage() {
           </TableBody>
         </Table>
       )}
+
+      <Pagination currentPage={page} totalPages={totalPages} hrefTemplate="/dashboard/templates?page={page}" />
     </div>
   );
 }
