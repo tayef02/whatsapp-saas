@@ -48,7 +48,12 @@ export async function GET(request: NextRequest) {
   const state = request.nextUrl.searchParams.get("state");
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    console.warn("[messenger connect] state মেলেনি বা code নেই, CSRF/মেয়াদ-শেষ কুকি সন্দেহ");
+    // রাজ্য(state)-এর মান নিজেই কোনো secret না (শুধু একটা র‍্যান্ডম CSRF টোকেন), কিন্তু তাও
+    // লগ করা হচ্ছে না — শুধু কোন শর্তে ব্যর্থ হলো সেটা বুঝতে boolean flag গুলো, যাতে পরের বার
+    // "cookie মেয়াদ শেষ" (hasExpectedState=false) আর "অন্য কোনো কারণ" আলাদা করা যায়
+    console.warn(
+      `[messenger connect] state যাচাই ব্যর্থ — hasCode=${Boolean(code)} hasState=${Boolean(state)} hasExpectedState=${Boolean(expectedState)} stateMatches=${state === expectedState}`
+    );
     return NextResponse.redirect(buildPublicUrl("/dashboard/messenger?error=invalid_state")!);
   }
 
@@ -80,7 +85,7 @@ export async function GET(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 600,
+      maxAge: 1800,
       path: "/dashboard/messenger/connect",
     });
 

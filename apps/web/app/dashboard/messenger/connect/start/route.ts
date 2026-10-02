@@ -43,14 +43,17 @@ export async function GET() {
   const redirectUri = buildPublicUrl("/dashboard/messenger/connect/callback")!;
 
   // CSRF সুরক্ষা — এই র‍্যান্ডম state Facebook callback এ ফেরত আসবে, কুকির মানের সাথে
-  // না মিললে callback রিকোয়েস্ট বাতিল হবে
+  // না মিললে callback রিকোয়েস্ট বাতিল হবে। maxAge ৩০ মিনিট রাখা হয়েছে (আগে ১০ মিনিট ছিল) —
+  // Meta এর নতুন Business Portfolio-ভিত্তিক consent flow এ একাধিক ধাপে (Business/Page/প্রতিটা
+  // permission আলাদা স্ক্রিনে) ক্লিক করতে হয়, ১০ মিনিটে এটা শেষ না হলে cookie মেয়াদ শেষ হয়ে
+  // callback এ "state মেলেনি" এরর দিচ্ছিল
   const state = randomUUID();
   const cookieStore = await cookies();
   cookieStore.set(STATE_COOKIE, state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 600,
+    maxAge: 1800,
     path: "/dashboard/messenger/connect",
   });
 
