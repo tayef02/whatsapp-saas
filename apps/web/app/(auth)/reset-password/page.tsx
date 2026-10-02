@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, CheckCircle2, Loader2 } from "lucide-react";
 import AuthBrand from "../_components/AuthBrand";
+import { useAuthT } from "../_components/AuthShell";
 import { createClient } from "@/lib/supabase/client";
+
+const inputClass =
+  "w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-purple-600 focus:ring-1 focus:ring-purple-600";
 
 // Supabase এর রিসেট লিংকে #access_token=...&type=recovery হ্যাশ থাকে — URL fragment কখনো
 // সার্ভারে যায় না, তাই এই পেজ অবশ্যই client-side হবে আর middleware এ পাবলিক রুট হতে হবে
@@ -15,6 +19,7 @@ import { createClient } from "@/lib/supabase/client";
 // দিয়েই পাঠানো হয় (সার্ভার অ্যাকশন না — cookie sync টাইমিং নিয়ে অনিশ্চয়তা এড়াতে)।
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const t = useAuthT();
   const [ready, setReady] = useState(false);
   const [invalidLink, setInvalidLink] = useState(false);
   const [password, setPassword] = useState("");
@@ -52,8 +57,8 @@ export default function ResetPasswordPage() {
 
   async function handleSubmit() {
     setError(null);
-    if (password.length < 6) return setError("পাসওয়ার্ড কমপক্ষে ৬ ক্যারেক্টার হতে হবে");
-    if (password !== confirmPassword) return setError("দুই পাসওয়ার্ড মিলছে না");
+    if (password.length < 6) return setError(t.reset.tooShort);
+    if (password !== confirmPassword) return setError(t.reset.mismatch);
 
     setLoading(true);
     const supabase = createClient();
@@ -65,7 +70,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-16">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center">
           <AuthBrand />
@@ -79,32 +84,32 @@ export default function ResetPasswordPage() {
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
               </div>
-              <h1 className="mb-2 text-base font-semibold text-zinc-900">পাসওয়ার্ড বদলানো হয়েছে</h1>
+              <h1 className="mb-2 text-base font-semibold text-zinc-900">{t.reset.doneTitle}</h1>
               <button
                 onClick={() => router.push("/login")}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-700"
               >
-                লগইন করুন
+                {t.reset.doneLink}
               </button>
             </div>
           ) : invalidLink ? (
             <div className="text-center">
-              <h1 className="mb-2 text-base font-semibold text-zinc-900">লিংকের মেয়াদ শেষ হয়ে গেছে</h1>
-              <p className="mb-4 text-sm text-zinc-500">এই রিসেট লিংকটা আর কাজ করছে না — আবার একটা নতুন লিংক চেয়ে নিন।</p>
+              <h1 className="mb-2 text-base font-semibold text-zinc-900">{t.reset.invalidTitle}</h1>
+              <p className="mb-4 text-sm text-zinc-500">{t.reset.invalidBody}</p>
               <Link href="/forgot-password" className="text-sm font-medium text-purple-700 hover:underline">
-                আবার চেষ্টা করুন
+                {t.reset.invalidLink}
               </Link>
             </div>
           ) : !ready ? (
-            <p className="py-4 text-center text-sm text-zinc-500">লিংক যাচাই হচ্ছে...</p>
+            <p className="py-4 text-center text-sm text-zinc-500">{t.reset.verifying}</p>
           ) : (
             <>
-              <h1 className="mb-4 text-base font-semibold text-zinc-900">নতুন পাসওয়ার্ড দিন</h1>
+              <h1 className="mb-4 text-base font-semibold text-zinc-900">{t.reset.title}</h1>
               {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
               <div className="flex flex-col gap-4">
                 <label className="block text-sm">
-                  <span className="mb-1.5 block font-medium text-zinc-900">নতুন পাসওয়ার্ড</span>
+                  <span className="mb-1.5 block font-medium text-zinc-900">{t.reset.newPassword}</span>
                   <div className="relative">
                     <input
                       type={showPassword ? "text" : "password"}
@@ -112,28 +117,28 @@ export default function ResetPasswordPage() {
                       onChange={(e) => setPassword(e.target.value)}
                       minLength={6}
                       required
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 pr-10 text-sm text-zinc-900 outline-none transition-colors focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+                      className={`${inputClass} pr-10`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
                       className="absolute top-1/2 right-3 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
-                      aria-label={showPassword ? "পাসওয়ার্ড লুকান" : "পাসওয়ার্ড দেখান"}
+                      aria-label={showPassword ? t.hidePassword : t.showPassword}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  <span className="mt-1 block text-xs text-zinc-500">কমপক্ষে ৬ ক্যারেক্টার</span>
+                  <span className="mt-1 block text-xs text-zinc-500">{t.reset.hint}</span>
                 </label>
 
                 <label className="block text-sm">
-                  <span className="mb-1.5 block font-medium text-zinc-900">আবার লিখুন</span>
+                  <span className="mb-1.5 block font-medium text-zinc-900">{t.reset.confirm}</span>
                   <input
                     type={showPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+                    className={inputClass}
                   />
                 </label>
 
@@ -143,7 +148,7 @@ export default function ResetPasswordPage() {
                   className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {loading ? "সেভ হচ্ছে..." : "পাসওয়ার্ড সেভ করুন"}
+                  {loading ? t.reset.submitting : t.reset.submit}
                 </button>
               </div>
             </>

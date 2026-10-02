@@ -32,6 +32,7 @@ services:
         # website ব্রাঞ্চের মার্কেটিং সাইট বানাতে গিয়ে ঠিক করা হলো
         NEXT_PUBLIC_SUPPORT_WHATSAPP: ${NEXT_PUBLIC_SUPPORT_WHATSAPP}
         NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL}
+        NEXT_PUBLIC_SOCIAL_LOGIN: ${NEXT_PUBLIC_SOCIAL_LOGIN:-google,facebook,linkedin}
     container_name: wa-web
     env_file:
       - .env.production
