@@ -119,38 +119,6 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
     return;
   }
 
-  // cooldown প্রতি-কমেন্টকারী (per rule+from_psid) আলাদা — আগে পুরো রুলের জন্য একটাই global
-  // cooldown ছিল, ফলে একজন কাস্টমার রিপ্লাই পেলে পরের cooldown_seconds সময়ে অন্য কাস্টমাররা
-  // রিপ্লাই পেত না (ইউজার রিপোর্ট করেছিলেন, migration 0048 এ ঠিক করা হয়েছে)। fromPsid না থাকা
-  // edge case এ একটা শেয়ার্ড "unknown" bucket ব্যবহার হয় (আগের per-rule আচরণের সমতুল্য)।
-  // atomic claim RPC — single SQL statement এ conditional UPSERT, দুইটা প্রায়-একসাথে আসা একই
-  // কমেন্টকারীর কমেন্ট একই রুলে ম্যাচ করলেও একটাই রিপ্লাই যাবে
-  const cooldownKey = data.fromPsid ?? "unknown";
-  const { data: won, error: cooldownError } = await supabase.rpc("try_claim_comment_rule_cooldown", {
-    p_rule_id: matched.id,
-    p_from_psid: cooldownKey,
-    p_cooldown_seconds: matched.cooldown_seconds,
-  });
-
-  if (cooldownError) {
-    console.error(`[messenger-comment] cooldown claim RPC ব্যর্থ rule=${matched.id} page=${page.id}: ${cooldownError.message}`);
-  }
-
-  if (!won) {
-    console.log(`[messenger-comment] skip reason=cooldown_active rule=${matched.id} page=${page.id} — এই কমেন্টকারী এখনো এই রুলের cooldown এর মধ্যে`);
-    return;
-  }
-
-  // last_triggered_at এখন শুধু ড্যাশবোর্ডে "সর্বশেষ ট্রিগার" দেখানোর তথ্য — gating logic উপরের
-  // per-commenter RPC করে, তাই এখানে ব্যর্থ হলেও (non-critical) শুধু লগ, রিপ্লাই আটকাবে না
-  const { error: lastTriggeredError } = await supabase
-    .from("messenger_comment_rules")
-    .update({ last_triggered_at: new Date().toISOString() })
-    .eq("id", matched.id);
-  if (lastTriggeredError) {
-    console.error(`[messenger-comment] last_triggered_at আপডেট ব্যর্থ (non-critical) rule=${matched.id}: ${lastTriggeredError.message}`);
-  }
-
   let replyText: string | null = null;
   if (matched.reply_mode === "fixed") {
     // স্প্যাম-ঝুঁকি কমাতে বৈচিত্র্য — একই রুল বারবার ম্যাচ করলেও প্রতিবার হুবহু একই টেক্সট যাবে না
@@ -170,6 +138,37 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
     return;
   }
 
+  // cooldown প্রতি-কমেন্টকারী (per rule+from_psid) আলাদা, আর এখন কখনো "স্কিপ" করে না — একই
+  // কমেন্টকারী অল্প সময়ে বারবার কমেন্ট করলেও কেউ বাদ যায় না, শুধু পরেরগুলো cooldown_seconds
+  // ব্যবধানে সারিবদ্ধভাবে (drip) পরে পাঠানো হয় (ইউজারের অনুরোধে, migration 0049)। fromPsid না
+  // থাকা edge case এ একটা শেয়ার্ড "unknown" bucket ব্যবহার হয়। single UPSERT স্টেটমেন্টে atomic
+  // reservation — একই কমেন্টকারীর দুইটা প্রায়-একসাথে আসা কমেন্ট সঠিক ক্রমে আলাদা স্লট পাবে।
+  const cooldownKey = data.fromPsid ?? "unknown";
+  const { data: scheduledAtIso, error: slotError } = await supabase.rpc("reserve_comment_reply_slot", {
+    p_rule_id: matched.id,
+    p_from_psid: cooldownKey,
+    p_cooldown_seconds: matched.cooldown_seconds,
+  });
+
+  let delayMs = 0;
+  if (slotError) {
+    // স্লট রিজার্ভেশন ব্যর্থ হলেও (infra সমস্যা) রিপ্লাই আটকানো ঠিক না — শুধু delay ছাড়া
+    // (এখনই) পাঠানো হবে, non-critical হিসেবে লগ
+    console.error(`[messenger-comment] cooldown slot reserve ব্যর্থ (non-critical, delay ছাড়াই পাঠানো হবে) rule=${matched.id}: ${slotError.message}`);
+  } else if (scheduledAtIso) {
+    delayMs = Math.max(0, new Date(scheduledAtIso).getTime() - Date.now());
+  }
+
+  // last_triggered_at শুধু ড্যাশবোর্ডে "সর্বশেষ ট্রিগার" দেখানোর তথ্য — ব্যর্থ হলেও (non-critical)
+  // শুধু লগ, রিপ্লাই আটকাবে না
+  const { error: lastTriggeredError } = await supabase
+    .from("messenger_comment_rules")
+    .update({ last_triggered_at: new Date().toISOString() })
+    .eq("id", matched.id);
+  if (lastTriggeredError) {
+    console.error(`[messenger-comment] last_triggered_at আপডেট ব্যর্থ (non-critical) rule=${matched.id}: ${lastTriggeredError.message}`);
+  }
+
   if (inserted?.id) {
     const { error: updateError } = await supabase.from("messenger_comments").update({ matched_rule_id: matched.id }).eq("id", inserted.id);
     if (updateError) console.error(`[messenger-comment] matched_rule_id আপডেট ব্যর্থ comment=${inserted.id}: ${updateError.message}`);
@@ -183,6 +182,13 @@ export async function processMessengerCommentEvent(data: MessengerCommentWebhook
     action: matched.action,
     replyText,
   };
-  await getMessengerJobsQueue().add("comment-reply", replyJobData, { attempts: 3, backoff: { type: "exponential", delay: 3000 } });
-  console.log(`[messenger-comment] reply job queued action=${matched.action} commentId=${data.commentId}`);
+  await getMessengerJobsQueue().add("comment-reply", replyJobData, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 3000 },
+    ...(delayMs > 0 ? { delay: delayMs } : {}),
+  });
+  console.log(
+    `[messenger-comment] reply job queued action=${matched.action} commentId=${data.commentId}` +
+      (delayMs > 0 ? ` delay=${Math.round(delayMs / 1000)}s (cooldown queue)` : "")
+  );
 }
