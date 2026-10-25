@@ -49,6 +49,8 @@ export type DnsGroupStatus = "missing" | "pending" | "verified" | "failed";
 export interface ProviderDomain {
   providerDomainId: string;
   name: string;
+  // প্রোভাইডারের নিজের ডোমেইন-স্ট্যাটাস (Resend: not_started, pending, verified, failed, temporary_failure)
+  status: string;
   spf: DnsGroupStatus;
   dkim: DnsGroupStatus;
   records: DnsRecord[];

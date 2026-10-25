@@ -76,6 +76,7 @@ function groupStatus(records: DnsRecord[]): DnsGroupStatus {
 interface ResendDomainBody {
   id?: string;
   name?: string;
+  status?: string;
   records?: Array<{ record?: string; type?: string; name?: string; value?: string; priority?: number | null; status?: string }>;
 }
 
@@ -95,6 +96,7 @@ function toProviderDomain(body: ResendDomainBody): ProviderDomain {
   return {
     providerDomainId: String(body.id ?? ""),
     name: String(body.name ?? ""),
+    status: String(body.status ?? ""),
     spf: groupStatus(spfRecords),
     dkim: groupStatus(dkimRecords),
     records,

@@ -74,10 +74,10 @@ export async function verifyPlatformDomain(domainId: string) {
     const result = await refreshEmailDomain(admin, getEmailProvider(), domainId, true);
 
     revalidatePath("/dashboard/admin/email");
-    if (result.errorCode) return { error: `প্রোভাইডার থেকে অবস্থা আনা যায়নি (${result.errorCode})`, status: result.currentStatus };
-    return { error: null, status: result.currentStatus };
+    if (result.errorCode) return { error: `প্রোভাইডার থেকে অবস্থা আনা যায়নি (${result.errorCode})`, status: result.currentStatus, verifyRequested: false };
+    return { error: null, status: result.currentStatus, verifyRequested: result.verifyRequested };
   } catch (err) {
-    return { error: errorMessage(err), status: null };
+    return { error: errorMessage(err), status: null, verifyRequested: false };
   }
 }
 

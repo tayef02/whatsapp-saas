@@ -57,6 +57,8 @@ export default function DomainManager({ domain, dmarcName }: { domain: DomainVie
   const { showToast } = useToast();
   const [adding, setAdding] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  // Resend কে যাচাই করতে বলা হয়েছে — ফল আসতে সময় লাগে, তাই পেজে নোটিশ থাকে (আবার চাপা পর্যন্ত)
+  const [resendChecking, setResendChecking] = useState(false);
 
   async function handleAdd(formData: FormData) {
     setAdding(true);
@@ -71,9 +73,11 @@ export default function DomainManager({ domain, dmarcName }: { domain: DomainVie
     setVerifying(true);
     const result = await verifyPlatformDomain(domain.id);
     setVerifying(false);
+    setResendChecking(result.verifyRequested);
     if (result.error) showToast("error", result.error);
     else if (result.status === "verified") showToast("success", "ডোমেইন যাচাই হয়েছে");
-    else showToast("error", "এখনো সব রেকর্ড যাচাই হয়নি — DNS ছড়াতে কিছুক্ষণ লাগে, একটু পর আবার চাপুন");
+    else if (result.verifyRequested) showToast("success", "Resend যাচাই করছে, ২-৩ মিনিট পর আবার দেখুন");
+    else showToast("error", "এখনো সব শর্ত পূরণ হয়নি — নিচের স্ট্যাটাস দেখুন (যেমন DMARC)");
   }
 
   if (!domain) {
@@ -123,6 +127,11 @@ export default function DomainManager({ domain, dmarcName }: { domain: DomainVie
         </span>
       </div>
 
+      {resendChecking && (
+        <p className="mb-3 rounded-lg bg-warning-light px-3 py-2 text-sm text-warning">
+          ⏳ Resend যাচাই করছে — ২-৩ মিনিট পর পেজ রিফ্রেশ করে আবার &quot;যাচাই করুন&quot; চাপুন। (এই সময়ে অবস্থা &quot;অপেক্ষায়&quot; দেখানো স্বাভাবিক।)
+        </p>
+      )}
       {domain.status === "failed" && (
         <p className="mb-3 rounded-lg bg-danger-light px-3 py-2 text-sm text-danger">
           ডোমেইন যাচাই ব্যর্থ — যতক্ষণ না আবার যাচাই হয়, কোনো ইমেইল পাঠানো হবে না।
