@@ -259,6 +259,15 @@ docker network connect whatsapp-saas_wa-net traefik
 
 ---
 
+## Email চ্যানেল ডিপ্লয় (email ব্রাঞ্চ)
+
+- migration `0054` আগে Supabase SQL Editor এ চালান (কোডের **আগে**), তারপর কোড ডিপ্লয়।
+- `.env.production` এ যোগ: `NEXT_PUBLIC_EMAIL_ENABLED`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_PROVIDER_DAILY_LIMIT`, `EMAIL_PROVIDER_MONTHLY_LIMIT`, `EMAIL_UNSUBSCRIBE_SECRET` (`APP_PUBLIC_URL` আগেই আছে)।
+- `NEXT_PUBLIC_EMAIL_ENABLED` **build-time** — বদলালে `up -d --build web` লাগে, শুধু restart যথেষ্ট না। বাকিগুলো runtime (env_file) — বদলালে `up -d` যথেষ্ট।
+- Resend Webhooks এ endpoint: `https://<আপনার-ডোমেইন>/api/webhooks/email`। বিস্তারিত `docs/email-plan.md`।
+
+---
+
 ## আপডেট ডিপ্লয় করা (নতুন কোড পুশ করার পর)
 
 ```bash
