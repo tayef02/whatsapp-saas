@@ -4,8 +4,57 @@ WhatsApp ও Messenger-এর পাশে তৃতীয়, **সম্পূ
 (`/dashboard/email/*`), নিজস্ব queue/worker, নিজস্ব কোটা। শুধু অ্যাকাউন্ট-লেভেল জিনিস শেয়ার্ড (লগইন/workspace,
 প্ল্যান ও বিলিং, নোটিফিকেশন, অ্যাডমিন)।
 
-> অবস্থা: **শুধু পরিকল্পনা — কোনো কোড বা migration লেখা হয়নি।** স্কিমা বদলের আগে প্রতিটা migration-এর আলাদা
-> অনুমোদন লাগবে (নিচে "খোলা প্রশ্ন")।
+> অবস্থা: **ফেজ ১ কোড ও `0054` migration ফাইল লেখা হয়েছে (migration এখনো চালানো হয়নি — ইউজার নিজে SQL
+> Editor-এ চালাবেন)।** ফেজ ২/৩ শুরুর আগে আলাদা অনুমোদন লাগবে। নিচের "ফেজ ১ বাস্তবায়ন — যা বদলেছে" সেকশনে মূল
+> পরিকল্পনা থেকে পার্থক্য ও ইউজারের চূড়ান্ত সিদ্ধান্ত আছে; সেটা এই ডকের পুরনো অংশের চেয়ে অগ্রাধিকার পাবে।
+
+## ফেজ ১ বাস্তবায়ন — যা বদলেছে / চূড়ান্ত সিদ্ধান্ত
+
+### ইউজারের সিদ্ধান্ত (খোলা প্রশ্নগুলোর উত্তর)
+| # | সিদ্ধান্ত |
+|---|---|
+| ১ | **Resend নীতি ঝুঁকি কমাতে:** কন্টাক্ট ইম্পোর্টে বাধ্যতামূলক সম্মতি-চেকবক্স ("এই তালিকার সবাই ইমেইল পেতে সম্মতি দিয়েছে, কেনা বা স্ক্র্যাপ করা তালিকা নয়") — টিক না দিলে ইম্পোর্ট বন্ধ। কে, কখন, কোন ইম্পোর্টে টিক দিয়েছে তার রেকর্ড থাকবে। **ফেজ ২-এর `0055`-এ জায়গা রাখা আছে:** `email_contact_imports.consent_confirmed_at / consent_confirmed_by / consent_text_version` (NOT NULL, ইম্পোর্ট রো তৈরির সময়ই বসে — টিক ছাড়া রো তৈরিই হয় না), `email_contacts.consent_import_id` (কোন ইম্পোর্ট থেকে এসেছে). ম্যানুয়ালি যোগ করা কন্টাক্টে `consent_source = 'manual_attested'` + কে যোগ করেছে |
+| ২ | DMARC `verified`-এর জন্য **বাধ্যতামূলক**, `p=none` চলবে ✅ (কোডে আছে) |
+| ৩ | Reply-To ঠিকানা কনফার্মেশন লিংকে যাচাই ✅ (কোডে আছে) |
+| ৪ | বিটার সীমা: **প্রতি workspace মাসে ৫০০, দিনে ২৫**। প্ল্যাটফর্ম মোট (provider): মাসে ৩০০০, দিনে ১০০ (env)। প্ল্যানভিত্তিক সংখ্যা পরে। → ফেজ ৩-এর `0056`-এ `workspaces.email_daily_limit` ডিফল্ট **২৫**, `plans.monthly_email_limit` বিটা ডিফল্ট **৫০০** |
+| ৫ | From নামে ব্লক-তালিকার শব্দ (bkash, nagad, bank, gov ও পরিচিত ব্র্যান্ড) থাকলে সেভ হয় না (সক্রিয় নাম বদলায় না); অনুরোধটি `pending_approval` রো হিসেবে জমা থাকে ও **শুধু সুপার অ্যাডমিন** `/dashboard/admin/email` থেকে অনুমোদন/বাতিল করতে পারেন। তালিকা: `packages/core/email/from-name.ts` |
+
+### বাকি প্রশ্নে আমার সুপারিশ ধরা হয়েছে (ইউজার "ধরে নাও" বলেছেন)
+1. ইমেইলের ছবির বাকেট (ফেজ ২) public-read, অনুমানযোগ্য নয় এমন uuid পাথ।
+2. `email_recipients` (ফেজ ৩) partition না করে ৯০ দিনের আর্কাইভ স্ক্রিপ্ট।
+3. অটো-পজ: bounce ≥ ৪% (ন্যূনতম ৫০টা পাঠানোর পর) বা complaint ≥ ০.১% (ন্যূনতম ২০০টা) — Resend-এর নিজস্ব সীমা দেখে চূড়ান্ত (ফেজ ৩/৪)।
+4. ইমেইলে quiet hours প্রয়োগ হবে না।
+5. Unsubscribe টোকেনে ইমেইল-ঠিকানা থাকে (ডেটা মুছলেও কাজ করে); টোকেন-URL কখনো লগে ছাপা হয় না।
+6. `notifications.channel` CHECK-এ `'email'` যোগ (`NOT VALID` + `VALIDATE`, একই migration-এ)।
+
+### মূল পরিকল্পনা থেকে বাস্তবায়নে যা আলাদা হয়েছে
+- **লেখার অনুমতি:** `email_sender_profiles` / `email_domains` / `email_suppressions`-এ ব্রাউজার (authenticated) শুধু **SELECT** পায়; সব লেখা সার্ভার অ্যাকশন (service_role) দিয়ে, যেখানে owner/admin role ও From-নাম ব্লক-তালিকা আগে যাচাই হয়। (নইলে কেউ ব্রাউজার থেকে সরাসরি ব্লক-তালিকা এড়াতে পারত।)
+- **দুই রকম আনসাবস্ক্রাইব URL:** ফুটার লিংক `/u/<token>` (নিশ্চিতকরণ পেজ; GET-এ কিছু বদলায় না); `List-Unsubscribe` হেডারের URL `/api/unsubscribe/<token>` (one-click POST; GET করলে `/u/<token>`-এ redirect) — কারণ Next.js-এ একই পাথে page আর route.ts থাকতে পারে না।
+- **Reply-To কনফার্মেশন পেজ:** `/e/reply-to/<token>` (পাবলিক, GET-এ শুধু বোতাম; POST-এ যাচাই)। একই `EMAIL_UNSUBSCRIBE_SECRET` দিয়ে সাইন, কিন্তু HMAC-এ "purpose" ঢোকানো — এক ধরনের টোকেন অন্য কাজে চলে না।
+- **Provider এরর শ্রেণি ৪টা:** `rate_limited`, `auth`, `transient`, `rejected` (আলাদা `invalid_recipient` ফেজ ৩-এ দরকার হলে যোগ হবে)।
+- **ডোমেইন রিচেক:** web থেকে "যাচাই করুন" সরাসরি (অ্যাডমিন, কম ভলিউম) চলে; worker-এর দৈনিক `email-domain-check` শুধু অবস্থা পড়ে। **verified ডোমেইনে provider `verify` কল করা হয় না** (Resend স্ট্যাটাস সাময়িক `pending` করে দেয়, তাতে ভুলে `failed` ধরা পড়ত)। ⚠ Resend নিজে কত ঘন ঘন DNS আবার দেখে ডকুমেন্টেশনে নিশ্চিত না — তাই দৈনিক রিচেক মূলত Resend-এর রিপোর্ট করা অবস্থার উপর নির্ভর করে (DMARC আমরা নিজে দেখি)।
+- **নোটিফিকেশন:** সুপার অ্যাডমিনদের জন্য — প্রতিটার নিজের প্রথম workspace-এ `channel='email'` রো; একই type-এর অপঠিত থাকলে নতুন বসে না।
+- **সীমা গণনা (ফেজ ১):** টেস্ট/সিস্টেম মেইলে worker `email_send_log`-এ জায়গা রিজার্ভ করে তারপর পাঠায় (`apps/worker/src/lib/email-send.ts`)। ভলিউম খুব কম বলে count-then-insert; ফেজ ৩-এ ক্যাম্পেইনের জন্য DB ফাংশন + advisory lock। প্রোভাইডার নিশ্চিতভাবে গ্রহণ না করলে (auth/rejected/rate_limited) রিজার্ভেশন মুছে দেওয়া হয়; `transient` এ (timeout) রেখে দেওয়া হয়।
+- **টেস্ট ইমেইল** শুধু লগইন করা ইউজারের নিজের অ্যাকাউন্ট-ইমেইলে; দিনে ৫টা/workspace।
+
+### ফেজ ১-এ তৈরি ফাইল
+`supabase/migrations/0054_email_foundation.sql` · `packages/core/providers/{email-types,email,resend}.ts` ·
+`packages/core/email/{svix,tokens,compose,from-name,limits,readiness,domain-status}.ts` ·
+web: `app/api/webhooks/email/route.ts`, `app/api/unsubscribe/[token]/route.ts`, `app/u/[token]/*`, `app/e/reply-to/[token]/*`, `app/dashboard/email/*`, `app/dashboard/admin/email/*`, `lib/queue/email-queues.ts`, `lib/email/*`, nav-config/Sidebar/NotificationBell/DashboardShell, middleware (public paths + matcher) ·
+worker: `queues/email-queues.ts`, `lib/{email-send,email-notify}.ts`, `processors/{process-email-webhook,process-email-jobs,email-domain-check}.ts`, `index.ts` ·
+env: `apps/web/.env.example`, `apps/worker/.env.example`, `apps/web/Dockerfile`, `docker-compose.production.yml`।
+
+### migration চালানোর আগে ও পরে
+**আগে (ব্যাকআপ):** Supabase Dashboard → Database → Backups → একটা manual backup নিন (Free প্ল্যানে না থাকলে):
+`pg_dump` দিয়ে অন্তত `notifications` টেবিলের কপি — `create table public.notifications_backup_0054 as table public.notifications;`
+(migration শুধু এই টেবিলের CHECK বদলায়; বাকি সব নতুন টেবিল। কাজ শেষে ঠিক থাকলে `drop table public.notifications_backup_0054;`)।
+**পরে (যাচাই SQL):**
+```sql
+select table_name from information_schema.tables where table_schema='public' and table_name like 'email\_%' order by 1;  -- ৫টা
+select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid='public.notifications'::regclass and contype='c';  -- 'email' আছে
+select tablename, policyname from pg_policies where tablename like 'email\_%' order by 1;  -- প্রতি টেবিলে ≥১
+```
+**রোলব্যাক** (শুধু ইমেইলের কিছু ব্যবহৃত না হলে): `drop table email_send_log, email_events, email_suppressions, email_sender_profiles, email_domains cascade; drop function unsubscribe_email(uuid,text,uuid,text);` এবং notifications-এর CHECK আগের (`whatsapp`, `messenger`) অবস্থায় ফেরানো।
 
 ## ০) নেওয়া সিদ্ধান্ত ও ভিত্তি
 
@@ -283,7 +332,8 @@ unsubscribe টোকেন লাইব্রেরি + `/u/[token]` + হে�
 5. `/dashboard/email/settings`: From নাম, Reply-To, ব্যবসার নাম/ঠিকানা দিন → Reply-To-র কনফার্মেশন লিংক ক্লিক → "প্রস্তুত"।
 6. টেস্ট ইমেইল (নিজের Gmail-এ): ইনবক্সে এসেছে? "Show original"-এ **SPF/DKIM/DMARC = PASS**, হেডারে `List-Unsubscribe` ও `List-Unsubscribe-Post`, ফুটারে ঠিকানা।
 7. Gmail-এর উপরের "Unsubscribe" বোতাম বা ফুটার লিংক চাপুন → বাংলা+English পেজ; নিশ্চিত করলে `email_suppressions`-এ রো (reason `unsubscribed`)।
-   লিংকটা আবার খুলুন → আবারও সফল পেজ, ডুপ্লিকেট রো নয়।
+   লিংকটা আবার খুলুন → আবারও সফল পেজ, ডুপ্লিকেট রো নয়। (টেস্ট শেষে নিজের ঠিকানা তালিকা থেকে সরাতে SQL:
+   `delete from public.email_suppressions where workspace_id = '<আপনার-workspace-id>' and email_lower = '<আপনার-ইমেইল>';`)
 8. Resend-এ webhook ইভেন্ট (delivered/opened) এলে `email_events`-এ রো; একই ইভেন্ট আবার পাঠালে (Resend ড্যাশবোর্ডের "Resend") নতুন রো নয়।
 9. ভুল signature দিয়ে `curl -X POST …/api/webhooks/email` → **401**; secret মুছে দিলে → **500** (200 নয়)।
 10. flag `false` করলে ইমেইল সেকশন/রুট দেখা যায় না। কনসোল/worker লগে API key, ইমেইল ঠিকানা বা টোকেন-URL নেই তা নিশ্চিত করুন।

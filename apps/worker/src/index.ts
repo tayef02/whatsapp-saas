@@ -45,6 +45,10 @@ import { MESSENGER_KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/messenger-knowledg
 import { processMessengerKnowledgeBaseDocument } from "./processors/process-messenger-knowledge-base";
 import { processMessengerCommentEvent } from "./processors/process-messenger-comment";
 import { processMessengerCommentReply } from "./processors/process-messenger-comment-reply";
+import { EMAIL_WEBHOOK_QUEUE_NAME, EMAIL_JOBS_QUEUE_NAME, EMAIL_DOMAIN_CHECK_QUEUE_NAME } from "./queues/email-queues";
+import { processEmailWebhookEvent } from "./processors/process-email-webhook";
+import { processEmailTestSend, processReplyToConfirmation } from "./processors/process-email-jobs";
+import { runEmailDomainCheckTick } from "./processors/email-domain-check";
 
 const SUBSCRIPTION_MAINTENANCE_TICK_MS = 24 * 60 * 60 * 1000;
 
@@ -263,8 +267,58 @@ messengerJobsWorker.on("failed", (job, err) => {
   console.error(`[messenger-jobs-worker] job ${job?.id} (${job?.name}) ব্যর্থ:`, err.message);
 });
 
+// Email চ্যানেলের raw webhook ইভেন্ট (delivery/bounce/complaint ...) — WhatsApp/Messenger এর queue থেকে
+// সম্পূর্ণ আলাদা। web এর /api/webhooks/email শুধু signature যাচাই করে এখানে push করে
+const emailWebhookWorker = new Worker(
+  EMAIL_WEBHOOK_QUEUE_NAME,
+  async (job) => {
+    await processEmailWebhookEvent(job.data);
+  },
+  { connection }
+);
+
+emailWebhookWorker.on("failed", (job, err) => {
+  console.error(`[email-webhook-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
+// Email এর আউটগোয়িং সিস্টেম job — "test-send" (টেস্ট ইমেইল), "reply-to-confirmation" (Reply-To
+// ঠিকানা যাচাইয়ের মেইল)। web থেকে সরাসরি পাঠানো হয় না, সবসময় এই queue দিয়ে (ক্যাম্পেইন পাঠানো ফেজ ৩ এ)
+const emailJobsWorker = new Worker(
+  EMAIL_JOBS_QUEUE_NAME,
+  async (job) => {
+    if (job.name === "test-send") {
+      await processEmailTestSend(job);
+    } else if (job.name === "reply-to-confirmation") {
+      await processReplyToConfirmation(job);
+    }
+  },
+  { connection }
+);
+
+emailJobsWorker.on("failed", (job, err) => {
+  console.error(`[email-jobs-worker] job ${job?.id} (${job?.name}) ব্যর্থ:`, err.message);
+});
+
+// দিনে একবার: প্ল্যাটফর্ম ইমেইল ডোমেইনের SPF/DKIM/DMARC রিচেক
+const emailDomainCheckQueue = new Queue(EMAIL_DOMAIN_CHECK_QUEUE_NAME, { connection });
+emailDomainCheckQueue
+  .add("tick", {}, { repeat: { every: SUBSCRIPTION_MAINTENANCE_TICK_MS }, removeOnComplete: true })
+  .catch((err) => console.error("[email-domain-check] repeatable job রেজিস্টার করা যায়নি:", err.message));
+
+const emailDomainCheckWorker = new Worker(
+  EMAIL_DOMAIN_CHECK_QUEUE_NAME,
+  async () => {
+    await runEmailDomainCheckTick();
+  },
+  { connection }
+);
+
+emailDomainCheckWorker.on("failed", (job, err) => {
+  console.error(`[email-domain-check] tick ব্যর্থ:`, err.message);
+});
+
 console.log(
-  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process, messenger-webhook, messenger-jobs, messenger-knowledge-base-process queue শুনছে..."
+  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process, messenger-webhook, messenger-jobs, messenger-knowledge-base-process, email-webhook-events, email-jobs, email-domain-check queue শুনছে..."
 );
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য

@@ -7,7 +7,7 @@ export async function createNotification(
   workspaceId: string,
   type: string,
   title: string,
-  channel: "whatsapp" | "messenger" | null,
+  channel: "whatsapp" | "messenger" | "email" | null,
   body?: string
 ) {
   await getSupabase().from("notifications").insert({ workspace_id: workspaceId, type, title, channel, body });

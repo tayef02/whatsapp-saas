@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { Menu, LogOut } from "lucide-react";
 import Sidebar from "./Sidebar";
 import NotificationBell from "./NotificationBell";
-import { getPageTitle, getChannelFromPathname } from "./nav-config";
+import { getPageTitle, getChannelFromPathname, type Channel } from "./nav-config";
 import { ToastProvider } from "@/components/ui";
 
-type Notification = { id: string; title: string; body: string | null; channel: "whatsapp" | "messenger" | null };
+type Notification = { id: string; title: string; body: string | null; channel: Channel | null };
 
 // dashboard/layout.tsx (সার্ভার কম্পোনেন্ট) থেকে সব ডাটা props হিসেবে আসে — এই ফাইলে কোনো
 // নতুন ডাটা কোয়েরি নেই, শুধু sidebar/topbar এর লেআউট আর মোবাইল টগল state

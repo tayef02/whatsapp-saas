@@ -1,19 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bell, Smartphone, MessageSquare } from "lucide-react";
+import { Bell, Smartphone, MessageSquare, Mail } from "lucide-react";
+import type { Channel } from "./nav-config";
 import { markNotificationRead } from "./notifications-actions";
 
-type Notification = { id: string; title: string; body: string | null; channel: "whatsapp" | "messenger" | null };
+type Notification = { id: string; title: string; body: string | null; channel: Channel | null };
 
-const channelIcon: Record<string, React.ElementType> = { whatsapp: Smartphone, messenger: MessageSquare };
-const channelLabel: Record<string, string> = { whatsapp: "WhatsApp", messenger: "Messenger" };
+const channelIcon: Record<string, React.ElementType> = { whatsapp: Smartphone, messenger: MessageSquare, email: Mail };
+const channelLabel: Record<string, string> = { whatsapp: "WhatsApp", messenger: "Messenger", email: "Email" };
 
 // আগে প্রতি পেজের উপরে হলুদ ব্যানারের স্তূপ জমতো — এখন টপবারে বেল আইকন + ড্রপডাউন।
 // channel-সচেতন: ড্রপডাউনের লিস্ট সক্রিয় চ্যানেল সেকশনের (+ channel-নিরপেক্ষ, যেমন প্ল্যান
 // মেয়াদ শেষের অ্যালার্ট) নোটিফিকেশনই দেখায়, কিন্তু আনরিড কাউন্ট ব্যাজ অ্যাকাউন্ট-ভিত্তিক —
 // দুই চ্যানেল মিলিয়ে — যাতে অন্য চ্যানেলে কিছু হলে সেটা মিস না হয়ে যায়
-export default function NotificationBell({ notifications, activeChannel }: { notifications: Notification[]; activeChannel: "whatsapp" | "messenger" }) {
+export default function NotificationBell({ notifications, activeChannel }: { notifications: Notification[]; activeChannel: Channel }) {
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const ref = useRef<HTMLDivElement>(null);

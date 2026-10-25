@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { X, MessageCircle, MessageSquare, LifeBuoy } from "lucide-react";
+import { X, MessageCircle, MessageSquare, Mail, LifeBuoy } from "lucide-react";
 import LogoMark from "@/components/brand/LogoMark";
 import { getNavGroups, isNavItemActive, getChannelFromPathname, type Channel } from "./nav-config";
 
 // ফ্ল্যাগ বন্ধ থাকলে (ডিফল্ট) চ্যানেল সুইচার সম্পূর্ণ লুকানো, সবসময় WhatsApp — বিটা ইউজার
 // আধাখেচড়া Messenger ফিচার দেখবে না। build-time এ inline হয়ে যায় (NEXT_PUBLIC_ প্রিফিক্স)
 const MESSENGER_ENABLED = process.env.NEXT_PUBLIC_MESSENGER_ENABLED === "true";
+
+// Email চ্যানেলের নিজস্ব ফ্ল্যাগ — বন্ধ থাকলে (ডিফল্ট) Email ট্যাব/মেনু/রুট সব লুকানো
+const EMAIL_ENABLED = process.env.NEXT_PUBLIC_EMAIL_ENABLED === "true";
 
 // সহায়তা লিংক — সেট করা না থাকলে পুরো লিংকটাই লুকানো থাকে (ভাঙা লিংকের বদলে)
 const SUPPORT_WHATSAPP = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP;
@@ -28,9 +31,11 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
 
-  // ফ্ল্যাগ বন্ধ থাকলে pathname যাই হোক, চ্যানেল সবসময় "whatsapp" ধরা হচ্ছে (যদিও
-  // /dashboard/messenger/* রুট নিজেও ফ্ল্যাগ বন্ধ থাকলে 404 দেয়, এটা একটা দ্বিতীয় সুরক্ষা)
-  const channel: Channel = MESSENGER_ENABLED ? getChannelFromPathname(pathname) : "whatsapp";
+  // যে চ্যানেলের ফ্ল্যাগ বন্ধ, pathname সেই চ্যানেলের হলেও "whatsapp" ধরা হচ্ছে (যদিও সেই রুট নিজেও
+  // ফ্ল্যাগ বন্ধ থাকলে 404 দেয়, এটা একটা দ্বিতীয় সুরক্ষা)
+  const detected = getChannelFromPathname(pathname);
+  const channel: Channel =
+    (detected === "messenger" && !MESSENGER_ENABLED) || (detected === "email" && !EMAIL_ENABLED) ? "whatsapp" : detected;
   const groups = getNavGroups(channel, isSuperAdmin);
 
   return (
@@ -57,7 +62,7 @@ export default function Sidebar({
           </button>
         </div>
 
-        {MESSENGER_ENABLED && (
+        {(MESSENGER_ENABLED || EMAIL_ENABLED) && (
           // চ্যানেল সুইচার — ব্র্যান্ড primary (পার্পল) থেকে ইচ্ছাকৃতভাবে আলাদা: WhatsApp সবুজ
           // (success টোকেন), Messenger নীল (info টোকেন) — চ্যানেল-নিজস্ব চিহ্ন হিসেবে, Badge
           // কম্পোনেন্টেও Messenger-কে info/নীল দিয়ে দেখানো হয় (OrdersList.tsx), ধারাবাহিক রাখতে
@@ -71,15 +76,28 @@ export default function Sidebar({
             >
               <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
             </Link>
-            <Link
-              href="/dashboard/messenger"
-              onClick={onClose}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
-                channel === "messenger" ? "bg-info-light text-info" : "text-text-muted hover:bg-gray-100"
-              }`}
-            >
-              <MessageSquare className="h-3.5 w-3.5" /> Messenger
-            </Link>
+            {MESSENGER_ENABLED && (
+              <Link
+                href="/dashboard/messenger"
+                onClick={onClose}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                  channel === "messenger" ? "bg-info-light text-info" : "text-text-muted hover:bg-gray-100"
+                }`}
+              >
+                <MessageSquare className="h-3.5 w-3.5" /> Messenger
+              </Link>
+            )}
+            {EMAIL_ENABLED && (
+              <Link
+                href="/dashboard/email"
+                onClick={onClose}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                  channel === "email" ? "bg-warning-light text-warning" : "text-text-muted hover:bg-gray-100"
+                }`}
+              >
+                <Mail className="h-3.5 w-3.5" /> Email
+              </Link>
+            )}
           </div>
         )}
 

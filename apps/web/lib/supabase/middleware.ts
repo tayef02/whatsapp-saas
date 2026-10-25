@@ -51,6 +51,10 @@ export async function updateSession(request: NextRequest) {
     "/faq",
     // OAuth (Google/Facebook/LinkedIn) ফেরত আসার রুট — তখনো সেশন নেই, তাই পাবলিক
     "/auth/callback",
+    // ইমেইলের পাবলিক লিংক — প্রাপক লগইন ছাড়াই খোলে: আনসাবস্ক্রাইব (/u/<token>) আর Reply-To
+    // কনফার্মেশন (/e/reply-to/<token>)। "/u/" শেষে স্ল্যাশসহ, যাতে "/users" এর মতো কিছু ভুলে পাবলিক না হয়
+    "/u/",
+    "/e/",
   ];
   // "/" কে .startsWith() দিয়ে publicPaths এ রাখা যাবে না — তাহলে প্রতিটা পাথই ("/" দিয়ে শুরু)
   // পাবলিক হয়ে যেত, তাই আলাদা exact-match চেক

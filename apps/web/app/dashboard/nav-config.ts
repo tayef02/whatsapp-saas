@@ -15,11 +15,13 @@ import {
   MessageSquare,
   MessageCircleReply,
   ShieldAlert,
+  Mail,
+  MailCheck,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: React.ElementType };
 export type NavGroup = { title: string; items: NavItem[] };
-export type Channel = "whatsapp" | "messenger";
+export type Channel = "whatsapp" | "messenger" | "email";
 
 // সব চ্যানেলেই সবসময় দেখা যায় — ড্যাশবোর্ড লিংক এক, কনটেন্টের ভেতরেই চ্যানেল-ভিত্তিক ট্যাব থাকবে
 const overviewNavGroup: NavGroup = {
@@ -76,6 +78,14 @@ const messengerNavGroups: NavGroup[] = [
   { title: "বিক্রি", items: [{ href: "/dashboard/messenger/orders", label: "অর্ডার", icon: ShoppingCart }] },
 ];
 
+// Email চ্যানেল — ফেজ ১: শুধু সেটআপ। কন্টাক্ট/টেমপ্লেট/ক্যাম্পেইন পরের ফেজে এই তালিকায় যোগ হবে
+const emailNavGroups: NavGroup[] = [
+  {
+    title: "Email",
+    items: [{ href: "/dashboard/email", label: "ইমেইল সেটআপ", icon: Mail }],
+  },
+];
+
 const accountNavGroup: NavGroup = {
   title: "অ্যাকাউন্ট",
   items: [
@@ -84,9 +94,15 @@ const accountNavGroup: NavGroup = {
   ],
 };
 
+// build-time এ inline হয় (NEXT_PUBLIC_ প্রিফিক্স) — বন্ধ থাকলে ইমেইল অ্যাডমিন লিংক দেখা যায় না
+const EMAIL_ENABLED = process.env.NEXT_PUBLIC_EMAIL_ENABLED === "true";
+
 export const adminNavGroup: NavGroup = {
   title: "অ্যাডমিন",
-  items: [{ href: "/dashboard/admin/payments", label: "পেমেন্ট রিভিউ", icon: ShieldCheck }],
+  items: [
+    { href: "/dashboard/admin/payments", label: "পেমেন্ট রিভিউ", icon: ShieldCheck },
+    ...(EMAIL_ENABLED ? [{ href: "/dashboard/admin/email", label: "ইমেইল অ্যাডমিন", icon: MailCheck }] : []),
+  ],
 };
 
 // চ্যানেল-রেজিস্ট্রি — ভবিষ্যতে নতুন চ্যানেল (যেমন Instagram) যোগ করতে এখানে একটা entry আর
@@ -97,6 +113,7 @@ type ChannelConfig = { pathPrefix: string | null; navGroups: NavGroup[] };
 const CHANNEL_REGISTRY: Record<Channel, ChannelConfig> = {
   whatsapp: { pathPrefix: null, navGroups: whatsappNavGroups },
   messenger: { pathPrefix: "/dashboard/messenger", navGroups: messengerNavGroups },
+  email: { pathPrefix: "/dashboard/email", navGroups: emailNavGroups },
 };
 const DEFAULT_CHANNEL: Channel = "whatsapp";
 

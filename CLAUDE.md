@@ -103,6 +103,17 @@ workspace, প্ল্যান ও বিলিং, পেমেন্ট, স
 - **টেস্ট করার ধাপ** (env var নাম, Meta webhook সেটআপ, migration ক্রম, VPS ডিপ্লয়, AI/অর্ডার/মিডিয়া/Human Agent/কমেন্ট/rate-limit/skip-review টেস্ট) — `docs/messenger-plan.md`-এর "M1 টেস্ট করার ধাপ", "M2 টেস্ট করার ধাপ" ও "M3 টেস্ট করার ধাপ" সেকশনে
 - **পরের ধাপ**: M4 (পোস্ট শিডিউলার) → M5 (মডারেশন) — বিস্তারিত `docs/messenger-plan.md`
 
+## Email চ্যানেল (`email` ব্রাঞ্চ — ফেজ ১ কোড লেখা, migration 0054 ইউজার চালাবে)
+- পরিকল্পনা ও সিদ্ধান্ত: `docs/email-plan.md` (শুরুতে "ফেজ ১ বাস্তবায়ন — যা বদলেছে" সেকশন অগ্রাধিকার পায়)। WhatsApp/Messenger থেকে সম্পূর্ণ আলাদা: `email_*` টেবিল, `/dashboard/email/*`, queue `email-webhook-events`/`email-jobs`/`email-domain-check`
+- Provider `EmailProvider` interface-এর পেছনে (`packages/core/providers/email*.ts`, `resend.ts`), বাছাই শুধু `getEmailProvider()` (`EMAIL_PROVIDER` env) — লঞ্চে SES যোগ করতে নতুন ফাইল + একটা শাখা। **কখনো web থেকে সরাসরি পাঠানো না, সবসময় worker/queue দিয়ে**
+- ফ্ল্যাগ `NEXT_PUBLIC_EMAIL_ENABLED` (ডিফল্ট `false`; Dockerfile ARG + compose build.args-এ আছে)। বন্ধ থাকলে Email ট্যাব/মেনু/`/dashboard/email`/`/dashboard/admin/email` 404। পাবলিক লিংক (`/u/<token>`, `/e/reply-to/<token>`, `/api/unsubscribe/<token>`) ফ্ল্যাগ-নিরপেক্ষ (আগে পাঠানো ইমেইলের লিংক চলতেই হবে) এবং middleware-এর পাবলিক পাথে
+- Webhook (`/api/webhooks/email`): Resend = Svix signature (`packages/core/email/svix.ts`), raw body, ভুল signature **401**, secret/queue সমস্যা **500**, নাহলে queue-তে বসিয়ে তখনই 200। ফ্রি প্ল্যানে webhook endpoint মাত্র ১টা। Resend API রেট লিমিট ১০ req/s (পুরো team)
+- Unsubscribe: স্টেটলেস HMAC টোকেন (`EMAIL_UNSUBSCRIBE_SECRET` — একবার বসিয়ে **বদলানো যাবে না**), ফুটার লিংক GET = শুধু নিশ্চিতকরণ পেজ (স্ক্যানার-নিরাপদ), POST/one-click = আসল কাজ। suppression workspace-ভিত্তিক, স্থায়ী, UI থেকে মোছা যায় না। টোকেন-URL (ইমেইল থাকে) কখনো লগে না
+- কোটা (ফেজ ৩): গণনা একটাই DB ফাংশন `record_email_sent()`-এ, scheduler পাঠানোর আগেই আটকাবে; Messenger-এর মতো ছড়ানো গণনা নয়। বিটা সীমা: workspace মাসে ৫০০/দিনে ২৫, provider মাসে ৩০০০/দিনে ১০০ (env)
+- From নাম: ব্লক-তালিকা (`packages/core/email/from-name.ts`) → সক্রিয় হয় না, `pending_approval` রো, শুধু সুপার অ্যাডমিন অনুমোদন দেয়। `email_sender_profiles`-এ ব্রাউজার থেকে সরাসরি লেখা বন্ধ (শুধু SELECT), লেখা সার্ভার অ্যাকশনে
+- কন্টাক্ট ইম্পোর্টে (ফেজ ২) সম্মতি-চেকবক্স বাধ্যতামূলক + রেকর্ড (কে/কখন/কোন ইম্পোর্ট) — Resend-এর নীতি-ঝুঁকি কমাতে
+- ডোমেইন verified = SPF + DKIM verified **এবং** DMARC present (`p=none` চলবে)। verified থেকে নামলে `failed`, পাঠানো থামে, সুপার অ্যাডমিনকে নোটিফিকেশন
+
 ## ডিপ্লয়মেন্ট
 - সব সার্ভিসের Dockerfile + docker-compose, Nginx + SSL config
 - গ্রোথ প্ল্যান: ০-৫০ ইউজার (এক VPS) → ৫০-২০০ (Evolution+worker আলাদা সার্ভার) → ২০০+ (মাল্টি Evolution + মাল্টি worker + LB)
