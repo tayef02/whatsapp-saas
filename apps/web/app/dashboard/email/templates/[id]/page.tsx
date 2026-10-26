@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import EmailTemplateForm from "../EmailTemplateForm";
+import EditEmailTemplateEditor from "./EditEmailTemplateEditor";
 import { loadEditorData } from "../editor-data";
 
 export default async function EditEmailTemplatePage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,8 +17,7 @@ export default async function EditEmailTemplatePage({ params }: { params: Promis
 
   const data = await loadEditorData(supabase);
   return (
-    <EmailTemplateForm
-      mode="edit"
+    <EditEmailTemplateEditor
       templateId={template.id}
       initial={{
         name: template.name,
