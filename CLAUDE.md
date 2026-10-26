@@ -111,7 +111,7 @@ workspace, প্ল্যান ও বিলিং, পেমেন্ট, স
 - Unsubscribe: স্টেটলেস HMAC টোকেন (`EMAIL_UNSUBSCRIBE_SECRET` — একবার বসিয়ে **বদলানো যাবে না**), ফুটার লিংক GET = শুধু নিশ্চিতকরণ পেজ (স্ক্যানার-নিরাপদ), POST/one-click = আসল কাজ। suppression workspace-ভিত্তিক, স্থায়ী, UI থেকে মোছা যায় না। টোকেন-URL (ইমেইল থাকে) কখনো লগে না
 - কোটা (ফেজ ৩): গণনা একটাই DB ফাংশন `record_email_sent()`-এ, scheduler পাঠানোর আগেই আটকাবে; Messenger-এর মতো ছড়ানো গণনা নয়। বিটা সীমা: workspace মাসে ৫০০/দিনে ২৫, provider মাসে ৩০০০/দিনে ১০০ (env)
 - From নাম: ব্লক-তালিকা (`packages/core/email/from-name.ts`) → সক্রিয় হয় না, `pending_approval` রো, শুধু সুপার অ্যাডমিন অনুমোদন দেয়। `email_sender_profiles`-এ ব্রাউজার থেকে সরাসরি লেখা বন্ধ (শুধু SELECT), লেখা সার্ভার অ্যাকশনে
-- কন্টাক্ট ইম্পোর্টে (ফেজ ২) সম্মতি-চেকবক্স বাধ্যতামূলক + রেকর্ড (কে/কখন/কোন ইম্পোর্ট) — Resend-এর নীতি-ঝুঁকি কমাতে
+- ফেজ ২ (migration 0055, `email_contacts`/`email_contact_imports`/`email_contact_skips`/`email_templates`): কন্টাক্ট ইম্পোর্টে সম্মতি-চেকবক্স বাধ্যতামূলক (সার্ভারেও চেক; `consent_*` কলাম NOT NULL, বাক্য `packages/core/email/consent.ts` থেকে) + কে/কখন/কোন ইম্পোর্ট রেকর্ড। প্রতিটা স্কিপ কারণসহ `email_contact_skips` রো। ইম্পোর্ট ব্যাচ DB ফাংশন `import_email_contacts_batch()` দিয়ে (`.range`/১০০০-সীমার ভুল নেই), `runEmailContactImport()` web+worker শেয়ার্ড। টেমপ্লেটে ফুটার/আনসাবস্ক্রাইব পাঠানোর ধাপে `appendEmailFooter()` যোগ করে, টেমপ্লেটে রাখা হয় না। CSV পার্স: BOM ছাড়া UTF-8 বাংলা ঠিক রাখতে নিজে ডিকোড (`parse-contacts.ts`)
 - ডোমেইন verified = SPF + DKIM verified **এবং** DMARC present (`p=none` চলবে)। verified থেকে নামলে `failed`, পাঠানো থামে, সুপার অ্যাডমিনকে নোটিফিকেশন
 
 ## ডিপ্লয়মেন্ট

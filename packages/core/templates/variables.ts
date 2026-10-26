@@ -1,6 +1,8 @@
 export interface RenderContact {
   name?: string | null;
   phone?: string | null;
+  // শুধু ইমেইল চ্যানেল পাঠায়; WhatsApp কন্টাক্টে নেই, তাই {{email}} সেখানে আগের মতোই custom_fields থেকে আসে
+  email?: string | null;
   custom_fields?: Record<string, string> | null;
 }
 
@@ -11,6 +13,7 @@ const VARIABLE_PATTERN = /\{\{\s*([a-zA-Z0-9_]+)\s*(?:\|([^}]*))?\s*\}\}/g;
 function lookupVariable(key: string, contact: RenderContact): string {
   if (key === "name") return contact.name ?? "";
   if (key === "phone") return contact.phone ?? "";
+  if (key === "email" && contact.email) return contact.email;
   return contact.custom_fields?.[key] ?? "";
 }
 

@@ -17,9 +17,12 @@ import {
   ShieldAlert,
   Mail,
   MailCheck,
+  Contact,
+  FilePen,
 } from "lucide-react";
 
-export type NavItem = { href: string; label: string; icon: React.ElementType };
+// exact=true: শুধু হুবহু এই পাথে সক্রিয় দেখায় (উপ-পেজে না) — যেমন Email এর "সেটআপ", যার নিচে আরও মেনু আছে
+export type NavItem = { href: string; label: string; icon: React.ElementType; exact?: boolean };
 export type NavGroup = { title: string; items: NavItem[] };
 export type Channel = "whatsapp" | "messenger" | "email";
 
@@ -78,11 +81,15 @@ const messengerNavGroups: NavGroup[] = [
   { title: "বিক্রি", items: [{ href: "/dashboard/messenger/orders", label: "অর্ডার", icon: ShoppingCart }] },
 ];
 
-// Email চ্যানেল — ফেজ ১: শুধু সেটআপ। কন্টাক্ট/টেমপ্লেট/ক্যাম্পেইন পরের ফেজে এই তালিকায় যোগ হবে
+// Email চ্যানেল — ফেজ ২: সেটআপ, কন্টাক্ট, টেমপ্লেট। ক্যাম্পেইন (ফেজ ৩) পরে এই তালিকায় যোগ হবে
 const emailNavGroups: NavGroup[] = [
   {
     title: "Email",
-    items: [{ href: "/dashboard/email", label: "ইমেইল সেটআপ", icon: Mail }],
+    items: [
+      { href: "/dashboard/email", label: "ইমেইল সেটআপ", icon: Mail, exact: true },
+      { href: "/dashboard/email/contacts", label: "কন্টাক্ট", icon: Contact },
+      { href: "/dashboard/email/templates", label: "টেমপ্লেট", icon: FilePen },
+    ],
   },
 ];
 
@@ -135,8 +142,8 @@ export function getNavGroups(channel: Channel, isSuperAdmin: boolean): NavGroup[
   return isSuperAdmin ? [...groups, adminNavGroup] : groups;
 }
 
-export function isNavItemActive(pathname: string, href: string): boolean {
-  if (href === "/dashboard") return pathname === "/dashboard";
+export function isNavItemActive(pathname: string, href: string, exact = false): boolean {
+  if (exact || href === "/dashboard") return pathname === href;
   return pathname === href || pathname.startsWith(href + "/");
 }
 

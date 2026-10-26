@@ -45,7 +45,8 @@ import { MESSENGER_KNOWLEDGE_BASE_QUEUE_NAME } from "./queues/messenger-knowledg
 import { processMessengerKnowledgeBaseDocument } from "./processors/process-messenger-knowledge-base";
 import { processMessengerCommentEvent } from "./processors/process-messenger-comment";
 import { processMessengerCommentReply } from "./processors/process-messenger-comment-reply";
-import { EMAIL_WEBHOOK_QUEUE_NAME, EMAIL_JOBS_QUEUE_NAME, EMAIL_DOMAIN_CHECK_QUEUE_NAME } from "./queues/email-queues";
+import { EMAIL_WEBHOOK_QUEUE_NAME, EMAIL_JOBS_QUEUE_NAME, EMAIL_DOMAIN_CHECK_QUEUE_NAME, EMAIL_CONTACT_IMPORT_QUEUE_NAME } from "./queues/email-queues";
+import { processEmailContactImport } from "./processors/process-email-contact-import";
 import { processEmailWebhookEvent } from "./processors/process-email-webhook";
 import { processEmailTestSend, processReplyToConfirmation } from "./processors/process-email-jobs";
 import { runEmailDomainCheckTick } from "./processors/email-domain-check";
@@ -299,6 +300,19 @@ emailJobsWorker.on("failed", (job, err) => {
   console.error(`[email-jobs-worker] job ${job?.id} (${job?.name}) ব্যর্থ:`, err.message);
 });
 
+// বড় ইমেইল-কন্টাক্ট ফাইল ইম্পোর্ট (WhatsApp এর contact-import queue থেকে আলাদা)
+const emailContactImportWorker = new Worker(
+  EMAIL_CONTACT_IMPORT_QUEUE_NAME,
+  async (job) => {
+    await processEmailContactImport(job.data);
+  },
+  { connection }
+);
+
+emailContactImportWorker.on("failed", (job, err) => {
+  console.error(`[email-contact-import-worker] job ${job?.id} ব্যর্থ:`, err.message);
+});
+
 // দিনে একবার: প্ল্যাটফর্ম ইমেইল ডোমেইনের SPF/DKIM/DMARC রিচেক
 const emailDomainCheckQueue = new Queue(EMAIL_DOMAIN_CHECK_QUEUE_NAME, { connection });
 emailDomainCheckQueue
@@ -318,7 +332,7 @@ emailDomainCheckWorker.on("failed", (job, err) => {
 });
 
 console.log(
-  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process, messenger-webhook, messenger-jobs, messenger-knowledge-base-process, email-webhook-events, email-jobs, email-domain-check queue শুনছে..."
+  "worker চালু হয়েছে — webhook, contact-import, campaign-scheduler, campaign-send, subscription-maintenance, chatbot-autoreply, knowledge-base-process, messenger-webhook, messenger-jobs, messenger-knowledge-base-process, email-webhook-events, email-jobs, email-contact-import, email-domain-check queue শুনছে..."
 );
 
 // /health এন্ডপয়েন্ট — Uptime Kuma দিয়ে মনিটর করার জন্য

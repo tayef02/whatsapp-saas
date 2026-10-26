@@ -108,7 +108,7 @@ export default function Sidebar({
               <div className="flex flex-col gap-0.5">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const active = isNavItemActive(pathname, item.href);
+                  const active = isNavItemActive(pathname, item.href, item.exact);
                   return (
                     <Link
                       key={item.href}

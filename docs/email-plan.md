@@ -37,6 +37,14 @@ WhatsApp ও Messenger-এর পাশে তৃতীয়, **সম্পূ
 - **সীমা গণনা (ফেজ ১):** টেস্ট/সিস্টেম মেইলে worker `email_send_log`-এ জায়গা রিজার্ভ করে তারপর পাঠায় (`apps/worker/src/lib/email-send.ts`)। ভলিউম খুব কম বলে count-then-insert; ফেজ ৩-এ ক্যাম্পেইনের জন্য DB ফাংশন + advisory lock। প্রোভাইডার নিশ্চিতভাবে গ্রহণ না করলে (auth/rejected/rate_limited) রিজার্ভেশন মুছে দেওয়া হয়; `transient` এ (timeout) রেখে দেওয়া হয়।
 - **টেস্ট ইমেইল** শুধু লগইন করা ইউজারের নিজের অ্যাকাউন্ট-ইমেইলে; দিনে ৫টা/workspace।
 
+### ফেজ ২ (migration `0055`) — কন্টাক্ট, ইম্পোর্ট, টেমপ্লেট
+- **টেবিল (৪টা, সবগুলোয় RLS + স্পষ্ট GRANT; ব্রাউজারের শুধু SELECT, সব লেখা service_role):** `email_contact_imports` (সম্মতির রেকর্ড: `consent_confirmed_at / consent_confirmed_by / consent_confirmed_by_email / consent_text / consent_text_version` — সবই NOT NULL, তাই টিক ছাড়া রো-ই বসে না), `email_contacts` (`email` সবসময় lower-case, `unique(workspace_id, email)`; কোনো `opted_out` ফ্ল্যাগ নেই — suppression-ই একমাত্র সত্য; `consent_source`: `import_confirmed` | `manual_attested`, `consent_import_id`, `consented_by`, `consented_at`), `email_contact_skips` (প্রতিটা বাদ-পড়া সারির কারণসহ রো), `email_templates` (সাবজেক্ট, প্রিহেডার, HTML, plain text)।
+- **ফাংশন `import_email_contacts_batch()`**: এক ব্যাচ (≤৫০০) এক কলে — suppression মিলিয়ে, ডুপ্লিকেট বাদ দিয়ে কন্টাক্ট বসায়, স্কিপ-রো লেখে, শুধু গণনা ফেরত দেয় (তাই PostgREST-এর ১০০০ সীমায় কাটে না)। `createCampaign`-এর মতো `.range` নেই, insert-error অগ্রাহ্য নেই।
+- **ইম্পোর্ট:** ≤৩০০০ সারি সাথে সাথে, বেশি হলে storage bucket `email-imports` + queue `email-contact-import` + worker। web ও worker একই `runEmailContactImport()` চালায়। স্কিপের কারণ: `empty_email`, `invalid_format`, `duplicate_in_file`, `already_in_list`, `suppressed_*` (৫টা)।
+- **টেমপ্লেট:** `{{name}}`, `{{email}}`, কাস্টম ফিল্ড; spintax নেই (ইচ্ছাকৃত); HTML-এ কাস্টমারের ডাটা escape হয়; সাবজেক্টে নতুন লাইন বাদ; `<script>/<iframe>/<form>`, `on*=`, `javascript:` সেভের সময় ছাঁটা; প্রিভিউ sandbox iframe-এ। ফুটার ও আনসাবস্ক্রাইব `appendEmailFooter()` পাঠানোর ধাপে যোগ করে — টেমপ্লেটের ভেতরের কিছুর উপর নির্ভর করে না, সরানো যায় না।
+- **পাতা:** `/dashboard/email/contacts` (তালিকা, সার্চ, ট্যাগ, নতুন, এডিট/ডিলিট), `/contacts/import` (সম্মতি-চেকবক্স), `/contacts/import/[id]` (সারাংশ + কারণ-অনুযায়ী স্কিপ তালিকা + সম্মতির রেকর্ড), `/dashboard/email/templates` (তালিকা/নতুন/এডিট + প্রিভিউ)।
+- **ফেজ ৩-এ বাকি:** কন্টাক্ট সীমা (`plans.email_contact_limit`), টেমপ্লেট থেকে টেস্ট-সেন্ড, ইমেইলের ছবি আপলোড (`email-media` bucket) — এখন ছবি লাগলে HTML-এ বাইরের URL দিতে হবে।
+
 ### ফেজ ১-এ তৈরি ফাইল
 `supabase/migrations/0054_email_foundation.sql` · `packages/core/providers/{email-types,email,resend}.ts` ·
 `packages/core/email/{svix,tokens,compose,from-name,limits,readiness,domain-status}.ts` ·
